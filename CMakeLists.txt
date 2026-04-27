@@ -20,7 +20,9 @@ set(SOURCES
 
 # 4. 生成可执行文件
 # 假设你的 TagReader.cpp 里有 main 函数，或者你还有其他包含 main 的文件
-add_executable(TagReaderApp ${SOURCES})
+add_executable(TagReaderApp ${SOURCES}
+    include/Tag.hpp
+    include/Lyric.hpp)
 
 # 如果你想把它编译成一个库供其他程序使用：
 # add_library(TagReaderLib STATIC ${SOURCES})

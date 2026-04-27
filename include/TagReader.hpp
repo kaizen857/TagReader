@@ -4,10 +4,10 @@
 #include <string>
 #include <string_view>
 
+
 struct Tag
 {
-    const std::string name;
-    const std::string value;
+    
 };
 
 class TagReader
