@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.10)
 project(TagReaderProject VERSION 1.0 LANGUAGES CXX)
 
 # 指定 C++ 标准
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 2. 包含头文件目录
@@ -21,8 +21,9 @@ set(SOURCES
 # 4. 生成可执行文件
 # 假设你的 TagReader.cpp 里有 main 函数，或者你还有其他包含 main 的文件
 add_executable(TagReaderApp ${SOURCES}
+    include/TagReader.hpp
     include/Tag.hpp
-    include/Lyric.hpp)
+    include/Lyrics.hpp)
 
 # 如果你想把它编译成一个库供其他程序使用：
 # add_library(TagReaderLib STATIC ${SOURCES})
