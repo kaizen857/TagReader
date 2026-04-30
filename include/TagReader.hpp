@@ -90,8 +90,19 @@ private:
 
     static void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata);
     static void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadID3v2Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
+    static void ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize);
+    static void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::string_view mimeType, const uint8_t *imageData, std::size_t imageSize);
     static void ReadVorbisCommentMetadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size);
+    static void ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view entry);
+    static void ReadOggVorbisComments(ReadContext &context, RawMetadata &metadata);
+    static void ReadFlacPictureBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size);
+    static void ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata, const uint8_t *pictureData, std::size_t pictureSize);
     static void ReadMP4Metadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit, std::uint32_t depth = 0);
+    static void ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
+    static void ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uint32_t dataType, const uint8_t *payload, std::size_t payloadSize);
     static void ExtractCoverToTempFile(ReadContext &context, RawMetadata &metadata);
 };
 
