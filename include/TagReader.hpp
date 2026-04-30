@@ -5,10 +5,14 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+struct AVFormatContext;
 
 class TagReader
 {
@@ -18,7 +22,20 @@ public:
 private:
     struct ReadContext
     {
+        struct FormatContextDeleter
+        {
+            void operator()(AVFormatContext *context) const noexcept;
+        };
+
         std::filesystem::path filePath;
+        std::ifstream input;
+        std::uintmax_t fileSize{};
+        std::filesystem::file_time_type lastModified{};
+        std::unique_ptr<AVFormatContext, FormatContextDeleter> formatContext;
+        int audioStreamIndex{-1};
+        std::string containerName;
+        std::string containerLongName;
+        std::vector<std::string> metadataSourcePriority;
     };
 
     struct RawMediaInfo
@@ -64,7 +81,7 @@ private:
 private:
     static void ValidatePath(const std::filesystem::path &filePath);
     static ReadContext OpenContext(const std::filesystem::path &filePath);
-    static void DetectStream(const ReadContext &context);
+    static void DetectStream(ReadContext &context);
     static RawMediaInfo ReadMediaInfo(const ReadContext &context);
     static RawMetadata ReadMetadata(const ReadContext &context);
     static RawLyrics ReadLyrics(const ReadContext &context);
