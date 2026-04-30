@@ -83,10 +83,16 @@ private:
     static ReadContext OpenContext(const std::filesystem::path &filePath);
     static void DetectStream(ReadContext &context);
     static RawMediaInfo ReadMediaInfo(const ReadContext &context);
-    static RawMetadata ReadMetadata(const ReadContext &context);
+    static RawMetadata ReadMetadata(ReadContext &context);
     static RawLyrics ReadLyrics(const ReadContext &context);
     static DecodedField NormalizeText(std::string_view value);
     static MusicTag BuildMusicTag(const RawMediaInfo &mediaInfo, const RawMetadata &metadata, const RawLyrics &lyrics);
+
+    static void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadVorbisCommentMetadata(ReadContext &context, RawMetadata &metadata);
+    static void ReadMP4Metadata(ReadContext &context, RawMetadata &metadata);
+    static void ExtractCoverToTempFile(ReadContext &context, RawMetadata &metadata);
 };
 
 #endif

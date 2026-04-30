@@ -8,6 +8,7 @@ namespace
 {
 void PrintTag(const MusicTag &tag)
 {
+    // 逐字段打印，便于人工确认解析结果和默认值是否符合预期。
     std::cout << "filePath: " << tag.filePath().string() << '\n';
     std::cout << "title: " << tag.title() << '\n';
     std::cout << "artist: " << tag.artist() << '\n';
@@ -34,6 +35,7 @@ void PrintTag(const MusicTag &tag)
 
 int main(int argc, char *argv[])
 {
+    // 测试程序只接受一个音频文件路径，便于直接从终端验证库行为。
     if (argc < 2)
     {
         std::cerr << "usage: " << argv[0] << " <audio-file-path>\n";
