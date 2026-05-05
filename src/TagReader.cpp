@@ -554,6 +554,7 @@ TagReader::RawMetadata TagReader::ReadMetadata(ReadContext &context)
     metadata.rating = 0;
 
     ExtractCoverToTempFile(context, metadata);
+    NormalizeMetadata(metadata);
 
     return metadata;
 }
@@ -1323,18 +1324,586 @@ void TagReader::ExtractCoverToTempFile(ReadContext &context, RawMetadata &metada
     (void)metadata;
 }
 
-TagReader::RawLyrics TagReader::ReadLyrics(const ReadContext &context)
+void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
 {
-    (void)context;
-    NotImplemented("TagReader::ReadLyrics");
-    return {};
+    if (!context.input.is_open() || context.fileSize < 10)
+    {
+        return;
+    }
+
+    const std::vector<uint8_t> header = ReadRange(context.input, 0, 10);
+    if (header.size() != 10 || std::memcmp(header.data(), "ID3", 3) != 0)
+    {
+        return;
+    }
+
+    const uint8_t versionMajor = header[3];
+    const uint8_t flags = header[5];
+    const uint32_t tagSize = ReadSyncSafe32(header.data() + 6);
+    std::size_t cursor = 10;
+    if ((flags & 0x40) != 0 && tagSize >= 4)
+    {
+        const std::vector<uint8_t> extHeader = ReadRange(context.input, cursor, 4);
+        if (extHeader.size() == 4)
+        {
+            const uint32_t extSize = versionMajor >= 4 ? ReadSyncSafe32(extHeader.data()) : ReadBE32(extHeader.data());
+            cursor += 4 + static_cast<std::size_t>(extSize);
+        }
+    }
+
+    const std::size_t tagEnd = std::min<std::size_t>(static_cast<std::size_t>(10 + tagSize), static_cast<std::size_t>(context.fileSize));
+    while (cursor + 10 <= tagEnd)
+    {
+        const std::vector<uint8_t> frameHeader = ReadRange(context.input, cursor, 10);
+        if (frameHeader.size() != 10 || frameHeader[0] == 0)
+        {
+            break;
+        }
+
+        const std::string frameId(reinterpret_cast<const char *>(frameHeader.data()), 4);
+        const uint32_t frameSize = versionMajor >= 4 ? ReadSyncSafe32(frameHeader.data() + 4) : ReadBE32(frameHeader.data() + 4);
+        if (frameSize == 0 || cursor + 10 + frameSize > tagEnd)
+        {
+            break;
+        }
+
+        const std::vector<uint8_t> frameData = ReadRange(context.input, cursor + 10, frameSize);
+        if (frameData.size() != frameSize)
+        {
+            break;
+        }
+
+        if (frameId == "USLT")
+        {
+            if (frameData.size() > 4)
+            {
+                std::size_t p = 0;
+                const uint8_t encoding = frameData[p++];
+                p += 3;
+                while (p < frameData.size() && frameData[p] != 0)
+                {
+                    ++p;
+                }
+                ++p;
+                std::string text;
+                if (p < frameData.size())
+                {
+                    text = (encoding == 1) ? ReadUtf16Text(frameData.data() + p, frameData.size() - p, false)
+                                           : (encoding == 2) ? ReadUtf16Text(frameData.data() + p, frameData.size() - p, true)
+                                                             : ReadUtf8Text(frameData.data() + p, frameData.size() - p);
+                }
+                AppendPlainLyrics(lyrics, std::move(text));
+            }
+        }
+        else if (frameId == "SYLT")
+        {
+            if (frameData.size() > 6)
+            {
+                const uint8_t encoding = frameData[0];
+                std::size_t p = 1 + 3; // encoding + language
+                while (p < frameData.size() && frameData[p] != 0)
+                {
+                    ++p;
+                }
+                ++p;
+                if (p >= frameData.size())
+                {
+                    break;
+                }
+
+                const uint8_t timestampFormat = frameData[1 + 3 + 1];
+                (void)timestampFormat;
+                while (p < frameData.size())
+                {
+                    const std::size_t textStart = p;
+                    while (p < frameData.size() && frameData[p] != 0)
+                    {
+                        ++p;
+                    }
+                    const std::string line = (encoding == 1) ? ReadUtf16Text(frameData.data() + textStart, p - textStart, false)
+                                                             : (encoding == 2) ? ReadUtf16Text(frameData.data() + textStart, p - textStart, true)
+                                                                               : ReadUtf8Text(frameData.data() + textStart, p - textStart);
+                    ++p;
+                    if (p + 4 > frameData.size())
+                    {
+                        break;
+                    }
+                    const uint32_t timestampMs = ReadBE32(frameData.data() + p);
+                    p += 4;
+                    AppendTimedLyrics(lyrics, std::chrono::microseconds(static_cast<int64_t>(timestampMs) * 1000), std::move(line));
+                }
+            }
+        }
+        else if (frameId == "TXXX")
+        {
+            // 自定义文本歌词，取第一个文本内容作为纯文本歌词补充。
+            if (frameData.size() > 1)
+            {
+                const std::string value = ReadId3TextFrame(frameData.data(), frameData.size());
+                AppendPlainLyrics(lyrics, value);
+            }
+        }
+
+        cursor += 10 + static_cast<std::size_t>(frameSize);
+    }
+}
+
+void TagReader::ReadVorbisLyrics(ReadContext &context, RawLyrics &lyrics)
+{
+    if (!context.input.is_open())
+    {
+        return;
+    }
+
+    const std::string container = ToLower(context.containerName);
+    if (container.find("flac") != std::string::npos)
+    {
+        const std::vector<uint8_t> probe = ReadRange(context.input, 4, static_cast<std::size_t>(context.fileSize > 4 ? std::min<std::uintmax_t>(context.fileSize - 4, 8192) : 0));
+        if (probe.empty())
+        {
+            return;
+        }
+
+        // FLAC 的歌词通常位于 Vorbis Comment 中，这里直接按 key=value 扫描。
+        std::size_t offset = 0;
+        while (offset + 4 <= probe.size())
+        {
+            const uint32_t blockHeader = ReadBE32(probe.data() + offset);
+            const uint8_t blockType = static_cast<uint8_t>(blockHeader >> 24) & 0x7F;
+            const uint32_t blockSize = blockHeader & 0x00FFFFFF;
+            offset += 4;
+            if (offset + blockSize > probe.size())
+            {
+                break;
+            }
+
+            if (blockType == 4)
+            {
+                std::size_t p = offset;
+                if (p + 4 > probe.size()) break;
+                const uint32_t vendorLen = ReadBE32(probe.data() + p); p += 4;
+                if (p + vendorLen > probe.size()) break;
+                p += vendorLen;
+                if (p + 4 > probe.size()) break;
+                const uint32_t commentCount = ReadBE32(probe.data() + p); p += 4;
+                for (uint32_t i = 0; i < commentCount && p + 4 <= probe.size(); ++i)
+                {
+                    const uint32_t len = ReadBE32(probe.data() + p); p += 4;
+                    if (p + len > probe.size()) break;
+                    const std::string_view entry(reinterpret_cast<const char *>(probe.data() + p), len);
+                    const auto eq = entry.find('=');
+                    if (eq != std::string_view::npos)
+                    {
+                        ReadVorbisLyricsEntry(lyrics, entry.substr(0, eq), entry.substr(eq + 1));
+                    }
+                    p += len;
+                }
+            }
+
+            offset += blockSize;
+            if ((blockHeader >> 31) != 0)
+            {
+                break;
+            }
+        }
+        return;
+    }
+
+    if (container.find("ogg") != std::string::npos || container.find("vorbis") != std::string::npos)
+    {
+        const std::vector<uint8_t> probe = ReadRange(context.input, 0, static_cast<std::size_t>(std::min<std::uintmax_t>(context.fileSize, 4096)));
+        if (probe.size() < 27 || std::string_view(reinterpret_cast<const char *>(probe.data()), 4) != "OggS")
+        {
+            return;
+        }
+
+        std::uintmax_t cursor = 0;
+        while (cursor + 27 <= context.fileSize)
+        {
+            const std::vector<uint8_t> pageHeader = ReadRange(context.input, cursor, 27);
+            if (pageHeader.size() != 27 || std::string_view(reinterpret_cast<const char *>(pageHeader.data()), 4) != "OggS")
+            {
+                break;
+            }
+
+            const uint8_t segmentCount = pageHeader[26];
+            const std::vector<uint8_t> segmentTable = ReadRange(context.input, cursor + 27, segmentCount);
+            if (segmentTable.size() != segmentCount)
+            {
+                break;
+            }
+
+            std::size_t payloadSize = 0;
+            for (uint8_t seg : segmentTable)
+            {
+                payloadSize += seg;
+            }
+
+            const std::vector<uint8_t> payload = ReadRange(context.input, cursor + 27 + segmentCount, payloadSize);
+            if (payload.size() != payloadSize)
+            {
+                break;
+            }
+
+            if (payload.size() > 7 && std::string_view(reinterpret_cast<const char *>(payload.data()), 7) == "vorbis")
+            {
+                std::size_t p = 7;
+                if (p + 4 > payload.size()) break;
+                const uint32_t vendorLen = ReadBE32(payload.data() + p); p += 4;
+                if (p + vendorLen > payload.size()) break;
+                p += vendorLen;
+                if (p + 4 > payload.size()) break;
+                const uint32_t commentCount = ReadBE32(payload.data() + p); p += 4;
+                for (uint32_t i = 0; i < commentCount && p + 4 <= payload.size(); ++i)
+                {
+                    const uint32_t len = ReadBE32(payload.data() + p); p += 4;
+                    if (p + len > payload.size()) break;
+                    const std::string_view entry(reinterpret_cast<const char *>(payload.data() + p), len);
+                    const auto eq = entry.find('=');
+                    if (eq != std::string_view::npos)
+                    {
+                        ReadVorbisLyricsEntry(lyrics, entry.substr(0, eq), entry.substr(eq + 1));
+                    }
+                    p += len;
+                }
+                return;
+            }
+
+            cursor += 27 + segmentCount + payloadSize;
+        }
+    }
+
+    (void)lyrics;
+}
+
+void TagReader::ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics)
+{
+    if (!context.input.is_open())
+    {
+        return;
+    }
+
+    const std::string container = ToLower(context.containerName);
+    if (container.find("mp4") == std::string::npos && container.find("mov") == std::string::npos && container.find("m4") == std::string::npos)
+    {
+        return;
+    }
+
+    // MP4 里的歌词一般作为文本 item 存在，这里先扫描常见的 `ilst` 路径下的文本内容。
+    ReadMP4LyricsItem(context, lyrics, "©lyr", 0, context.fileSize);
+}
+
+void TagReader::ReadVorbisLyricsEntry(RawLyrics &lyrics, std::string_view key, std::string_view value)
+{
+    const std::string lowerKey = ToLower(std::string(key));
+    if (lowerKey == "lyrics" || lowerKey == "unsyncedlyrics" || lowerKey == "lyric")
+    {
+        ReadLyricsFromPlainText(lyrics, value);
+    }
+    else if (lowerKey == "sylt" || lowerKey == "syncedlyrics")
+    {
+        ReadLyricsFromPlainText(lyrics, value);
+    }
+}
+
+void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text)
+{
+    std::string plain;
+    std::vector<std::pair<std::chrono::microseconds, std::string>> timed;
+
+    std::size_t start = 0;
+    while (start <= text.size())
+    {
+        const std::size_t end = text.find_first_of("\r\n", start);
+        const std::string_view line = text.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+
+        if (!line.empty())
+        {
+            std::size_t pos = 0;
+            bool matchedTimestamp = false;
+            while (pos < line.size() && line[pos] == '[')
+            {
+                const std::size_t close = line.find(']', pos);
+                if (close == std::string_view::npos)
+                {
+                    break;
+                }
+
+                std::chrono::microseconds ts{};
+                if (ParseLrcTimestamp(line.substr(pos, close - pos + 1), ts))
+                {
+                    matchedTimestamp = true;
+                    const std::string lyricText = TrimText(std::string(line.substr(close + 1)));
+                    if (!lyricText.empty())
+                    {
+                        timed.emplace_back(ts, lyricText);
+                    }
+                }
+                pos = close + 1;
+            }
+
+            if (!matchedTimestamp)
+            {
+                if (!plain.empty())
+                {
+                    plain.push_back('\n');
+                }
+                plain.append(std::string(line));
+            }
+        }
+
+        if (end == std::string_view::npos)
+        {
+            break;
+        }
+
+        start = end + 1;
+        while (start < text.size() && (text[start] == '\r' || text[start] == '\n'))
+        {
+            ++start;
+        }
+    }
+
+    if (!timed.empty())
+    {
+        lyrics.timedLines = std::move(timed);
+    }
+    else
+    {
+        AppendPlainLyrics(lyrics, std::move(plain.empty() ? std::string(text) : plain));
+    }
+}
+
+TagReader::RawLyrics TagReader::ReadLyrics(ReadContext &context)
+{
+    RawLyrics lyrics{};
+    if (!context.input.is_open())
+    {
+        return lyrics;
+    }
+
+    const std::string container = ToLower(context.containerName);
+    // 歌词入口只负责分发，不直接承载解析细节。
+    if (container.find("mp3") != std::string::npos || container.find("mpeg") != std::string::npos)
+    {
+        ReadID3Lyrics(context, lyrics);
+    }
+    else if (container.find("flac") != std::string::npos || container.find("ogg") != std::string::npos || container.find("vorbis") != std::string::npos)
+    {
+        ReadVorbisLyrics(context, lyrics);
+    }
+    else if (container.find("mp4") != std::string::npos || container.find("mov") != std::string::npos || container.find("m4") != std::string::npos)
+    {
+        ReadMP4Lyrics(context, lyrics);
+    }
+
+    NormalizeLyrics(lyrics);
+
+    return lyrics;
 }
 
 TagReader::DecodedField TagReader::NormalizeText(std::string_view value)
 {
-    (void)value;
-    NotImplemented("TagReader::NormalizeText");
-    return {};
+    DecodedField field{};
+    field.value.assign(value.begin(), value.end());
+    field.encoding = "utf-8";
+
+    // 当前阶段先做 UTF-8 合法性校验，非法则保守失败，避免写入乱码。
+    const auto isValidUtf8 = [](std::string_view text) {
+        const auto *ptr = reinterpret_cast<const unsigned char *>(text.data());
+        std::size_t i = 0;
+        while (i < text.size())
+        {
+            const unsigned char c = ptr[i];
+            if (c <= 0x7F)
+            {
+                ++i;
+                continue;
+            }
+
+            std::size_t need = 0;
+            if ((c & 0xE0) == 0xC0) need = 1;
+            else if ((c & 0xF0) == 0xE0) need = 2;
+            else if ((c & 0xF8) == 0xF0) need = 3;
+            else return false;
+
+            if (i + need >= text.size())
+            {
+                return false;
+            }
+            for (std::size_t j = 1; j <= need; ++j)
+            {
+                if ((ptr[i + j] & 0xC0) != 0x80)
+                {
+                    return false;
+                }
+            }
+            i += need + 1;
+        }
+        return true;
+    };
+
+    field.success = isValidUtf8(value);
+    if (!field.success)
+    {
+        field.value.clear();
+        field.encoding.clear();
+    }
+
+    return field;
+}
+
+void TagReader::NormalizeMetadata(RawMetadata &metadata)
+{
+    auto normalize = [](std::string &text) {
+        const DecodedField field = NormalizeText(text);
+        if (field.success)
+        {
+            text = field.value;
+        }
+        else
+        {
+            text.clear();
+        }
+    };
+
+    normalize(metadata.title);
+    normalize(metadata.genre);
+    normalize(metadata.artist);
+    normalize(metadata.album);
+    normalize(metadata.albumArtist);
+    normalize(metadata.composer);
+}
+
+void TagReader::NormalizeLyrics(RawLyrics &lyrics)
+{
+    if (!lyrics.text.empty())
+    {
+        const DecodedField field = NormalizeText(lyrics.text);
+        lyrics.text = field.success ? field.value : std::string{};
+    }
+
+    for (auto &line : lyrics.timedLines)
+    {
+        const DecodedField field = NormalizeText(line.second);
+        line.second = field.success ? field.value : std::string{};
+    }
+
+    lyrics.timedLines.erase(std::remove_if(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &line) {
+        return line.second.empty();
+    }), lyrics.timedLines.end());
+}
+
+void TagReader::AppendPlainLyrics(RawLyrics &lyrics, std::string text)
+{
+    text = TrimText(std::move(text));
+    if (!text.empty())
+    {
+        lyrics.text = std::move(text);
+    }
+}
+
+void TagReader::AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds timestamp, std::string text)
+{
+    text = TrimText(std::move(text));
+    if (text.empty())
+    {
+        return;
+    }
+
+    lyrics.timedLines.emplace_back(timestamp, std::move(text));
+}
+
+void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit)
+{
+    if (!context.input.is_open() || offset >= limit)
+    {
+        return;
+    }
+
+    const std::string_view target = atomType;
+    const std::vector<uint8_t> buffer = ReadRange(context.input, offset, static_cast<std::size_t>(limit - offset));
+    if (buffer.size() < 8)
+    {
+        return;
+    }
+
+    // 这里不做完整 `ilst` 解包，只针对常见文本歌词块做线性扫描。
+    std::size_t cursor = 0;
+    while (cursor + 8 <= buffer.size())
+    {
+        uint64_t size = ReadBE32(buffer.data() + cursor);
+        const std::string type(reinterpret_cast<const char *>(buffer.data() + cursor + 4), 4);
+        std::size_t payloadOffset = cursor + 8;
+        if (size == 1)
+        {
+            if (cursor + 16 > buffer.size())
+            {
+                return;
+            }
+            size = (static_cast<uint64_t>(ReadBE32(buffer.data() + cursor + 8)) << 32) | ReadBE32(buffer.data() + cursor + 12);
+            payloadOffset = cursor + 16;
+        }
+
+        if (size < 8 || cursor + size > buffer.size())
+        {
+            return;
+        }
+
+        if (type == std::string(target) || type == "data")
+        {
+            if (payloadOffset + 8 <= cursor + size)
+            {
+                const uint32_t dataType = ReadBE32(buffer.data() + payloadOffset);
+                const std::size_t dataStart = payloadOffset + 8;
+                if (dataStart <= cursor + size)
+                {
+                    const std::string text = ReadUtf8Text(buffer.data() + dataStart, static_cast<std::size_t>(cursor + size - dataStart));
+                    if (!text.empty())
+                    {
+                        AppendPlainLyrics(lyrics, text);
+                    }
+                    (void)dataType;
+                }
+            }
+        }
+
+        cursor += static_cast<std::size_t>(size);
+    }
+}
+
+bool TagReader::ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timestamp)
+{
+    const auto close = token.find(']');
+    if (token.empty() || token.front() != '[' || close == std::string_view::npos)
+    {
+        return false;
+    }
+
+    const std::string timePart = std::string(token.substr(1, close - 1));
+    const auto colon = timePart.find(':');
+    if (colon == std::string::npos)
+    {
+        return false;
+    }
+
+    const int minutes = static_cast<int>(ParseUInt16(timePart.substr(0, colon)));
+    const std::string secondsPart = timePart.substr(colon + 1);
+    const auto dot = secondsPart.find('.');
+    const int seconds = static_cast<int>(ParseUInt16(dot == std::string::npos ? secondsPart : secondsPart.substr(0, dot)));
+    int millis = 0;
+    if (dot != std::string::npos)
+    {
+        std::string frac = secondsPart.substr(dot + 1);
+        while (frac.size() < 3)
+        {
+            frac.push_back('0');
+        }
+        millis = static_cast<int>(ParseUInt16(frac.substr(0, 3)));
+    }
+
+    timestamp = std::chrono::minutes(minutes) + std::chrono::seconds(seconds) + std::chrono::milliseconds(millis);
+    return true;
 }
 
 MusicTag TagReader::BuildMusicTag(const RawMediaInfo &mediaInfo, const RawMetadata &metadata, const RawLyrics &lyrics)

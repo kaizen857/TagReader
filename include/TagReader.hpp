@@ -84,8 +84,10 @@ private:
     static void DetectStream(ReadContext &context);
     static RawMediaInfo ReadMediaInfo(const ReadContext &context);
     static RawMetadata ReadMetadata(ReadContext &context);
-    static RawLyrics ReadLyrics(const ReadContext &context);
+    static RawLyrics ReadLyrics(ReadContext &context);
     static DecodedField NormalizeText(std::string_view value);
+    static void NormalizeMetadata(RawMetadata &metadata);
+    static void NormalizeLyrics(RawLyrics &lyrics);
     static MusicTag BuildMusicTag(const RawMediaInfo &mediaInfo, const RawMetadata &metadata, const RawLyrics &lyrics);
 
     static void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata);
@@ -104,6 +106,16 @@ private:
     static void ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
     static void ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uint32_t dataType, const uint8_t *payload, std::size_t payloadSize);
     static void ExtractCoverToTempFile(ReadContext &context, RawMetadata &metadata);
+
+    static void ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics);
+    static void ReadVorbisLyrics(ReadContext &context, RawLyrics &lyrics);
+    static void ReadVorbisLyricsEntry(RawLyrics &lyrics, std::string_view key, std::string_view value);
+    static void ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text);
+    static void ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics);
+    static void ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
+    static void AppendPlainLyrics(RawLyrics &lyrics, std::string text);
+    static void AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds timestamp, std::string text);
+    static bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timestamp);
 };
 
 #endif
