@@ -1,107 +1,264 @@
-# TagReader 任务拆分
+# TagReader 修复任务拆分
 
-本文件仅保留第五阶段，用于后续按顺序实现 `TagReader` 的真实读取逻辑。
+本文件覆盖旧的实现阶段计划，改为只跟踪 `BUGS.md` 中已确认问题的修复任务。任务按“先修协议级错读，再修字段映射，再补边界和收尾”的顺序排列。
 
-## 第五阶段: 完成 `TagReader` 具体实现
+## 目标
 
-目标是按 `DESIGN.md` 的顺序逐步补齐真正的读取逻辑，确保最终能够从文件路径读取出完整、规范化的 `MusicTag`。
+- 修复 `ID3v1` 字段缺失、错误映射和编码问题。
+- 让 `ID3v2` 真正同时支持 `v2.2`、`v2.3`、`v2.4`。
+- 修复 `ID3v2` 封面帧解析和过于激进的单帧失败策略。
+- 收紧 `FLAC` 路径的边界处理和字段兼容性。
+- 清理空的封面兜底调用点，避免误导后续维护。
 
-### 5.1 路径与文件状态检查
+## 执行顺序
 
-- 先实现 `ValidatePath()` 的基础检查顺序。
-- 在 `ValidatePath()` 内依次完成 `empty()`、`exists()`、`is_regular_file()`、`status()` / `permissions()` 可读性检查。
-- 为每一种失败情况定义清晰的异常类型或错误信息。
-- 如果后续实现需要额外的文件大小检查，再把它作为 `ValidatePath()` 的收尾步骤补进去。
-- 这一阶段只做最早期的输入过滤，不进入任何格式解析。
+1. 先修 `ID3v2` 的协议级问题。
+2. 再修 `ID3v1` 的字段与编码问题。
+3. 然后补 `FLAC` 的一致性和兼容性。
+4. 最后处理 `ExtractCoverToTempFile()` 的空实现与回归验证。
 
-### 5.2 打开文件并建立读取上下文
+## 第一组：ID3v2 主体修复
 
-- 先实现 `OpenContext()` 的返回骨架，让它返回内部 `ReadContext`。
-- 在 `ReadContext` 中保存后续读取必须的最小状态，例如文件路径、文件句柄或 FFmpeg 上下文句柄占位。
-- 先把 `avformat_open_input()` 的调用路径接起来，再补 `avformat_find_stream_info()`。
-- 如果需要单独的文件流通道，再在这里初始化并绑定到上下文生命周期。
-- 为上下文打开失败建立统一的清理路径。
+### 1.1 拆分 `ReadID3v2Metadata()` 的版本分发
 
-### 5.3 识别容器与音频流
+- 在 `src/TagReader.cpp` 内保留 ID3 tag header 的公共读取流程：签名检查、版本读取、flags、tag size、tag body 读取、tag 级 unsynchronization。
+- 将 frame 遍历逻辑从 `ReadID3v2Metadata()` 主体中拆出，避免把 `v2.2` 与 `v2.3/v2.4` 混在一套固定 header 里。
+- 新增内部辅助函数，名称可直接贴近现有风格：
+- `ReadID3v22Frames(ReadContext &, RawMetadata &, const std::vector<uint8_t> &)`
+- `ReadID3v23Or24Frames(ReadContext &, RawMetadata &, const std::vector<uint8_t> &, uint8_t versionMajor)`
+- `ReadID3v2Metadata()` 只负责：读取 tag body、处理扩展头、根据版本把剩余数据分发给对应 frame 解析函数。
 
-- 先实现 `DetectStream()` 的调度骨架。
-- 在 `DetectStream()` 中提取容器类型、主音频流索引和必要的流级信息。
-- 如果后续需要按容器分支，可在这里输出内部容器枚举或简化标识。
-- 将“找不到音频流”“容器不支持”“流信息不完整”拆成不同失败分支。
-- 这一阶段只负责判定和记录，不直接读取标签内容。
+### 1.2 为 ID3v2.2 实现正确的 frame header 解析
 
-### 5.4 读取基础媒体信息
+- 在 `ReadID3v22Frames(...)` 中按 6 字节 frame header 解析：
+- 3 字节 frame ID
+- 3 字节 big-endian frame size
+- 不要在 `v2.2` 路径里复用 `frameFlags`、10 字节 header 或 4 字节 frame ID 逻辑。
+- 为 `v2.2` 增加最小合法 frame ID 校验函数，避免直接复用只适配 4 字节 ID 的 `IsLikelyId3FrameId()`。
+- 新增 24-bit 大小读取如果现有 `ReadBE24()` 已可复用，则直接复用，不新增重复工具。
 
-- 先实现 `ReadMediaInfo()` 的最小返回流程。
-- 按字段逐个填充 `RawMediaInfo`，先做最基础的可获取信息，再补充推导信息。
-- 先把 `duration`、`sampleRate`、`bitRate`、`channels` 这些高优先级字段接上。
-- 如果后续需要 `bitDepth` 或 `format` 的额外推导，再单独补充局部逻辑。
-- 保持这一阶段只返回内部结构，不写入 `MusicTag`。
+### 1.3 为 ID3v2.2 建立字段帧映射
 
-### 5.5 提取元数据标签
+- 新增 `ReadID3v22Frame(...)`，专门处理 3 字节 frame ID。
+- 将下列 v2.2 帧映射到现有 `RawMetadata` 字段：
+- `TT2` -> `title`
+- `TP1` -> `artist`
+- `TAL` -> `album`
+- `TP2` -> `albumArtist`
+- `TCM` -> `composer`
+- `TCO` -> `genre`
+- `TYE` -> `year`
+- `TRK` -> `trackNumber`
+- `TPA` -> `discNumber`
+- `PIC` -> 封面提取
+- 文本 payload 继续复用 `ReadId3TextFrame()`，不要重写一套编码入口。
 
-- 先实现 `ReadMetadata()` 作为调度入口，只根据容器类型分发到具体格式函数。
-- 把每种格式的实现拆成独立小函数，例如 `readID3v1()`、`readID3v2()`、`readVorbisComment()`、`readMP4Atoms()`。
-- 每个格式函数内部再按字段拆分辅助逻辑，例如：
-- `readID3v1()` 负责固定 128 字节尾部标签解析。
-- `readID3v2()` 负责帧头、帧大小、帧遍历和常见文本帧解析。
-- `readVorbisComment()` 负责 `KEY=VALUE` 键值对提取与字段映射。
-- `readMP4Atoms()` 负责 atom/box 遍历和常见 `ilst` 项映射。
-- 先实现最常见字段的映射，再补充评分、播放次数、封面等扩展字段。
-- 同一格式内部，如果某些字段读取需要独立辅助函数，就继续拆分，不把所有字段逻辑堆在一个函数里。
-- 最终让 `ReadMetadata()` 只负责“选择格式函数 + 合并结果”，不承载具体格式细节。
-- 评分和播放次数不需要读取，直接保持为 `0`。
-- 封面需要从音频文件中提取出来，存放到系统临时文件夹中，然后将 `MusicTag` 中的 `coverPath_` 设置为该临时文件的路径。
-- 音频元数据字段必须通过直接打开并解析对应文件的原始内容获得，不能依靠 FFmpeg 的通用 metadata 表来读取歌名、歌手、专辑等字段；FFmpeg 只用于音频流数据、容器识别和基础媒体信息。
+### 1.4 保留并收紧 v2.3 / v2.4 现有解析路径
 
-### 5.6 解析歌词与扩展信息
+- 现有 `ReadID3v2Frame(...)` 继续保留用于 4 字节 frame ID 的版本。
+- 将当前 frame 循环里与 `v2.3/v2.4` 无关的逻辑留在新拆出的 `ReadID3v23Or24Frames(...)` 中。
+- 保持现有字段映射不变，除非需要顺带修明显 bug。
 
-- 先实现 `ReadLyrics()` 作为调度入口，只负责判断歌词来源并分发。
-- 把不同歌词来源拆成独立函数，例如 `readLRC()`、`readLyricsBlock()`、`readTimedLyrics()`、`readPlainLyrics()`。
-- 在每个来源函数里，再把“定位块”“提取原始文本”“拆分时间戳”拆开成更小的辅助函数。
-- 先实现最常见的纯文本歌词，再实现带时间戳的同步歌词。
-- 先保证“能够找到歌词并返回原始结构”，再补充异常情况和边界格式。
-- 让 `ReadLyrics()` 只负责调度和汇总，不承载歌词格式解析的核心细节。
+### 1.5 修复 `APIC` 图片帧的游标推进错误
 
-### 5.7 编码统一到 UTF-8
+- 检查 `ReadID3v2PictureFrame()` 中 MIME 终止符、picture type、description 的解析顺序。
+- 删除多余的一次 `++cursor`，确保游标推进顺序严格符合 APIC 结构：
+- text encoding
+- mime type
+- mime terminator
+- picture type
+- description
+- description terminator
+- image data
+- 修完后确认 description 为空字符串时也能正确落到 image data 起点。
 
-- 先实现字段级校验入口，按单个字段处理，不做整块统一假设。
-- 先把 `NormalizeText()` 做成可被复用的单字段入口。
-- 如果后续需要候选编码尝试，就把“验证 UTF-8”“尝试候选编码”“写回 UTF-8 结果”拆成更小函数。
-- 对 `RawMetadata` 和 `RawLyrics` 分别走各自的归一化路径，不要混在一个统一大函数里。
-- 允许引入 `simdutf` 或其他编码库增强校验与转码能力。
-- 最终写入 `MusicTag` 的必须是 UTF-8 `std::string`。
+### 1.6 为 ID3v2.2 的 `PIC` 实现独立封面解析
 
-### 5.8 组装并返回 `MusicTag`
+- 新增 `ReadID3v22PictureFrame(...)`，不要把 `PIC` 强塞进 `APIC` 逻辑。
+- `PIC` 的头部字段按 v2.2 规则处理：
+- 1 字节 encoding
+- 3 字节 image format，例如 `PNG` / `JPG`
+- 1 字节 picture type
+- description
+- image data
+- 图片落盘仍复用现有 `WriteBinaryFile()` 和 `MakeCoverPathForAudioFile()`。
+- `PNG` / `JPG` / `JPEG` 到扩展名的映射应在该函数内部完成，保持最小实现。
 
-- 先实现 `BuildMusicTag()` 的字段赋值骨架。
-- 先把所有已经确认的字段写入 `MusicTag`，不要一开始就引入复杂的优先级判断。
-- 将文本字段、数值字段、路径字段、时间字段分块赋值，避免一长串混在一起。
-- 如果某些字段存在多来源合并，就单独为该字段写局部合并逻辑。
-- 组装阶段结束后，直接返回最终 `MusicTag`。
+### 1.7 调整单帧失败策略，避免整段 ID3v2 直接失败
 
-### 5.9 错误处理与一致性收尾
+- 对不支持的压缩/加密 frame，不再 `throw` 终止整个读取过程。
+- 改为跳过该 frame，继续扫描后续 frame。
+- 只有以下情况继续保留 `throw`：
+- tag header 非法
+- tag size 非法
+- 扩展头尺寸非法
+- frame size 越界
+- 明确截断到无法继续安全扫描
+- 目标是“坏一个 frame 不影响整段标签中其他可读字段”。
 
-- 为 `ValidatePath()`、`OpenContext()`、`DetectStream()`、`ReadMediaInfo()`、`ReadMetadata()`、`ReadLyrics()`、`NormalizeText()`、`BuildMusicTag()` 分别明确失败边界。
-- 明确区分输入无效、文件不可读、容器不支持、标签损坏、歌词损坏、编码失败等错误类型。
-- 确保失败时不会泄露部分中间结果。
-- 确保成功时所有文本字段都已规范化为 UTF-8。
-- 确保同一文件在相同环境下读取结果稳定一致。
+### 1.8 检查歌词路径里的 ID3 版本兼容
 
-## 推荐执行顺序
+- `ReadID3Lyrics()` 当前也接受 `versionMajor == 2`，但 frame 结构同样是按 10 字节 header 处理。
+- 如果本轮修复范围允许，至少把这个问题记为代码同步点：
+- 要么让歌词路径和 metadata 路径复用同样的版本分发
+- 要么明确先只修 metadata，再单独补歌词
+- 如果不在本轮实现，至少不要让任务执行者遗漏这条同类问题。
 
-1. 先实现路径与文件状态检查。
-2. 再实现上下文打开与容器识别。
-3. 然后实现基础媒体信息读取。
-4. 接着实现元数据提取。
-5. 再实现歌词解析。
-6. 然后实现编码统一。
-7. 最后实现 `MusicTag` 组装与错误收尾。
+## 第二组：ID3v1 修复
+
+### 2.1 用 Latin-1 解码 ID3v1 文本字段
+
+- 修改 `ReadID3v1Metadata()` 中的 `readField` 局部逻辑。
+- 不再直接构造 `std::string(buffer.data() + offset, size)`。
+- 改为复用现有 `ReadLatin1Text()`，把 ID3v1 原始字节显式转成 UTF-8 字符串。
+- 修复完成后，`NormalizeMetadata()` 不应再把常见 Latin-1 文本清空。
+
+### 2.2 补充 `year` 字段读取
+
+- 在 `ReadID3v1Metadata()` 中增加对偏移 `93-96` 的读取。
+- 使用与现有数值字段一致的路径：取文本 -> `TrimText`/等价逻辑 -> `ParseUInt16()`。
+- 只在 `metadata.year == 0` 时回填，避免覆盖优先级更高的来源。
+
+### 2.3 实现 `genre` index 到字符串的映射
+
+- 在匿名命名空间中增加一个最小可用的 ID3v1 genre 表。
+- `ReadID3v1Metadata()` 从 `buffer[127]` 读取 index。
+- 如果 index 落在表范围内，写入对应 genre 字符串。
+- 如果 index 超出表范围，保持空值，不要伪造数字字符串。
+
+### 2.4 删除错误的 `comment -> composer` 映射
+
+- 从 `ReadID3v1Metadata()` 中移除“comment 非空且 composer 为空时写入 composer”的逻辑。
+- 当前公共模型没有 comment 字段，就不要把它塞进无关字段。
+
+### 2.5 保持并复核 ID3v1.1 的 track number 逻辑
+
+- 保留 `buffer[125] == '\0'` 时从 `buffer[126]` 读取 track number 的逻辑。
+- 顺带确认 comment 区段的理解与 v1.1 结构一致，避免后续有人误把 comment 的 30 字节布局当成总是成立。
+
+## 第三组：FLAC 路径补强
+
+### 3.1 保持 FLAC 现有分层，不做结构性重写
+
+- 继续保留：
+- `ReadVorbisCommentMetadata()`
+- `ReadVorbisCommentBlock()`
+- `ReadVorbisCommentEntry()`
+- `ReadFlacPictureBlock()`
+- `ReadFlacPictureEntry()`
+- 后续改动都在这些函数内部或附近补强，不把它们重新合并成大函数。
+
+### 3.2 统一 FLAC 块损坏时的失败策略
+
+- 逐个核对 `ReadVorbisCommentBlock()` 与 `ReadFlacPictureBlock()` 当前是 `return` 还是 `throw`。
+- 统一原则：
+- 文件签名错误、块大小越界、已声明块无法完整读出时，抛异常。
+- 非关键字段无法识别时，跳过并继续。
+- 保持“结构损坏失败，内容未知可跳过”的一致风格。
+
+### 3.3 补充常见 Vorbis Comment 别名
+
+- 在 `ReadVorbisCommentEntry()` 中补全最常见别名，但只补公共模型需要的字段。
+- 至少检查并考虑这些 key：
+- `tracktotal`
+- `totaltracks`
+- `disctotal`
+- `totaldiscs`
+- 如果 `MusicTag` 没有总数位，就只保证主值字段不被这些别名干扰，不新增公共字段。
+
+### 3.4 统一 Vorbis Comment 的覆盖策略
+
+- 检查当前各字段是“后写覆盖先写”还是“仅在空值时回填”。
+- 选定一个一致策略并贯彻到 `title`、`artist`、`albumArtist`、`composer`、`genre`、`year`、`trackNumber`、`discNumber`。
+- 优先建议：
+- 对明显同义别名只在目标字段为空时回填
+- 对主字段本身第一次命中后不要被弱别名覆盖
+
+### 3.5 复核 FLAC 封面优先级逻辑
+
+- 保留 `pictureType == 3` 的 front cover 优先级。
+- 确认“已有封面但新图片不是 front cover 时不覆盖”的逻辑继续成立。
+- 不要让后续兼容性修改破坏现有封面选择规则。
+
+## 第四组：空封面兜底逻辑清理
+
+### 4.1 处理 `ExtractCoverToTempFile()` 的空实现
+
+- 当前 `ReadMetadata()` 总会调用 `ExtractCoverToTempFile()`，但该函数为空。
+- 推荐最小修复方案：
+- 删除 `ReadMetadata()` 中对 `ExtractCoverToTempFile()` 的调用
+- 或者保留该函数但明确注释“当前无通用兜底封面实现”
+- 更推荐删除调用点，减少误导。
+
+### 4.2 避免与格式专有封面逻辑重复覆盖
+
+- 无论采用删除调用还是实现兜底，都要确保不会覆盖：
+- ID3 `APIC` / `PIC`
+- FLAC picture block
+- MP4 `covr`
+- 当前默认方向是不新增新的通用封面提取通道，只清理空逻辑。
+
+## 第五组：验证任务
+
+### 5.1 基础构建验证
+
+- 使用 `cmake --build build` 验证 `TagReaderCore` 和 `TagReaderTest` 能通过编译。
+- 如果 `build/` 不存在，先运行 `cmake -S . -B build`。
+
+### 5.2 ID3v1 样本验证
+
+- 准备至少一份仅依赖 ID3v1 的 MP3 样本。
+- 验证输出字段：
+- `title`
+- `artist`
+- `album`
+- `year`
+- `genre`
+- `trackNumber`
+- `composer` 不应再被 comment 污染
+- 至少准备一份包含 Latin-1 非 ASCII 字符的样本，确认文本不会被归一化清空。
+
+### 5.3 ID3v2.2 样本验证
+
+- 准备真实 `ID3v2.2` 文件。
+- 验证：
+- 基本文本帧可读
+- `PIC` 封面可落盘
+- 不会再因 10 字节 header 假设导致解析失败
+
+### 5.4 ID3v2.3 / v2.4 样本验证
+
+- 准备 `v2.3` 和 `v2.4` 文件各至少一份。
+- 验证：
+- `TIT2/TPE1/TALB/TCON/TDRC/TRCK/TPOS` 仍能正确读取
+- `APIC` 修复后可稳定导出封面
+- 含不支持 frame 的文件不会整段读取失败
+
+### 5.5 FLAC 样本验证
+
+- 准备标准 FLAC + Vorbis Comment + PICTURE 样本。
+- 如有条件，再准备包含字段别名和脏数据边界的样本。
+- 验证：
+- 常见字段映射正确
+- front cover 优先规则不变
+- 损坏块时的行为符合新的失败策略
+
+### 5.6 手动程序输出核对
+
+- 使用 `./build/TagReaderTest <audio-file-path>` 逐个检查输出。
+- 重点关注：
+- `year`
+- `genre`
+- `trackNumber`
+- `discNumber`
+- `coverPath`
+- `lyricsCount`
 
 ## 完成标准
 
-- `TagReader` 能从输入路径开始完成完整读取流程。
-- 所有文本字段在写入 `MusicTag` 前都已转换为 UTF-8。
-- 与音频流无关的元数据优先通过文件内容直接读取。
-- 失败路径清晰，不返回半成品对象。
-- 最终结果符合 `DESIGN.md` 中关于读取流程和一致性的要求。
+- `BUGS.md` 中 `ID3v1`、`ID3v2`、`FLAC`、空封面兜底相关问题都已有对应代码任务。
+- `ID3v2` 能按版本正确分发并同时支持 `v2.2`、`v2.3`、`v2.4` 的 metadata 解析。
+- `ID3v1` 不再丢失 `year` / `genre`，也不再把 `comment` 错写到 `composer`。
+- `ID3v1` 常见 Latin-1 文本不会在归一化阶段被错误清空。
+- `APIC` / `PIC` / FLAC PICTURE / MP4 `covr` 的封面提取逻辑不会互相误覆盖。
+- 构建成功，且手动样本验证结果与修复目标一致。
