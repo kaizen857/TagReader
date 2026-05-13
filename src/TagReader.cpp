@@ -126,7 +126,11 @@ std::string MakeCoverPathForAudioFile(const std::filesystem::path &audioPath, st
     }
 
     const std::string stem = SanitizeFileStem(audioPath.stem().string());
-    return (tempDir / (stem + "." + ext)).string();
+    static std::atomic_uint64_t coverCounter{0};
+    const auto now = std::filesystem::file_time_type::clock::now().time_since_epoch().count();
+    const auto seq = coverCounter.fetch_add(1, std::memory_order_relaxed);
+
+    return (tempDir / (stem + "_" + std::to_string(now) + "_" + std::to_string(seq) + "." + ext)).string();
 }
 
 void WriteBinaryFile(const std::filesystem::path &path, const uint8_t *data, std::size_t size)
@@ -630,6 +634,17 @@ std::string ReadUtf8Text(const uint8_t *data, std::size_t size)
     return TrimText(std::move(value));
 }
 
+void RemoveUtf8Bom(std::string &value)
+{
+    if (value.size() >= 3 &&
+        static_cast<unsigned char>(value[0]) == 0xEF &&
+        static_cast<unsigned char>(value[1]) == 0xBB &&
+        static_cast<unsigned char>(value[2]) == 0xBF)
+    {
+        value.erase(0, 3);
+    }
+}
+
 std::string ReadUtf16Text(const uint8_t *data, std::size_t size, bool bigEndian)
 {
     std::string value;
@@ -734,6 +749,28 @@ std::string ReadId3TextFrame(const uint8_t *data, std::size_t size)
 
     return ReadId3ByteString(payload, payloadSize, encoding);
 }
+
+bool AtomTypeIs(std::string_view atomType, std::string_view expected)
+{
+    return atomType.size() == expected.size() && std::memcmp(atomType.data(), expected.data(), expected.size()) == 0;
+}
+
+constexpr std::array<char, 4> kMp4TitleAtom{static_cast<char>(0xA9), 'n', 'a', 'm'};
+constexpr std::array<char, 4> kMp4ArtistAtom{static_cast<char>(0xA9), 'A', 'R', 'T'};
+constexpr std::array<char, 4> kMp4AlbumAtom{static_cast<char>(0xA9), 'a', 'l', 'b'};
+constexpr std::array<char, 4> kMp4ComposerAtom{static_cast<char>(0xA9), 'w', 'r', 't'};
+constexpr std::array<char, 4> kMp4GenreAtom{static_cast<char>(0xA9), 'g', 'e', 'n'};
+
+constexpr std::array<std::string_view, 80> Id3v1Genres{
+    "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge", "Hip-Hop", "Jazz", "Metal",
+    "New Age", "Oldies", "Other", "Pop", "R&B", "Rap", "Reggae", "Rock", "Techno", "Industrial",
+    "Alternative", "Ska", "Death Metal", "Pranks", "Soundtrack", "Euro-Techno", "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk",
+    "Fusion", "Trance", "Classical", "Instrumental", "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise",
+    "AlternRock", "Bass", "Soul", "Punk", "Space", "Meditative", "Instrumental Pop", "Instrumental Rock", "Ethnic", "Gothic",
+    "Darkwave", "Techno-Industrial", "Electronic", "Pop-Folk", "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta",
+    "Top 40", "Christian Rap", "Pop/Funk", "Jungle", "Native American", "Cabaret", "New Wave", "Psychadelic", "Rave", "Showtunes",
+    "Trailer", "Lo-Fi", "Tribal", "Acid Punk", "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock",
+};
 
 } // namespace
 
@@ -846,7 +883,6 @@ TagReader::RawMetadata TagReader::ReadMetadata(ReadContext &context)
     metadata.playCount = 0;
     metadata.rating = 0;
 
-    ExtractCoverToTempFile(context, metadata);
     NormalizeMetadata(metadata);
 
     return metadata;
@@ -880,7 +916,7 @@ void TagReader::ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     }
 
     auto readField = [&](std::size_t offset, std::size_t size) {
-        return TrimText(std::string(buffer.data() + offset, size));
+        return ReadLatin1Text(reinterpret_cast<const uint8_t *>(buffer.data() + offset), size);
     };
 
     if (metadata.title.empty())
@@ -895,19 +931,23 @@ void TagReader::ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     {
         metadata.album = readField(63, 30);
     }
+    if (metadata.year == 0)
+    {
+        metadata.year = ParseUInt16(readField(93, 4));
+    }
     if (metadata.genre.empty())
     {
-        metadata.genre.clear();
+        const auto genreIndex = static_cast<unsigned char>(buffer[127]);
+        if (genreIndex < Id3v1Genres.size())
+        {
+            metadata.genre = std::string(Id3v1Genres[genreIndex]);
+        }
     }
 
-    const std::string comment = readField(97, 30);
+    // ID3v1.1 只有在 comment 第 29 字节为 0 时，最后 1 字节才表示 track number。
     if (metadata.trackNumber == 0 && buffer[125] == '\0')
     {
         metadata.trackNumber = static_cast<uint16_t>(static_cast<unsigned char>(buffer[126]));
-    }
-    if (metadata.composer.empty())
-    {
-        metadata.composer = comment;
     }
 }
 
@@ -968,7 +1008,8 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
             {
                 throw std::runtime_error("invalid ID3v2 extended header size");
             }
-            cursor = extSize;
+            // v2.3 的 size 不包含自身的 4 字节字段，真正跳过长度要再加上这 4 字节。
+            cursor = 4 + static_cast<std::size_t>(extSize);
         }
         else if (versionMajor == 4)
         {
@@ -990,6 +1031,52 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
         }
     }
 
+    if (versionMajor == 2)
+    {
+        ReadID3v22Frames(context, metadata, tagBytes, 0);
+        return;
+    }
+
+    ReadID3v23Or24Frames(context, metadata, tagBytes, versionMajor, cursor);
+}
+
+void TagReader::ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, std::size_t cursor)
+{
+    while (cursor + 6 <= tagBytes.size())
+    {
+        const uint8_t *frameHeader = tagBytes.data() + cursor;
+        if (frameHeader[0] == 0)
+        {
+            break;
+        }
+
+        const std::string frameId(reinterpret_cast<const char *>(frameHeader), 3);
+        if (!std::all_of(frameId.begin(), frameId.end(), [](unsigned char ch) {
+                return std::isalnum(ch) != 0 || ch == '_';
+            }))
+        {
+            throw std::runtime_error("invalid ID3v2.2 frame identifier");
+        }
+
+        const uint32_t frameSize = ReadBE24(frameHeader + 3);
+        if (frameSize == 0)
+        {
+            break;
+        }
+        if (cursor + 6 + frameSize > tagBytes.size())
+        {
+            throw std::runtime_error("truncated ID3v2.2 frame payload");
+        }
+
+        const uint8_t *frameData = tagBytes.data() + cursor + 6;
+        ReadID3v22Frame(context, metadata, frameId, frameData, frameSize);
+
+        cursor += 6 + static_cast<std::size_t>(frameSize);
+    }
+}
+
+void TagReader::ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor)
+{
     while (cursor + 10 <= tagBytes.size())
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
@@ -1001,13 +1088,16 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 4);
         if (!IsLikelyId3FrameId(frameId))
         {
-            throw std::runtime_error("invalid ID3v2 frame identifier");
+            cursor += 10;
+            continue;
         }
 
         const uint16_t frameFlags = static_cast<uint16_t>((frameHeader[8] << 8) | frameHeader[9]);
-        if ((frameFlags & 0x000C) != 0)
+        const bool hasUnsupportedFlags = versionMajor == 3 ? ((frameFlags & 0x00E0) != 0) : ((frameFlags & 0x004C) != 0);
+        if (hasUnsupportedFlags)
         {
-            throw std::runtime_error("unsupported compressed or encrypted ID3v2 frame");
+            cursor += 10;
+            continue;
         }
 
         uint32_t frameSize = 0;
@@ -1015,7 +1105,8 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
         {
             if (!IsValidSyncSafe32(frameHeader + 4))
             {
-                throw std::runtime_error("invalid ID3v2.4 frame size");
+                cursor += 10;
+                continue;
             }
             frameSize = ReadSyncSafe32(frameHeader + 4);
         }
@@ -1035,6 +1126,25 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
 
         std::vector<uint8_t> frameData(tagBytes.begin() + static_cast<std::ptrdiff_t>(cursor + 10),
                                        tagBytes.begin() + static_cast<std::ptrdiff_t>(cursor + 10 + frameSize));
+        if (versionMajor == 4 && (frameFlags & 0x0001) != 0)
+        {
+            if (frameData.size() < 4)
+            {
+                cursor += 10 + static_cast<std::size_t>(frameSize);
+                continue;
+            }
+
+            const uint32_t declaredSize = ReadSyncSafe32(frameData.data());
+            if (declaredSize > frameData.size() - 4)
+            {
+                cursor += 10 + static_cast<std::size_t>(frameSize);
+                continue;
+            }
+
+            frameData.erase(frameData.begin(), frameData.begin() + 4);
+            frameData.resize(declaredSize);
+        }
+
         if (versionMajor == 4 && (frameFlags & 0x0002) != 0)
         {
             frameData = RemoveId3Unsynchronization(std::move(frameData));
@@ -1044,6 +1154,119 @@ void TagReader::ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
 
         cursor += 10 + static_cast<std::size_t>(frameSize);
     }
+}
+
+void TagReader::ReadID3v22Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize)
+{
+    if (frameId == "PIC")
+    {
+        ReadID3v22PictureFrame(context, metadata, frameData, frameSize);
+        return;
+    }
+
+    const std::string value = ReadId3TextFrame(frameData, frameSize);
+    if (value.empty())
+    {
+        return;
+    }
+
+    if (frameId == "TT2")
+    {
+        metadata.title = value;
+    }
+    else if (frameId == "TP1")
+    {
+        metadata.artist = value;
+    }
+    else if (frameId == "TAL")
+    {
+        metadata.album = value;
+    }
+    else if (frameId == "TP2")
+    {
+        metadata.albumArtist = value;
+    }
+    else if (frameId == "TCM")
+    {
+        metadata.composer = value;
+    }
+    else if (frameId == "TCO")
+    {
+        metadata.genre = value;
+    }
+    else if (frameId == "TYE")
+    {
+        metadata.year = ParseUInt16(value);
+    }
+    else if (frameId == "TRK")
+    {
+        metadata.trackNumber = ParseSlashNumber(value).first;
+    }
+    else if (frameId == "TPA")
+    {
+        metadata.discNumber = ParseSlashNumber(value).first;
+    }
+}
+
+void TagReader::ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize)
+{
+    if (frameData == nullptr || frameSize < 6)
+    {
+        return;
+    }
+
+    const uint8_t encoding = frameData[0];
+    const std::string imageFormat(reinterpret_cast<const char *>(frameData + 1), 3);
+    const uint8_t pictureType = frameData[4];
+    const uint8_t *payload = frameData + 5;
+    const std::size_t payloadSize = frameSize - 5;
+
+    std::size_t cursor = 0;
+    while (cursor < payloadSize && payload[cursor] != 0)
+    {
+        ++cursor;
+    }
+    if (cursor >= payloadSize)
+    {
+        return;
+    }
+
+    ++cursor;
+    if (cursor >= payloadSize)
+    {
+        return;
+    }
+
+    const std::size_t descSize = FindEncodedTerminator(payload + cursor, payloadSize - cursor, encoding);
+    if (descSize >= payloadSize - cursor)
+    {
+        return;
+    }
+    cursor += descSize + EncodedTerminatorWidth(encoding);
+    if (cursor >= payloadSize)
+    {
+        return;
+    }
+
+    std::string extension = "bin";
+    const std::string lowerFormat = ToLower(imageFormat);
+    if (lowerFormat == "png")
+    {
+        extension = "png";
+    }
+    else if (lowerFormat == "jpg" || lowerFormat == "jpeg")
+    {
+        extension = "jpg";
+    }
+
+    if (pictureType != 3 && !metadata.coverPath.empty())
+    {
+        return;
+    }
+
+    const std::string tempPath = MakeCoverPathForAudioFile(context.filePath, extension);
+    WriteBinaryFile(tempPath, payload + cursor, payloadSize - cursor);
+    metadata.coverPath = tempPath;
 }
 
 void TagReader::ReadID3v2Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize)
@@ -1127,14 +1350,10 @@ void TagReader::ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadat
         return;
     }
 
+    const uint8_t pictureType = payload[cursor];
+    (void)pictureType;
     ++cursor;
     if (cursor >= payloadSize)
-    {
-        return;
-    }
-
-    ++cursor;
-    if (cursor > payloadSize)
     {
         return;
     }
@@ -1215,6 +1434,7 @@ void TagReader::ReadOggVorbisComments(ReadContext &context, RawMetadata &metadat
     }
 
     std::uintmax_t cursor = 0;
+    std::vector<uint8_t> packet;
     while (cursor + 27 <= context.fileSize)
     {
         const std::vector<uint8_t> pageHeader = ReadRange(context.input, cursor, 27);
@@ -1242,23 +1462,35 @@ void TagReader::ReadOggVorbisComments(ReadContext &context, RawMetadata &metadat
             return;
         }
 
-        if (payload.size() > 7 && std::string_view(reinterpret_cast<const char *>(payload.data()), 7) == "vorbis")
+        std::size_t payloadCursor = 0;
+        for (uint8_t segmentSize : segmentTable)
         {
-            std::size_t p = 7;
-            if (p + 4 > payload.size()) return;
-            const uint32_t vendorLen = ReadLE32(payload.data() + p); p += 4;
-            if (p + vendorLen > payload.size()) return;
-            p += vendorLen;
-            if (p + 4 > payload.size()) return;
-            const uint32_t commentCount = ReadLE32(payload.data() + p); p += 4;
-            for (uint32_t i = 0; i < commentCount && p + 4 <= payload.size(); ++i)
+            if (payloadCursor + segmentSize > payload.size())
             {
-                const uint32_t len = ReadLE32(payload.data() + p); p += 4;
-                if (p + len > payload.size()) return;
-                ReadVorbisCommentEntry(metadata, std::string_view(reinterpret_cast<const char *>(payload.data() + p), len));
-                p += len;
+                return;
             }
-            return;
+
+            packet.insert(packet.end(), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor + segmentSize));
+            payloadCursor += segmentSize;
+
+            if (segmentSize < 255)
+            {
+                if (packet.size() > 7 && packet[0] == 0x03 && std::string_view(reinterpret_cast<const char *>(packet.data() + 1), 6) == "vorbis")
+                {
+                    const uint8_t *commentData = packet.data() + 7;
+                    const std::size_t commentSize = packet.size() - 7;
+                    const bool ok = ForEachVorbisCommentEntry(commentData, commentSize, [&](std::string_view entry) {
+                        ReadVorbisCommentEntry(metadata, entry);
+                    });
+                    if (!ok)
+                    {
+                        return;
+                    }
+                    return;
+                }
+
+                packet.clear();
+            }
         }
 
         cursor += 27 + segmentCount + payloadSize;
@@ -1279,7 +1511,7 @@ void TagReader::ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metada
         const std::vector<uint8_t> blockHeader = ReadRange(context.input, cursor, 4);
         if (blockHeader.size() != 4)
         {
-            return;
+            throw std::runtime_error("failed to read FLAC metadata block header");
         }
 
         const bool lastBlock = (blockHeader[0] & 0x80) != 0;
@@ -1289,7 +1521,7 @@ void TagReader::ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metada
 
         if (cursor + blockSize > offset + size)
         {
-            return;
+            throw std::runtime_error("truncated FLAC metadata block");
         }
 
         if (blockType == 4)
@@ -1334,35 +1566,35 @@ void TagReader::ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view e
 
     if (key == "title")
     {
-        metadata.title = value;
+        if (metadata.title.empty()) metadata.title = value;
     }
     else if (key == "artist")
     {
-        metadata.artist = value;
+        if (metadata.artist.empty()) metadata.artist = value;
     }
     else if (key == "album")
     {
-        metadata.album = value;
+        if (metadata.album.empty()) metadata.album = value;
     }
     else if (key == "albumartist")
     {
-        metadata.albumArtist = value;
+        if (metadata.albumArtist.empty()) metadata.albumArtist = value;
     }
     else if (key == "album_artist" || key == "album artist")
     {
-        metadata.albumArtist = value;
+        if (metadata.albumArtist.empty()) metadata.albumArtist = value;
     }
     else if (key == "composer")
     {
-        metadata.composer = value;
+        if (metadata.composer.empty()) metadata.composer = value;
     }
     else if (key == "writer")
     {
-        metadata.composer = value;
+        if (metadata.composer.empty()) metadata.composer = value;
     }
     else if (key == "genre")
     {
-        metadata.genre = value;
+        if (metadata.genre.empty()) metadata.genre = value;
     }
     else if (key == "date" || key == "year")
     {
@@ -1376,11 +1608,19 @@ void TagReader::ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view e
     {
         metadata.trackNumber = metadata.trackNumber == 0 ? ParseSlashNumber(value).first : metadata.trackNumber;
     }
+    else if (key == "tracktotal" || key == "totaltracks")
+    {
+        metadata.trackNumber = metadata.trackNumber == 0 ? ParseSlashNumber(value).first : metadata.trackNumber;
+    }
     else if (key == "discnumber")
     {
         metadata.discNumber = metadata.discNumber == 0 ? ParseSlashNumber(value).first : metadata.discNumber;
     }
     else if (key == "disc" || key == "discnum")
+    {
+        metadata.discNumber = metadata.discNumber == 0 ? ParseSlashNumber(value).first : metadata.discNumber;
+    }
+    else if (key == "disctotal" || key == "totaldiscs")
     {
         metadata.discNumber = metadata.discNumber == 0 ? ParseSlashNumber(value).first : metadata.discNumber;
     }
@@ -1400,7 +1640,7 @@ void TagReader::ReadFlacPictureBlock(ReadContext &context, RawMetadata &metadata
         const std::vector<uint8_t> blockHeader = ReadRange(context.input, cursor, 4);
         if (blockHeader.size() != 4)
         {
-            return;
+            throw std::runtime_error("failed to read FLAC metadata block header");
         }
 
         const bool lastBlock = (blockHeader[0] & 0x80) != 0;
@@ -1409,16 +1649,17 @@ void TagReader::ReadFlacPictureBlock(ReadContext &context, RawMetadata &metadata
         cursor += 4;
         if (cursor + blockSize > offset + size)
         {
-            return;
+            throw std::runtime_error("truncated FLAC metadata block");
         }
 
         if (blockType == 6)
         {
             const std::vector<uint8_t> picture = ReadRange(context.input, cursor, blockSize);
-            if (picture.size() == blockSize)
+            if (picture.size() != blockSize)
             {
-                ReadFlacPictureEntry(context, metadata, picture.data(), picture.size());
+                throw std::runtime_error("failed to read FLAC picture block");
             }
+            ReadFlacPictureEntry(context, metadata, picture.data(), picture.size());
         }
 
         cursor += blockSize;
@@ -1469,6 +1710,7 @@ void TagReader::ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata
     }
 
     const bool isFrontCover = pictureType == 3;
+    // 已有封面时，只有 front cover 可以覆盖它，避免后读到的非主封面抢占结果。
     if (!metadata.coverPath.empty() && !isFrontCover)
     {
         return;
@@ -1538,6 +1780,11 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
 
         if (atomSize == 1)
         {
+            if (cursor + 16 > limit)
+            {
+                return;
+            }
+
             const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
             if (ext.size() != 8)
             {
@@ -1546,18 +1793,22 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
             atomSize = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
         }
 
-        if (atomSize < 8)
+        std::uintmax_t atomEnd = limit;
+        if (atomSize != 0)
         {
-            return;
+            if (atomSize < 8)
+            {
+                return;
+            }
+
+            atomEnd = cursor + static_cast<std::uintmax_t>(atomSize);
+            if (atomEnd < cursor || atomEnd > limit)
+            {
+                return;
+            }
         }
 
-        const std::uintmax_t atomEnd = cursor + static_cast<std::uintmax_t>(atomSize);
-        if (atomEnd > limit)
-        {
-            return;
-        }
-
-        if (atomType == "udta" || atomType == "meta" || atomType == "ilst" || atomType == "moov")
+        if (AtomTypeIs(atomType, "udta") || AtomTypeIs(atomType, "meta") || AtomTypeIs(atomType, "ilst") || AtomTypeIs(atomType, "moov"))
         {
             // 这些盒子后续要进一步细分，所以这里只递归进入更深层。
             const std::uintmax_t childOffset = atomType == "meta" ? cursor + 12 : cursor + 8;
@@ -1567,17 +1818,22 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
             }
         }
 
-        if (atomType == "©nam" || atomType == "©ART" || atomType == "aART" || atomType == "©alb" || atomType == "©wrt" || atomType == "©gen" || atomType == "trkn" || atomType == "disk" || atomType == "covr")
+        if (AtomTypeIs(atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size())) ||
+            AtomTypeIs(atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size())) ||
+            AtomTypeIs(atomType, "aART") ||
+            AtomTypeIs(atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size())) ||
+            AtomTypeIs(atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size())) ||
+            AtomTypeIs(atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size())) ||
+            AtomTypeIs(atomType, "trkn") || AtomTypeIs(atomType, "disk") || AtomTypeIs(atomType, "covr"))
         {
             ReadMP4ItemAtom(context, metadata, atomType, cursor + 8, atomEnd);
         }
 
+        cursor = atomEnd;
         if (atomSize == 0)
         {
             return;
         }
-
-        cursor = atomEnd;
     }
 }
 
@@ -1599,6 +1855,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
     std::uintmax_t payloadOffset = offset + 8;
     if (size == 1)
     {
+        if (offset + 16 > limit)
+        {
+            return;
+        }
+
         const std::vector<uint8_t> ext = ReadRange(context.input, offset + 8, 8);
         if (ext.size() != 8)
         {
@@ -1608,14 +1869,23 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
         payloadOffset += 8;
     }
 
-    if (size < 8 || offset + size > limit)
+    if (size != 0)
     {
-        return;
+        if (size < 8 || offset + size < offset || offset + size > limit)
+        {
+            return;
+        }
     }
 
     if (type == "data")
     {
-        const std::vector<uint8_t> data = ReadRange(context.input, payloadOffset, static_cast<std::size_t>(offset + size - payloadOffset));
+        const std::uintmax_t dataLimit = size == 0 ? limit : offset + size;
+        if (payloadOffset > dataLimit)
+        {
+            return;
+        }
+
+        const std::vector<uint8_t> data = ReadRange(context.input, payloadOffset, static_cast<std::size_t>(dataLimit - payloadOffset));
         if (data.size() < 8)
         {
             return;
@@ -1627,7 +1897,8 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
     // 兼容 `ilst` 的子项：继续扫描内部 item atom。
     std::uintmax_t cursor = payloadOffset;
-    while (cursor + 8 <= offset + size)
+    const std::uintmax_t atomLimit = size == 0 ? limit : offset + size;
+    while (cursor + 8 <= atomLimit)
     {
         const std::vector<uint8_t> childHeader = ReadRange(context.input, cursor, 8);
         if (childHeader.size() != 8)
@@ -1640,6 +1911,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
         std::uintmax_t childPayloadOffset = cursor + 8;
         if (childSize == 1)
         {
+            if (cursor + 16 > atomLimit)
+            {
+                return;
+            }
+
             const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
             if (ext.size() != 8)
             {
@@ -1649,19 +1925,33 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
             childPayloadOffset += 8;
         }
 
-        if (childSize < 8 || cursor + childSize > offset + size)
+        if (childSize != 0)
         {
-            return;
+            if (childSize < 8 || cursor + childSize < cursor || cursor + childSize > atomLimit)
+            {
+                return;
+            }
         }
 
         if (childType == "data")
         {
-            const std::vector<uint8_t> data = ReadRange(context.input, childPayloadOffset, static_cast<std::size_t>(cursor + childSize - childPayloadOffset));
+            const std::uintmax_t childLimit = childSize == 0 ? atomLimit : cursor + childSize;
+            if (childPayloadOffset > childLimit)
+            {
+                return;
+            }
+
+            const std::vector<uint8_t> data = ReadRange(context.input, childPayloadOffset, static_cast<std::size_t>(childLimit - childPayloadOffset));
             if (data.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(data.data());
                 ReadMP4DataAtom(context, metadata, atomType, dataType, data.data() + 8, data.size() - 8);
             }
+        }
+
+        if (childSize == 0)
+        {
+            return;
         }
 
         cursor += childSize;
@@ -1676,43 +1966,52 @@ void TagReader::ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std
     }
 
     // MP4 的常见文本和数字字段在 data atom 内，这里只处理项目需要的固定字段。
-    if (atomType == "©nam" || atomType == "©ART" || atomType == "aART" || atomType == "©alb" || atomType == "©wrt" || atomType == "©gen")
+    if (AtomTypeIs(atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size())) ||
+        AtomTypeIs(atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size())) ||
+        AtomTypeIs(atomType, "aART") ||
+        AtomTypeIs(atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size())) ||
+        AtomTypeIs(atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size())) ||
+        AtomTypeIs(atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size())))
     {
-        const std::string value = (dataType == 1 || dataType == 0) ? ReadUtf8Text(payload, payloadSize) : ReadUtf8Text(payload, payloadSize);
+        if (dataType != 0 && dataType != 1)
+        {
+            return;
+        }
+
+        const std::string value = ReadUtf8Text(payload, payloadSize);
         if (value.empty())
         {
             return;
         }
 
-        if (atomType == "©nam") metadata.title = value;
-        else if (atomType == "©ART") metadata.artist = value;
+        if (AtomTypeIs(atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size()))) metadata.title = value;
+        else if (AtomTypeIs(atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size()))) metadata.artist = value;
         else if (atomType == "aART") metadata.albumArtist = value;
-        else if (atomType == "©alb") metadata.album = value;
-        else if (atomType == "©wrt") metadata.composer = value;
-        else if (atomType == "©gen") metadata.genre = value;
+        else if (AtomTypeIs(atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size()))) metadata.album = value;
+        else if (AtomTypeIs(atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size()))) metadata.composer = value;
+        else if (AtomTypeIs(atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size()))) metadata.genre = value;
         return;
     }
 
-    if (atomType == "trkn" && payloadSize >= 8)
+    if (atomType == "trkn" && payloadSize >= 4)
     {
         metadata.trackNumber = static_cast<uint16_t>((static_cast<uint16_t>(payload[2]) << 8) | payload[3]);
     }
-    else if (atomType == "disk" && payloadSize >= 8)
+    else if (atomType == "disk" && payloadSize >= 4)
     {
         metadata.discNumber = static_cast<uint16_t>((static_cast<uint16_t>(payload[2]) << 8) | payload[3]);
     }
     else if (atomType == "covr")
     {
+        if (dataType != 13 && dataType != 14)
+        {
+            return;
+        }
+
         const std::string tempPath = MakeCoverPathForAudioFile(context.filePath, dataType == 14 ? "png" : "jpg");
         WriteBinaryFile(tempPath, payload, payloadSize);
         metadata.coverPath = tempPath;
     }
-}
-
-void TagReader::ExtractCoverToTempFile(ReadContext &context, RawMetadata &metadata)
-{
-    (void)context;
-    (void)metadata;
 }
 
 void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
@@ -1765,7 +2064,7 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
             {
                 return;
             }
-            cursor = extSize;
+            cursor = 4 + static_cast<std::size_t>(extSize);
         }
         else if (versionMajor == 4)
         {
@@ -1778,7 +2077,7 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
             {
                 return;
             }
-            cursor = extSize;
+            cursor = static_cast<std::size_t>(extSize);
         }
         else
         {
@@ -1786,6 +2085,25 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
         }
     }
 
+    if (versionMajor == 2)
+    {
+        ReadID3v22LyricsFrames(context, lyrics, tagBytes, cursor);
+        return;
+    }
+
+    ReadID3v23Or24LyricsFrames(context, lyrics, tagBytes, versionMajor, cursor);
+}
+
+void TagReader::ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, std::size_t cursor)
+{
+    (void)context;
+    (void)lyrics;
+    (void)tagBytes;
+    (void)cursor;
+}
+
+void TagReader::ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor)
+{
     while (cursor + 10 <= tagBytes.size())
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
@@ -1859,7 +2177,12 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
             if (frameData.size() > 6)
             {
                 const uint8_t encoding = frameData[0];
-                std::size_t p = 1 + 3; // encoding + language
+                const uint8_t timestampFormat = frameData[4];
+                const uint8_t contentType = frameData[5];
+                (void)timestampFormat;
+                (void)contentType;
+
+                std::size_t p = 1 + 3 + 1 + 1;
                 const std::size_t descriptorSize = FindEncodedTerminator(frameData.data() + p, frameData.size() - p, encoding);
                 if (descriptorSize >= frameData.size() - p)
                 {
@@ -1872,8 +2195,6 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
                     break;
                 }
 
-                const uint8_t timestampFormat = frameData[1 + 3 + 1];
-                (void)timestampFormat;
                 while (p < frameData.size())
                 {
                     const std::size_t textStart = p;
@@ -1896,11 +2217,30 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
         }
         else if (frameId == "TXXX")
         {
-            // 自定义文本歌词，取第一个文本内容作为纯文本歌词补充。
             if (frameData.size() > 1)
             {
-                const std::string value = ReadId3TextFrame(frameData.data(), frameData.size());
-                AppendPlainLyrics(lyrics, value);
+                const uint8_t encoding = frameData[0];
+                const uint8_t *payload = frameData.data() + 1;
+                const std::size_t payloadSize = frameData.size() - 1;
+
+                const std::size_t descSize = FindEncodedTerminator(payload, payloadSize, encoding);
+                if (descSize >= payloadSize)
+                {
+                    cursor += 10 + static_cast<std::size_t>(frameSize);
+                    continue;
+                }
+
+                const std::string description = ReadId3ByteString(payload, descSize, encoding);
+                const std::string lowerDescription = ToLower(description);
+                if (lowerDescription == "lyrics" || lowerDescription == "unsyncedlyrics" || lowerDescription == "lyric" || lowerDescription == "sylt" || lowerDescription == "syncedlyrics")
+                {
+                    const std::size_t valueOffset = descSize + EncodedTerminatorWidth(encoding);
+                    if (valueOffset < payloadSize)
+                    {
+                        const std::string value = ReadId3ByteString(payload + valueOffset, payloadSize - valueOffset, encoding);
+                        AppendPlainLyrics(lyrics, value);
+                    }
+                }
             }
         }
 
@@ -2231,6 +2571,7 @@ TagReader::DecodedField TagReader::NormalizeText(std::string_view value)
 void TagReader::NormalizeMetadata(RawMetadata &metadata)
 {
     auto normalize = [](std::string &text) {
+        RemoveUtf8Bom(text);
         const DecodedField field = NormalizeText(text);
         if (field.success)
         {
@@ -2254,12 +2595,14 @@ void TagReader::NormalizeLyrics(RawLyrics &lyrics)
 {
     if (!lyrics.text.empty())
     {
+        RemoveUtf8Bom(lyrics.text);
         const DecodedField field = NormalizeText(lyrics.text);
         lyrics.text = field.success ? field.value : std::string{};
     }
 
     for (auto &line : lyrics.timedLines)
     {
+        RemoveUtf8Bom(line.second);
         const DecodedField field = NormalizeText(line.second);
         line.second = field.success ? field.value : std::string{};
     }

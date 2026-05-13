@@ -1,32 +1,40 @@
 # TagReader Agent Notes
 
-- 先读根目录 `session-ses_2244.md`。这个仓库当前是延续中的 session，不要按全新项目重新判断上下文。
-- 这是一个小型 C++23 高性能音乐元数据读取库。保持实现轻量、直接，不要引入 `TagLib` 这类额外标签库。
+- 当前目录就是项目根目录；不要扫描或推断上级目录内容。
+- 先读根目录 `session-ses_2244.md`、`BUGS.md`、`TASK.md`。这是延续中的修复项目，不要按全新项目重新定方向。
+- 这是轻量 C++23 音乐元数据读取库；不要引入 `TagLib` 这类标签库，除非任务明确改变依赖策略。
+
+## Sources
+
+- `README.md` 只有标题；行为和命令优先信 `CMakeLists.txt`、`include/TagReader.hpp`、`src/TagReader.cpp`、`test/main.cpp`。
+- `DESIGN.md` 约束架构：FFmpeg 只用于 probe、容器识别、音频流和基础媒体信息；歌名、歌手、专辑、歌词、封面等标签必须直接读文件原始字节解析。
+- `BUGS.md` 是当前已确认缺陷清单；`TASK.md` 给出修复顺序，优先 ID3v2 协议级问题，再 ID3v1，再 FLAC，再空封面兜底。
 
 ## Layout
 
-- 公共头文件都在 `include/`，源文件都在 `src/`。
-- 头文件职责固定：`include/Lyrics.hpp` 只放歌词类型，`include/Tag.hpp` 只放音乐 tag 数据类型，`include/TagReader.hpp` 只放读取入口和内部读取接口。
-- `MusicTag` 的公共字段模型已经在 `include/Tag.hpp` 定下；除非任务明确要求，不要重构这套对外数据模型。
-- 当前库实现集中在 `src/TagReader.cpp`；主入口是 `TagReader::Read(const std::filesystem::path&)`。
+- 公共头固定在 `include/`：`Lyrics.hpp` 只放歌词类型，`Tag.hpp` 只放 `MusicTag` 数据模型，`TagReader.hpp` 只放读取入口和内部接口。
+- `MusicTag` 公共字段模型已定，除非任务明确要求，不要重构对外数据模型或把中间解析状态塞进它。
+- 实现集中在 `src/TagReader.cpp`；主入口是 `TagReader::Read(const std::filesystem::path&)`。
 
 ## Build And Verify
 
-- 可执行真相以 `CMakeLists.txt` 为准：静态库目标是 `TagReaderCore`，手动验证程序是 `TagReaderTest`，入口在 `test/main.cpp`。
-- 已验证的本地构建命令是 `cmake --build build`。
-- 如果 `build/` 不可用，再运行 `cmake -S . -B build`，然后再 `cmake --build build`。
-- 运行手动验收程序用 `./build/TagReaderTest <audio-file-path>`。它不是单元测试框架，只会打印解析出的字段，适合核对默认值、封面路径和歌词条目数。
-- 构建依赖通过 `pkg-config` 查找 FFmpeg：`libavformat`、`libavcodec`、`libavutil`。不要假设仓库里有别的测试框架、lint、format 或标签解析依赖。
+- 目标以 `CMakeLists.txt` 为准：静态库 `TagReaderCore`，手动验证程序 `TagReaderTest`。
+- 常规构建：`cmake --build build`。
+- 如果 `build/` 不存在：`cmake -S . -B build`，再 `cmake --build build`。
+- 手动验收：`./build/TagReaderTest <audio-file-path>`；它只打印字段，不是单元测试框架。
+- 依赖通过 `pkg-config` 查找 FFmpeg：`libavformat`、`libavcodec`、`libavutil`。仓库没有配置 lint、format、CI 或测试框架。
 
-## Codepath Notes
+## Parser Rules
 
-- `TagReader::Read()` 的主流程已经接通：路径校验、FFmpeg 打开与 probe、音频流识别、媒体信息读取、元数据读取、歌词读取、UTF-8 归一化、`BuildMusicTag()` 组装。后续工作通常应补正确性和边界，不是再搭一套新骨架。
-- `ReadContext` 同时保留 `std::ifstream` 和 `AVFormatContext`。与音频流无关的 tag/歌词块优先直接读文件字节；FFmpeg 主要用于 probe、流信息和基础媒体信息。
-- 现有元数据读取已按格式拆小函数，包含 ID3、Vorbis/FLAC、MP4 路径；修改时优先延续这种按格式分发的结构，不要把格式细节重新塞回一个大函数。
-- 封面提取不是统一走一个中心实现：ID3 APIC、FLAC picture、MP4 `covr` 都各自直接落盘到系统临时目录。改封面逻辑时先检查是否会和这些格式分支重复覆盖。
-- 当前封面文件路径按“音频文件同名 stem + 图片扩展名”生成到系统临时目录，不是随机名。
+- `ReadMetadata()` 和 `ReadLyrics()` 应保持分发函数；不要把具体格式解析代码或大段 lambda 塞回入口。
+- 元数据解析按格式小函数维护：ID3v1/ID3v2、Vorbis/FLAC、Ogg Vorbis、MP4 atom。新增格式细节应进入对应小函数或新小函数。
+- `ReadContext` 同时保留 `std::ifstream` 和 `AVFormatContext`；标签和歌词优先从 `std::ifstream` 读取原始字节，FFmpeg 不作为标签字段来源。
+- 封面提取已在 ID3 APIC、FLAC PICTURE、MP4 `covr` 分支各自落盘；不要新增会覆盖这些结果的通用兜底。`ExtractCoverToTempFile()` 当前是空实现。
+- 当前封面文件按音频文件 stem 加图片扩展名写到系统临时目录，可能被同名音频覆盖。
 
-## Source Priority
+## Active Traps
 
-- `README.md` 基本没有信息。行为、边界和可运行命令优先相信 `CMakeLists.txt`、`include/TagReader.hpp`、`src/TagReader.cpp`、`test/main.cpp`。
-- `DESIGN.md` 和 `TASK.md` 主要提供设计意图与历史任务拆分；如果和当前可执行源码冲突，以源码和构建配置为准。
+- `ReadID3v2Metadata()` 当前接受 v2.2/v2.3/v2.4，但主体仍按 v2.3/v2.4 的 10 字节 frame header 解析；修 ID3v2 时必须拆 v2.2 的 6 字节 header 和 3 字节 frame ID。
+- `ReadID3v2PictureFrame()` 的 APIC 游标逻辑在 `BUGS.md` 中标为会多跳字节；改封面前先修这里。
+- `ReadID3v1Metadata()` 目前缺 `year`、`genre` 表映射，把 `comment` 错写到 `composer`，且未按 Latin-1 转 UTF-8。
+- `NormalizeText()` 目前只验证 UTF-8，不做通用编码探测；非 UTF-8 字段应在格式读取阶段显式转成 UTF-8 或后续补编码策略。
