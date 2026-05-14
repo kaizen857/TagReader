@@ -1,129 +1,197 @@
-# TagReader Known Bugs
+# TagReader.cpp 重新审查发现的问题
 
-本文档记录本轮按当前源码重新审查后确认存在的问题，优先列出会导致字段错误、解析失败或行为与格式规范不一致的缺陷。行号基于当前 `src/TagReader.cpp`。
+本文件基于当前 `src/TagReader.cpp` 的完整重新扫描结果覆盖生成。审查重点是各 tag 协议解析正确性，以及原始字符串编码嗅探和转 UTF-8 能力。
 
-## ID3v1
+## 总体问题
 
-### 1. `genre` 字段没有被读取
+1. `NormalizeText()` 并没有做编码嗅探或转码，只验证输入是否已是合法 UTF-8。
+   - 位置：`NormalizeText()`、`NormalizeMetadata()`、`NormalizeLyrics()`。
+   - 影响：来自 MP4/Vorbis/歌词等路径的非 UTF-8 文本会被清空；它无法识别 GBK、Shift-JIS、Big5、Windows-125x 等常见本地编码。
+   - 现状：只有 ID3 encoding byte 明确标记的文本和 ID3v1 Latin-1 字段会在读取阶段转成 UTF-8。
 
-- 位置：`src/TagReader.cpp:898-901`
-- 现状：`ReadID3v1Metadata()` 在 `metadata.genre` 为空时只执行 `metadata.genre.clear()`，没有读取 `buffer[127]` 的 genre index，也没有做 genre 表映射。
-- 影响：任何仅依赖 ID3v1 的文件都无法从该路径得到流派信息。
+2. `ReadUtf16Text()` 对 ID3 encoding 1 的 BOM 处理错误。
+   - 位置：`ReadId3ByteString()` 对 encoding `1` 固定调用 `ReadUtf16Text(..., false)`。
+   - 影响：ID3 encoding `1` 代表 UTF-16 with BOM，应按 BOM 决定大小端；当前即使 payload 是 FE FF big-endian BOM，也会按 little-endian 解码，导致中文、日文等非 ASCII 文本错码。
 
-### 2. `year` 字段完全未解析
+3. `TrimText()` 不能正确去除尾部 NUL 字节。
+   - 位置：`TrimText()`。
+   - 原因：字符串字面量 `" \t\r\n\0"` 在传给 `find_first_not_of` / `find_last_not_of` 时按 C 字符串处理，实际字符集在第一个 NUL 处结束，NUL 没有参与 trim。
+   - 影响：Vorbis Comment、MP4 文本、Normalize 前后的通用路径可能保留尾部 `\0`。
 
-- 位置：`src/TagReader.cpp:855-912`
-- 现状：函数读取了 title、artist、album、comment、trackNumber，但没有读取 ID3v1 固定布局中的 year 字段（偏移 `93-96`）。
-- 影响：仅依赖 ID3v1 的文件会丢失年份信息。
+4. 多处协议文本路径默认把原始字节当 UTF-8，却没有格式级编码策略。
+   - 位置：`ReadVorbisCommentEntry()`、`ReadVorbisLyricsEntry()`、`ReadMP4DataAtom()`、`ReadMP4LyricsItem()`。
+   - 影响：虽然 Vorbis Comment 和 MP4 iTunes 文本通常是 UTF-8，但遇到历史文件或非规范写入时，当前只会清空或保留错误文本，没有嗅探或回退。
 
-### 3. 将 ID3v1 comment 错误映射到了 `composer`
+## ID3v2 Metadata 问题
 
-- 位置：`src/TagReader.cpp:903-911`
-- 现状：函数读取 comment 后，在 `metadata.composer` 为空时直接写入 `comment`。
-- 影响：ID3v1 本身没有 composer 字段，这会制造错误元数据，把备注误报成作曲者。
+1. ID3v2.4 tag-level footer flag 没有处理。
+   - 位置：`ReadID3v2Metadata()`。
+   - 影响：如果 v2.4 header flags 带 footer present，tag 后还有 10 字节 footer；当前只按 tag body size 读取，不会跳过 footer，也未明确验证，可能影响后续尾部/相邻结构解析策略。
 
-### 4. ID3v1 文本没有按 Latin-1 转成 UTF-8，后续可能被清空
+2. ID3v2.4 extended header size 下限判断可能过严或不完整。
+   - 位置：`ReadID3v2Metadata()`。
+   - 影响：v2.4 extended header 结构包含 size、flag bytes、flags data。当前只判断 `extSize < 6`，但没有解析 number of flag bytes，也没有根据 flag bytes 跳过/update 附加字段；复杂 extended header 可能被粗略跳过或误判。
 
-- 位置：`src/TagReader.cpp:882-884`, `src/TagReader.cpp:2215-2251`
-- 现状：`ReadID3v1Metadata()` 用 `std::string(buffer.data() + offset, size)` 直接取原始字节；随后 `NormalizeMetadata()` 只接受已经是合法 UTF-8 的文本，不做 Latin-1 到 UTF-8 转换。
-- 影响：包含非 ASCII 字符的 ID3v1 字段很容易在归一化阶段被清空。
+3. ID3v2.3/v2.4 frame flag 处理仍不完整。
+   - 位置：`ReadID3v23Or24Frames()`。
+   - 影响：压缩、加密、分组、data length indicator、unsynchronisation 等 flag 没有完整按版本解释；当前仅跳过部分 unsupported flags，其他组合可能被误读或错误跳过。
 
-## ID3v2 元数据
+4. 跳过不支持 frame 时游标推进错误。
+   - 位置：`ReadID3v23Or24Frames()`。
+   - 现状：遇到非法 frame id、unsupported flags、非法 syncsafe size 时只 `cursor += 10`。
+   - 影响：frame header 后仍有 payload，跳 10 字节会落入 payload 中间继续扫描，可能导致后续 frame 误判、漏读或抛错。应在能读出 frame size 后跳过完整 frame；不能安全读 size 时应停止扫描。
 
-### 5. ID3v2 应同时支持 v2.2 / v2.3 / v2.4，但当前只真正实现了 v2.3 / v2.4 风格解析
+5. `ReadID3v22PictureFrame()` 的 PIC 解析结构错误。
+   - 位置：`ReadID3v22PictureFrame()`。
+   - 原因：ID3v2.2 `PIC` 结构是 `encoding + image format(3) + picture type + description + terminator + image data`。当前先从 `payload` 开始扫描一个 NUL，然后再解析 description，相当于把 description 拆成两段，导致正常 PIC 描述为空时会把 image data 前几个字节误当 description 或直接返回。
+   - 影响：ID3v2.2 封面可能无法导出，或导出的图片起点错误。
 
-- 位置：`src/TagReader.cpp:928-933`, `src/TagReader.cpp:993-1045`, `src/TagReader.cpp:1064-1099`
-- 现状：`ReadID3v2Metadata()` 接受 `versionMajor == 2`、`3`、`4`，但后续固定按 10 字节 frame header、4 字节 frame ID、`APIC`/`TIT2` 等 v2.3/v2.4 帧名解析，没有为 v2.2 切换到 6 字节 frame header、3 字节 frame ID、`PIC`/`TT2` 等对应规则。
-- 影响：真实 ID3v2.2 标签会被按错误协议解释，可能触发 `invalid ID3v2 frame identifier`、提前中断或解析出错误字段。
+6. APIC/PIC 图片优先级不一致。
+   - 位置：`ReadID3v2PictureFrame()`、`ReadID3v2ApicPayload()`、`ReadID3v22PictureFrame()`。
+   - 影响：APIC 读取了 picture type 但丢弃，没有像 FLAC 一样保持 front cover 优先。多 APIC 时后读图片会覆盖先读图片，非 front cover 也可能覆盖 front cover。
 
-### 6. ID3v2.3 extended header 游标推进错误
+7. ID3 genre 没有解析括号数字或 v2.4 多值格式。
+   - 位置：`ReadID3v22Frame()`、`ReadID3v2Frame()`。
+   - 影响：`TCON`/`TCO` 为 `(13)`、`13`、`(13)Pop` 或 v2.4 NUL 分隔多值时，当前直接原样输出，不会映射到 ID3 genre 表，也不会拆出用户可读值。
 
-- 位置：`src/TagReader.cpp:966-971`
-- 现状：v2.3 extended header 的 size 字段表示“size 字段之后”的扩展头长度，当前代码读取 `extSize` 后直接 `cursor = extSize`，少跳过了 size 字段自身的 4 字节。
-- 影响：包含 ID3v2.3 extended header 的文件会从扩展头中间开始按 frame header 解析，导致后续 frame 错读、抛错或字段丢失。
+8. ID3v2.4 年份只读 `TDRC`，没有覆盖常见相关帧。
+   - 位置：`ReadID3v2Frame()`。
+   - 影响：没有处理 `TDOR`、`TDRL`、`TDTG` 等相关日期帧；这不一定是 bug，但作为“年份”字段兼容性不足。
 
-### 7. `APIC` 图片帧解析多跳了一个字节
+9. ID3v2 frame 文本覆盖策略不一致。
+   - 位置：`ReadID3v22Frame()`、`ReadID3v2Frame()`。
+   - 影响：ID3v2 会无条件覆盖字段，而 Vorbis 使用“已有值不覆盖”。同一 tag 内重复 frame 或多个别名时，结果取决于扫描顺序，缺少统一规则。
 
-- 位置：`src/TagReader.cpp:1123-1147`
-- 现状：`ReadID3v2PictureFrame()` 在跳过 MIME 终止符和 picture type 后，又额外执行了一次 `++cursor`，导致 description 的起始位置被错过。
-- 影响：封面描述为空时很容易找不到正确 terminator，导致 APIC 图像数据起点判断错误，封面提取失败或不稳定。
+## ID3 Lyrics 问题
 
-### 8. 遇到压缩/加密帧时直接抛异常，单帧问题会导致整个 ID3v2 读取失败
+1. ID3v2.2 歌词完全未实现。
+   - 位置：`ReadID3v22LyricsFrames()`。
+   - 影响：v2.2 的 `ULT` / `SLT` 等歌词帧不会被读取。
 
-- 位置：`src/TagReader.cpp:1007-1010`
-- 现状：只要 frame flags 命中压缩/加密位，代码立即 `throw`。
-- 影响：即使文件中其他常规文本帧完全可读，也会因为单个不支持的帧导致整个 `Read()` 失败。这个行为过于激进，和“尽量读取可用字段”的容错目标不一致。
+2. ID3 歌词 frame flag 处理与 metadata 路径不一致且不完整。
+   - 位置：`ReadID3v23Or24LyricsFrames()`。
+   - 影响：v2.4 data length indicator 没有剥离；压缩、加密、分组等 flags 没有按版本完整处理；部分 unsupported frame 只跳 10 字节，可能错位。
 
-### 9. ID3v2.4 frame flags 仍按 v2.3 的压缩/加密位判断
+3. ID3 歌词遇到非法 frame id 直接 break，metadata 路径则尝试 continue。
+   - 位置：`ReadID3v23Or24LyricsFrames()`。
+   - 影响：一个 padding 前的脏 frame id 会导致后续歌词帧全部漏读。
 
-- 位置：`src/TagReader.cpp:1007-1010`, `src/TagReader.cpp:1038-1040`
-- 现状：v2.4 的 format flags 含义与 v2.3 不同，压缩/加密/unsynchronisation/data length indicator 位不应复用 v2.3 的 `0x000C` 判断；当前又用 `0x0002` 处理单帧 unsynchronization，容易与实际标志位不一致。
-- 影响：v2.4 文件中合法 frame 可能被误判为不支持，或需要特殊处理的 frame 被当成普通 payload 解析。
+4. `SYLT` timestamp format 被忽略。
+   - 位置：`ReadID3v23Or24LyricsFrames()`。
+   - 影响：`timestampFormat == 1` 表示 MPEG frames，`2` 才是 milliseconds。当前全部按毫秒处理，frame-based SYLT 时间轴错误。
 
-## 歌词解析
+5. `USLT` / `SYLT` 只做最小字段跳过，没有验证语言码或内容类型。
+   - 位置：`ReadID3v23Or24LyricsFrames()`。
+   - 影响：多语言歌词、非歌词内容类型、重复歌词帧的选择策略不明确。
 
-### 10. `ReadID3Lyrics()` 接受 ID3v2.2，但仍按 v2.3 / v2.4 frame header 解析
+## ID3v1 问题
 
-- 位置：`src/TagReader.cpp:1731-1734`, `src/TagReader.cpp:1789-1829`
-- 现状：歌词路径允许 `versionMajor == 2`，但 frame 循环固定按 10 字节 header、4 字节 frame ID 和 v2.3/v2.4 flags 解析。
-- 影响：ID3v2.2 歌词帧会被错读；即使 metadata 路径修复 v2.2，如果歌词路径不同步拆分，仍会保留同类协议 bug。
+1. ID3v1 genre 表只有 80 项，不完整。
+   - 位置：`Id3v1Genres`。
+   - 影响：Winamp 扩展后的常见 genre index 大于 79 时会被忽略，例如 80+ 的常见流派无法映射。
 
-### 11. `SYLT` 帧读取 timestamp format 的偏移错误
+2. ID3v1.1 track number 没有排除 0。
+   - 位置：`ReadID3v1Metadata()`。
+   - 影响：当 `buffer[125] == 0` 且 `buffer[126] == 0` 时当前仍会写入 0，虽然结果值不变，但语义上未区分“无 track”和“track 0”。
 
-- 位置：`src/TagReader.cpp:1857-1876`
-- 现状：SYLT payload 结构为 `encoding + language(3) + timestamp format + content type + descriptor + ...`；当前代码从 `p = 1 + 3` 直接把 timestamp format 字节当作 descriptor 起点，并用 `frameData[1 + 3 + 1]` 读取 timestamp format，实际读到的是 content type。
-- 影响：同步歌词 descriptor 定位错误，后续歌词文本和时间戳解析会错位，SYLT 大概率无法正确解析。
+3. ID3v1 字段固定按 Latin-1 解码，无法处理实际使用本地编码写入的历史文件。
+   - 位置：`ReadID3v1Metadata()`、`ReadLatin1Text()`。
+   - 影响：GBK/Shift-JIS 等 ID3v1 文件会被错误转换成 Latin-1 UTF-8，`NormalizeText()` 仍会认为它是合法 UTF-8，从而保留乱码。
 
-### 12. `TXXX` 被无条件当作歌词来源
+## Vorbis / FLAC / Ogg 问题
 
-- 位置：`src/TagReader.cpp:1897-1904`
-- 现状：`TXXX` 是通用自定义文本帧，当前代码未检查 description 是否为 lyrics 相关字段，就把第一个文本内容追加为纯文本歌词。
-- 影响：普通自定义标签可能被误报成歌词，污染 `MusicTag::lyrics()`。
+1. Vorbis Comment 总数字段被误写入主编号字段。
+   - 位置：`ReadVorbisCommentEntry()`。
+   - 现状：`tracktotal` / `totaltracks` 会在 `trackNumber == 0` 时写入 `trackNumber`，`disctotal` / `totaldiscs` 会写入 `discNumber`。
+   - 影响：只有总曲数而没有当前曲号时，会把总数误当当前曲号；这是字段语义错误。
 
-## FLAC / Vorbis / Ogg
+2. Ogg Vorbis metadata 路径能跨页组包，但 lyrics 路径不能。
+   - 位置：`ReadOggVorbisComments()` 与 `ReadVorbisLyrics()` 的 Ogg 分支。
+   - 影响：跨页 comment packet 中的歌词字段在 metadata 可读的情况下，lyrics 仍可能漏读。
 
-### 13. FLAC 路径整体可工作，但边界与兼容性不足
+3. Ogg lyrics 分支识别 Vorbis comment packet 的签名错误。
+   - 位置：`ReadVorbisLyrics()` Ogg 分支。
+   - 原因：Vorbis comment packet 应以 `0x03 + "vorbis"` 开头；当前比较 payload 前 7 字节是否等于 `"vorbis"`，长度和起点都不对。
+   - 影响：Ogg Vorbis 歌词基本无法从 comment packet 读取。
 
-- 位置：`src/TagReader.cpp:1178-1499`
-- 现状：FLAC 使用 `fLaC` 签名检查、metadata block 扫描、Vorbis Comment 解析和 PICTURE 解析，主干逻辑基本成立；但当前只覆盖最常见字段和最常见块结构，没有更完整的字段别名、冲突合并策略和一致的损坏块错误处理。
-- 影响：对标准 FLAC 文件大概率可用，但遇到更复杂或更脏的数据时，行为还不够稳健，不能视为完整实现。
+4. Ogg metadata 解析没有校验 BOS/header packet 顺序和 stream serial。
+   - 位置：`ReadOggVorbisComments()`。
+   - 影响：包含多 logical bitstream 或非 Vorbis Ogg 内容时，可能误读其他流 packet。
 
-### 14. FLAC metadata block 越界时静默返回，和已声明块读失败的 throw 策略不一致
+5. FLAC metadata 和 picture 分两次从头扫描。
+   - 位置：`ReadVorbisCommentMetadata()` 调用 `ReadVorbisCommentBlock()` 后又调用 `ReadFlacPictureBlock()`。
+   - 影响：效率问题为主；如果某个损坏块在 comment 之后但 picture 之前，两次扫描的异常路径可能造成行为不一致。
 
-- 位置：`src/TagReader.cpp:1290-1292`, `src/TagReader.cpp:1410-1412`
-- 现状：metadata block 声明大小越过扫描范围时直接 `return`，但 Vorbis comment block 实际读取失败时会 `throw`。
-- 影响：结构损坏的 FLAC 文件可能被静默当作“无更多标签”处理，隐藏真实文件损坏或解析错误。
+6. FLAC PICTURE description 按字节跳过，没有按规范确认 UTF-8 合法性。
+   - 位置：`ReadFlacPictureEntry()`。
+   - 影响：当前不使用 description，所以影响较小；但对结构错误和字符串编码错误没有区分。
 
-### 15. Ogg Vorbis comment 解析没有处理跨页 packet
+7. Vorbis Comment entry value 没有 UTF-8 验证前转码能力。
+   - 位置：`ReadVorbisCommentEntry()`。
+   - 影响：Vorbis 规范要求 UTF-8；当前最终 Normalize 会清空非法 UTF-8，但无法修复历史非 UTF-8 写入。
 
-- 位置：`src/TagReader.cpp:1204-1266`
-- 现状：`ReadOggVorbisComments()` 每次只检查单个 Ogg page 的 payload，遇到 `vorbis` comment packet 就在该页内完成解析，没有组装 lacing segments 跨页延续的 packet。
-- 影响：comment 较大、跨 Ogg page 的文件会丢失字段或提前返回。
+## MP4 / M4A 问题
 
-## MP4 / M4A
+1. MP4 metadata 没有读取年份字段。
+   - 位置：`ReadMP4AtomTree()`、`ReadMP4DataAtom()`。
+   - 影响：`©day` / `date` 等常见年份 atom 不会写入 `metadata.year`。
 
-### 16. MP4 文本字段忽略 `dataType`，非文本 payload 也会按 UTF-8 文本读取
+2. MP4 atom tree 会在任意层级识别 item atom。
+   - 位置：`ReadMP4AtomTree()`。
+   - 影响：没有严格限制 `moov/udta/meta/ilst` 路径，遇到同名 box 或非 metadata 区域时可能误解析。
 
-- 位置：`src/TagReader.cpp:1678-1682`
-- 现状：表达式 `(dataType == 1 || dataType == 0) ? ReadUtf8Text(...) : ReadUtf8Text(...)` 两边完全相同，等于忽略 `dataType`。
-- 影响：如果字段 payload 不是 UTF-8 文本，仍会被按文本解析，可能产生乱码或被后续 UTF-8 校验清空。
+3. MP4 `meta` box 处理默认跳过 4 字节 version/flags，但没有确认当前 `meta` 是否 full box。
+   - 位置：`ReadMP4AtomTree()`。
+   - 影响：QuickTime 风格或非标准布局可能被错位递归。
 
-## 其他相关问题
+4. MP4 `trkn` / `disk` payload 长度判断过低，且没有校验 data type。
+   - 位置：`ReadMP4DataAtom()`。
+   - 影响：当前 `payloadSize >= 4` 就读取 payload[2..3]，但 iTunes `trkn` / `disk` 通常需要至少 6 或 8 字节，并应确认 data type 是整数/implicit 类型；短 payload 可能被误读。
 
-### 17. `ExtractCoverToTempFile()` 当前是空实现且仍被调用
+5. MP4 text data type 支持不完整。
+   - 位置：`ReadMP4DataAtom()`。
+   - 影响：当前只接受 `0` 和 `1`。这符合当前收紧策略，但如果遇到 UTF-16 或其他合法类型，不会解析；是否支持需要明确策略。
 
-- 位置：`src/TagReader.cpp:849`, `src/TagReader.cpp:1712-1716`
-- 现状：`ReadMetadata()` 总会调用 `ExtractCoverToTempFile()`，但该函数为空。
-- 影响：当前不会破坏已在 ID3 APIC、FLAC PICTURE、MP4 `covr` 分支内完成的封面提取，但这个调用点本身没有任何效果，容易误导后续维护者以为这里还有统一兜底封面逻辑。
+6. MP4 cover `covr` 未检查 payload 是否确实是 JPEG/PNG。
+   - 位置：`ReadMP4DataAtom()`。
+   - 影响：只根据 data type 写扩展名，损坏或错误 data type 会生成错误图片文件。
 
-### 18. 封面临时文件名按音频 stem 固定生成，容易互相覆盖
+7. `ReadMP4Lyrics()` 使用局部递归 lambda，违反“入口/分发函数不要塞大段 lambda”的既有设计约束。
+   - 位置：`ReadMP4Lyrics()`。
+   - 影响：结构维护问题；metadata 入口已拆分，但歌词 MP4 路径仍把 atom tree 扫描塞在函数内部。
 
-- 位置：`src/TagReader.cpp:109-130`, `src/TagReader.cpp:1173-1175`, `src/TagReader.cpp:1496-1498`, `src/TagReader.cpp:1704-1708`
-- 现状：格式分支封面统一用 `MakeCoverPathForAudioFile()` 生成 `<temp>/<audio-stem>.<ext>`，没有随机后缀或唯一目录。
-- 影响：不同目录下同名音频、同一音频重复读取、并发读取时可能覆盖封面文件，`coverPath` 指向的内容可能不是本次解析得到的图片。
+8. MP4 lyrics 的 `©lyr` 比较依赖源码字符编码。
+   - 位置：`ReadMP4Lyrics()`、`ReadMP4LyricsItem()`。
+   - 影响：metadata 已为 `©nam` 等改用 0xA9 字节数组，lyrics 仍使用字符串字面量 `"©lyr"`，在不同源码/编译环境下存在不一致风险。
 
-### 19. `NormalizeText()` 只做 UTF-8 校验，不做通用编码探测或转码
+## 封面提取问题
 
-- 位置：`src/TagReader.cpp:2215-2229`
-- 现状：字段不是合法 UTF-8 时直接清空；除 ID3 文本帧部分路径外，其他格式字段缺少显式非 UTF-8 转 UTF-8 策略。
-- 影响：不符合 UTF-8 的标签文本会被丢弃，和 `DESIGN.md` 中“读取阶段完成编码统一”的目标仍有差距。
+1. `MakeTempCoverPath()` 仍存在但当前主要路径未使用。
+   - 位置：`MakeTempCoverPath()`。
+   - 影响：维护噪音；函数固定 `.jpg`，如果后续误用会重新引入扩展名错误。
+
+2. APIC 不按 picture type 选择 front cover。
+   - 位置：`ReadID3v2PictureFrame()`、`ReadID3v2ApicPayload()`。
+   - 影响：多图片 ID3 文件中结果不稳定，后读图片覆盖前读图片。
+
+3. 封面导出没有图片签名兜底校验。
+   - 位置：ID3 APIC/PIC、FLAC PICTURE、MP4 covr 路径。
+   - 影响：MIME 或 format 字段错误时会使用错误扩展名写出文件；部分路径能 sniff PNG/JPEG，APIC 和 MP4 不完整。
+
+## 其他边界问题
+
+1. `ParseUInt16()` 没有检查溢出。
+   - 位置：`ParseUInt16()`。
+   - 影响：大于 65535 的年份、track、disc 会截断为 `uint16_t`，产生错误值。
+
+2. `ReadRange()` 的 `std::uintmax_t` offset 强转 `std::streamoff` 没有边界检查。
+   - 位置：`ReadRange()`。
+   - 影响：极大文件或异常 offset 下可能溢出并 seek 到错误位置。
+
+3. 容器分发依赖 FFmpeg container name 字符串。
+   - 位置：`ReadMetadata()`、`ReadLyrics()`。
+   - 影响：虽然字段不从 FFmpeg metadata 读取，但格式分发仍依赖 FFmpeg probe 结果；扩展名或文件签名可作为补充兜底，否则部分容器名变体可能漏分发。
+
+4. `GetDictionaryValue()` 仍保留但当前不应再用于元数据读取。
+   - 位置：`GetDictionaryValue()`。
+   - 影响：死代码/维护风险；后续可能误用 FFmpeg metadata，违反当前设计约束。

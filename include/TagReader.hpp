@@ -86,6 +86,9 @@ private:
     static RawMetadata ReadMetadata(ReadContext &context);
     static RawLyrics ReadLyrics(ReadContext &context);
     static DecodedField NormalizeText(std::string_view value);
+    static std::string DetectTextEncoding(std::string_view raw);
+    static DecodedField DecodeTextToUtf8(std::string_view raw, std::string_view encoding);
+    static DecodedField DecodeRawText(std::string_view raw);
     static void NormalizeMetadata(RawMetadata &metadata);
     static void NormalizeLyrics(RawLyrics &lyrics);
     static MusicTag BuildMusicTag(const ReadContext &context, const RawMediaInfo &mediaInfo, const RawMetadata &metadata, const RawLyrics &lyrics);

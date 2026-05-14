@@ -53,14 +53,18 @@ std::string ToLower(std::string value)
 
 std::string TrimText(std::string value)
 {
-    const auto first = value.find_first_not_of(" \t\r\n\0");
-    if (first == std::string::npos)
+    const auto isTrimChar = [](unsigned char ch) {
+        return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\0';
+    };
+
+    const auto first = std::find_if_not(value.begin(), value.end(), isTrimChar);
+    if (first == value.end())
     {
         return {};
     }
 
-    const auto last = value.find_last_not_of(" \t\r\n\0");
-    return value.substr(first, last - first + 1);
+    const auto last = std::find_if_not(value.rbegin(), value.rend(), isTrimChar).base();
+    return std::string(first, last);
 }
 
 std::string MakeTempCoverPath()
@@ -354,6 +358,38 @@ uint16_t ParseUInt16(const std::string &value)
     catch (...) {
         return 0;
     }
+}
+
+uint16_t ParseYearOnly(std::string_view text)
+{
+    for (std::size_t i = 0; i + 4 <= text.size(); ++i)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(text[i])) ||
+            !std::isdigit(static_cast<unsigned char>(text[i + 1])) ||
+            !std::isdigit(static_cast<unsigned char>(text[i + 2])) ||
+            !std::isdigit(static_cast<unsigned char>(text[i + 3])))
+        {
+            continue;
+        }
+
+        const bool hasDigitBefore = i > 0 && std::isdigit(static_cast<unsigned char>(text[i - 1]));
+        const bool hasDigitAfter = i + 4 < text.size() && std::isdigit(static_cast<unsigned char>(text[i + 4]));
+        if (hasDigitBefore || hasDigitAfter)
+        {
+            continue;
+        }
+
+        const uint16_t year = static_cast<uint16_t>((text[i] - '0') * 1000 +
+                                                    (text[i + 1] - '0') * 100 +
+                                                    (text[i + 2] - '0') * 10 +
+                                                    (text[i + 3] - '0'));
+        if (year >= 1000 && year <= 9999)
+        {
+            return year;
+        }
+    }
+
+    return 0;
 }
 
 std::pair<uint16_t, uint16_t> ParseSlashNumber(const std::string &value)
@@ -676,6 +712,7 @@ std::string ReadUtf16Text(const uint8_t *data, std::size_t size, bool bigEndian)
             const uint16_t low = bigEndian ? ReadBE16(data + i + 2) : static_cast<uint16_t>(data[i + 2] | (static_cast<uint16_t>(data[i + 3]) << 8));
             if (low < 0xDC00 || low > 0xDFFF)
             {
+                i += 2;
                 continue;
             }
 
@@ -712,6 +749,28 @@ std::string ReadUtf16Text(const uint8_t *data, std::size_t size, bool bigEndian)
     return TrimText(std::move(value));
 }
 
+std::string ReadUtf16TextWithBom(const uint8_t *data, std::size_t size)
+{
+    if (data == nullptr || size == 0)
+    {
+        return {};
+    }
+
+    if (size >= 2)
+    {
+        if (data[0] == 0xFE && data[1] == 0xFF)
+        {
+            return ReadUtf16Text(data, size, true);
+        }
+        if (data[0] == 0xFF && data[1] == 0xFE)
+        {
+            return ReadUtf16Text(data, size, false);
+        }
+    }
+
+    return ReadUtf16Text(data, size, false);
+}
+
 std::string ReadId3ByteString(const uint8_t *data, std::size_t size, uint8_t encoding)
 {
     switch (encoding)
@@ -719,7 +778,7 @@ std::string ReadId3ByteString(const uint8_t *data, std::size_t size, uint8_t enc
     case 0:
         return ReadLatin1Text(data, size);
     case 1:
-        return ReadUtf16Text(data, size, false);
+        return ReadUtf16TextWithBom(data, size);
     case 2:
         return ReadUtf16Text(data, size, true);
     case 3:
@@ -916,7 +975,8 @@ void TagReader::ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     }
 
     auto readField = [&](std::size_t offset, std::size_t size) {
-        return ReadLatin1Text(reinterpret_cast<const uint8_t *>(buffer.data() + offset), size);
+        const DecodedField field = DecodeRawText(std::string_view(buffer.data() + offset, size));
+        return field.success ? field.value : std::string{};
     };
 
     if (metadata.title.empty())
@@ -933,7 +993,7 @@ void TagReader::ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     }
     if (metadata.year == 0)
     {
-        metadata.year = ParseUInt16(readField(93, 4));
+        metadata.year = ParseYearOnly(readField(93, 4));
     }
     if (metadata.genre.empty())
     {
@@ -1196,7 +1256,7 @@ void TagReader::ReadID3v22Frame(ReadContext &context, RawMetadata &metadata, std
     }
     else if (frameId == "TYE")
     {
-        metadata.year = ParseUInt16(value);
+        metadata.year = ParseYearOnly(value);
     }
     else if (frameId == "TRK")
     {
@@ -1310,7 +1370,7 @@ void TagReader::ReadID3v2Frame(ReadContext &context, RawMetadata &metadata, std:
     }
     else if (frameId == "TYER" || frameId == "TDRC")
     {
-        metadata.year = ParseUInt16(value);
+        metadata.year = ParseYearOnly(value);
     }
     else if (frameId == "TRCK")
     {
@@ -1557,8 +1617,15 @@ void TagReader::ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view e
         return;
     }
 
-    const std::string key = ToLower(std::string(entry.substr(0, eq)));
-    const std::string value = TrimText(std::string(entry.substr(eq + 1)));
+    const DecodedField keyField = DecodeRawText(entry.substr(0, eq));
+    const DecodedField valueField = DecodeRawText(entry.substr(eq + 1));
+    if (!keyField.success || !valueField.success)
+    {
+        return;
+    }
+
+    const std::string key = ToLower(keyField.value);
+    const std::string value = valueField.value;
     if (value.empty())
     {
         return;
@@ -1598,7 +1665,7 @@ void TagReader::ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view e
     }
     else if (key == "date" || key == "year")
     {
-        metadata.year = metadata.year == 0 ? ParseUInt16(value) : metadata.year;
+        metadata.year = metadata.year == 0 ? ParseYearOnly(value) : metadata.year;
     }
     else if (key == "tracknumber")
     {
@@ -1978,7 +2045,13 @@ void TagReader::ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std
             return;
         }
 
-        const std::string value = ReadUtf8Text(payload, payloadSize);
+        const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(payload), payloadSize));
+        if (!field.success)
+        {
+            return;
+        }
+
+        const std::string value = field.value;
         if (value.empty())
         {
             return;
@@ -2445,14 +2518,21 @@ void TagReader::ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics)
 
 void TagReader::ReadVorbisLyricsEntry(RawLyrics &lyrics, std::string_view key, std::string_view value)
 {
-    const std::string lowerKey = ToLower(std::string(key));
+    const DecodedField keyField = DecodeRawText(key);
+    const DecodedField valueField = DecodeRawText(value);
+    if (!keyField.success || !valueField.success)
+    {
+        return;
+    }
+
+    const std::string lowerKey = ToLower(keyField.value);
     if (lowerKey == "lyrics" || lowerKey == "unsyncedlyrics" || lowerKey == "lyric")
     {
-        ReadLyricsFromPlainText(lyrics, value);
+        ReadLyricsFromPlainText(lyrics, valueField.value);
     }
     else if (lowerKey == "sylt" || lowerKey == "syncedlyrics")
     {
-        ReadLyricsFromPlainText(lyrics, value);
+        ReadLyricsFromPlainText(lyrics, valueField.value);
     }
 }
 
@@ -2554,24 +2634,131 @@ TagReader::RawLyrics TagReader::ReadLyrics(ReadContext &context)
 
 TagReader::DecodedField TagReader::NormalizeText(std::string_view value)
 {
-    DecodedField field{};
-    field.value.assign(value.begin(), value.end());
-    field.encoding = "utf-8";
+    return DecodeRawText(value);
+}
 
-    field.success = IsValidUtf8(value);
-    if (!field.success)
+std::string TagReader::DetectTextEncoding(std::string_view raw)
+{
+    if (raw.empty())
     {
-        field.value.clear();
-        field.encoding.clear();
+        return "utf-8";
     }
 
+    const auto byteAt = [&](std::size_t index) {
+        return static_cast<unsigned char>(raw[index]);
+    };
+
+    if (raw.size() >= 3 && byteAt(0) == 0xEF && byteAt(1) == 0xBB && byteAt(2) == 0xBF)
+    {
+        return "utf-8";
+    }
+    if (raw.size() >= 2 && byteAt(0) == 0xFF && byteAt(1) == 0xFE)
+    {
+        return "utf-16le";
+    }
+    if (raw.size() >= 2 && byteAt(0) == 0xFE && byteAt(1) == 0xFF)
+    {
+        return "utf-16be";
+    }
+
+    if (IsValidUtf8(raw))
+    {
+        return "utf-8";
+    }
+
+    std::size_t evenNuls = 0;
+    std::size_t oddNuls = 0;
+    for (std::size_t i = 0; i < raw.size(); ++i)
+    {
+        if (raw[i] != '\0')
+        {
+            continue;
+        }
+        if ((i % 2) == 0)
+        {
+            ++evenNuls;
+        }
+        else
+        {
+            ++oddNuls;
+        }
+    }
+
+    // ASCII-heavy UTF-16 without BOM commonly has NUL bytes on one side of each code unit.
+    if (raw.size() >= 4)
+    {
+        const std::size_t codeUnits = raw.size() / 2;
+        if (oddNuls >= codeUnits / 2 && oddNuls > evenNuls * 2)
+        {
+            return "utf-16le";
+        }
+        if (evenNuls >= codeUnits / 2 && evenNuls > oddNuls * 2)
+        {
+            return "utf-16be";
+        }
+    }
+
+    return "latin-1";
+}
+
+TagReader::DecodedField TagReader::DecodeTextToUtf8(std::string_view raw, std::string_view encoding)
+{
+    DecodedField field{};
+    field.encoding.assign(encoding.begin(), encoding.end());
+
+    if (encoding == "utf-8")
+    {
+        field.value.assign(raw.begin(), raw.end());
+        RemoveUtf8Bom(field.value);
+        field.value = TrimText(std::move(field.value));
+        field.success = IsValidUtf8(field.value);
+        if (!field.success)
+        {
+            field.value.clear();
+            field.encoding.clear();
+        }
+        return field;
+    }
+
+    if (encoding == "utf-16le" || encoding == "utf-16be")
+    {
+        field.value = ReadUtf16Text(reinterpret_cast<const uint8_t *>(raw.data()), raw.size(), encoding == "utf-16be");
+        field.success = IsValidUtf8(field.value);
+        if (!field.success)
+        {
+            field.value.clear();
+            field.encoding.clear();
+        }
+        return field;
+    }
+
+    if (encoding == "latin-1")
+    {
+        field.value = ReadLatin1Text(reinterpret_cast<const uint8_t *>(raw.data()), raw.size());
+        field.success = IsValidUtf8(field.value);
+        if (!field.success)
+        {
+            field.value.clear();
+            field.encoding.clear();
+        }
+        return field;
+    }
+
+    field.value.clear();
+    field.encoding.clear();
+    field.success = false;
     return field;
+}
+
+TagReader::DecodedField TagReader::DecodeRawText(std::string_view raw)
+{
+    const std::string encoding = DetectTextEncoding(raw);
+    return DecodeTextToUtf8(raw, encoding);
 }
 
 void TagReader::NormalizeMetadata(RawMetadata &metadata)
 {
     auto normalize = [](std::string &text) {
-        RemoveUtf8Bom(text);
         const DecodedField field = NormalizeText(text);
         if (field.success)
         {
@@ -2595,14 +2782,12 @@ void TagReader::NormalizeLyrics(RawLyrics &lyrics)
 {
     if (!lyrics.text.empty())
     {
-        RemoveUtf8Bom(lyrics.text);
         const DecodedField field = NormalizeText(lyrics.text);
         lyrics.text = field.success ? field.value : std::string{};
     }
 
     for (auto &line : lyrics.timedLines)
     {
-        RemoveUtf8Bom(line.second);
         const DecodedField field = NormalizeText(line.second);
         line.second = field.success ? field.value : std::string{};
     }
@@ -2675,7 +2860,8 @@ void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::
                 const uint32_t dataType = ReadBE32(data.data());
                 if ((atomType == "©lyr" || type == std::string(atomType)) && (dataType == 1 || dataType == 0))
                 {
-                    const std::string text = ReadUtf8Text(data.data() + 8, data.size() - 8);
+                    const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8));
+                    const std::string text = field.success ? field.value : std::string{};
                     if (!text.empty())
                     {
                         AppendPlainLyrics(lyrics, text);
