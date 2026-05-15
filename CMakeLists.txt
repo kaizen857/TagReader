@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 2. 依赖
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
+find_package(Iconv)
 
 # 3. 库目标
 add_library(TagReaderCore STATIC
@@ -25,6 +26,11 @@ target_link_libraries(TagReaderCore
     PUBLIC
         PkgConfig::FFMPEG
 )
+
+if(Iconv_FOUND)
+    target_link_libraries(TagReaderCore PUBLIC Iconv::Iconv)
+    target_compile_definitions(TagReaderCore PRIVATE TAGREADER_HAS_ICONV=1)
+endif()
 
 # 4. 轻量级测试程序
 add_executable(TagReaderTest

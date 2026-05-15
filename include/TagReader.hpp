@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -86,6 +87,7 @@ private:
     static RawMetadata ReadMetadata(ReadContext &context);
     static RawLyrics ReadLyrics(ReadContext &context);
     static DecodedField NormalizeText(std::string_view value);
+    static std::string DetectContainerFromSignature(ReadContext &context);
     static std::string DetectTextEncoding(std::string_view raw);
     static DecodedField DecodeTextToUtf8(std::string_view raw, std::string_view encoding);
     static DecodedField DecodeRawText(std::string_view raw);
@@ -96,17 +98,18 @@ private:
     static void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata);
     static void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata);
     static void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, std::size_t cursor);
-    static void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor);
+    static void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit);
     static void ReadID3v22Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v2Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize);
-    static void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::string_view mimeType, const uint8_t *imageData, std::size_t imageSize);
+    static void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::string_view mimeType, uint8_t pictureType, const uint8_t *imageData, std::size_t imageSize);
     static void ReadVorbisCommentMetadata(ReadContext &context, RawMetadata &metadata);
     static void ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size);
     static void ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view entry);
     static void ReadOggVorbisComments(ReadContext &context, RawMetadata &metadata);
-    static void ReadFlacPictureBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size);
+    static bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(std::string_view)> &handler);
+    static void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata);
     static void ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata, const uint8_t *pictureData, std::size_t pictureSize);
     static void ReadMP4Metadata(ReadContext &context, RawMetadata &metadata);
     static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit, std::uint32_t depth = 0);
@@ -118,12 +121,13 @@ private:
     static void ReadVorbisLyricsEntry(RawLyrics &lyrics, std::string_view key, std::string_view value);
     static void ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text);
     static void ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics);
+    static void ReadMP4LyricsAtomTree(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit);
     static void ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
     static void AppendPlainLyrics(RawLyrics &lyrics, std::string text);
     static void AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds timestamp, std::string text);
     static bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timestamp);
     static void ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, std::size_t cursor);
-    static void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor);
+    static void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit);
 };
 
 #endif
