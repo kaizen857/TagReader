@@ -105,7 +105,6 @@ private:
     static void ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::string_view mimeType, uint8_t pictureType, const uint8_t *imageData, std::size_t imageSize);
     static void ReadVorbisCommentMetadata(ReadContext &context, RawMetadata &metadata);
-    static void ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size);
     static void ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view entry);
     static void ReadOggVorbisComments(ReadContext &context, RawMetadata &metadata);
     static bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(std::string_view)> &handler);

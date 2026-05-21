@@ -738,6 +738,16 @@ uint32_t ReadLE32(const uint8_t *data)
     return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) | (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
 }
 
+bool TryAddUintmax(std::uintmax_t base, std::uintmax_t delta, std::uintmax_t &result)
+{
+    if (base > std::numeric_limits<std::uintmax_t>::max() - delta)
+    {
+        return false;
+    }
+    result = base + delta;
+    return true;
+}
+
 template <typename Handler>
 bool ForEachVorbisCommentEntry(const uint8_t *data, std::size_t size, Handler &&handler)
 {
@@ -800,6 +810,10 @@ std::vector<uint8_t> ReadRange(std::ifstream &input, std::uintmax_t offset, std:
         return {};
     }
     if (size > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max()))
+    {
+        return {};
+    }
+    if (offset > std::numeric_limits<std::uintmax_t>::max() - static_cast<std::uintmax_t>(size))
     {
         return {};
     }
@@ -2377,57 +2391,6 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
     return false;
 }
 
-void TagReader::ReadVorbisCommentBlock(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t size)
-{
-    if (!context.input.is_open() || size < 4)
-    {
-        return;
-    }
-
-    // 这里只处理 FLAC comment block 的最小实现，后续可复用到其他容器的 comment 区段。
-    std::uintmax_t cursor = offset;
-    while (cursor + 4 <= offset + size)
-    {
-        const std::vector<uint8_t> blockHeader = ReadRange(context.input, cursor, 4);
-        if (blockHeader.size() != 4)
-        {
-            throw std::runtime_error("failed to read FLAC metadata block header");
-        }
-
-        const bool lastBlock = (blockHeader[0] & 0x80) != 0;
-        const uint32_t blockType = blockHeader[0] & 0x7F;
-        const uint32_t blockSize = ReadBE24(blockHeader.data() + 1);
-        cursor += 4;
-
-        if (blockSize > offset + size - cursor)
-        {
-            throw std::runtime_error("truncated FLAC metadata block");
-        }
-
-        if (blockType == 4)
-        {
-            const std::vector<uint8_t> block = ReadRange(context.input, cursor, static_cast<std::size_t>(blockSize));
-            if (block.size() != blockSize)
-            {
-                throw std::runtime_error("failed to read FLAC Vorbis comment block");
-            }
-
-            const bool ok = ForEachVorbisCommentEntry(block.data(), block.size(), [&](std::string_view entry)
-                                                      { ReadVorbisCommentEntry(metadata, entry); });
-            if (!ok)
-            {
-                throw std::runtime_error("invalid FLAC Vorbis comment block");
-            }
-        }
-
-        cursor += blockSize;
-        if (lastBlock)
-        {
-            break;
-        }
-    }
-}
-
 void TagReader::ReadVorbisCommentEntry(RawMetadata &metadata, std::string_view entry)
 {
     const auto eq = entry.find('=');
@@ -2652,8 +2615,7 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
                 return;
             }
 
-            atomEnd = cursor + static_cast<std::uintmax_t>(atomSize);
-            if (atomEnd < cursor || atomEnd > limit)
+            if (!TryAddUintmax(cursor, static_cast<std::uintmax_t>(atomSize), atomEnd) || atomEnd > limit)
             {
                 return;
             }
@@ -2735,7 +2697,8 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
     if (size != 0)
     {
-        if (size < 8 || offset + size < offset || offset + size > limit)
+        std::uintmax_t sizeEnd = 0;
+        if (size < 8 || !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), sizeEnd) || sizeEnd > limit)
         {
             return;
         }
@@ -2743,7 +2706,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
     if (type == "data")
     {
-        const std::uintmax_t dataLimit = size == 0 ? limit : offset + size;
+        std::uintmax_t dataLimit = limit;
+        if (size != 0 && !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), dataLimit))
+        {
+            return;
+        }
         if (payloadOffset > dataLimit)
         {
             return;
@@ -2761,7 +2728,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
     // 兼容 `ilst` 的子项：继续扫描内部 item atom。
     std::uintmax_t cursor = payloadOffset;
-    const std::uintmax_t atomLimit = size == 0 ? limit : offset + size;
+    std::uintmax_t atomLimit = limit;
+    if (size != 0 && !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), atomLimit))
+    {
+        return;
+    }
     while (cursor + 8 <= atomLimit)
     {
         const std::vector<uint8_t> childHeader = ReadRange(context.input, cursor, 8);
@@ -2791,7 +2762,8 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
         if (childSize != 0)
         {
-            if (childSize < 8 || cursor + childSize < cursor || cursor + childSize > atomLimit)
+            std::uintmax_t childEnd = 0;
+            if (childSize < 8 || !TryAddUintmax(cursor, static_cast<std::uintmax_t>(childSize), childEnd) || childEnd > atomLimit)
             {
                 return;
             }
@@ -2799,7 +2771,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
 
         if (childType == "data")
         {
-            const std::uintmax_t childLimit = childSize == 0 ? atomLimit : cursor + childSize;
+            std::uintmax_t childLimit = atomLimit;
+            if (childSize != 0 && !TryAddUintmax(cursor, static_cast<std::uintmax_t>(childSize), childLimit))
+            {
+                return;
+            }
             if (childPayloadOffset > childLimit)
             {
                 return;
@@ -2829,15 +2805,30 @@ void TagReader::ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std
         return;
     }
 
+    auto decodeMp4Text = [&](std::uint32_t type, const uint8_t *textPayload, std::size_t textSize) -> DecodedField
+    {
+        if (textPayload == nullptr || textSize == 0)
+        {
+            return {};
+        }
+
+        if (type == 1)
+        {
+            return DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(textPayload), textSize), "utf-8");
+        }
+        if (type == 0)
+        {
+            return DecodeRawText(std::string_view(reinterpret_cast<const char *>(textPayload), textSize));
+        }
+
+        // UTF-16 and other MP4 text data types are not supported yet; skip conservatively.
+        return {};
+    };
+
     // MP4 的常见文本和数字字段在 data atom 内，这里只处理项目需要的固定字段。
     if (AtomTypeIs(atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size())) || AtomTypeIs(atomType, "aART") || AtomTypeIs(atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4DayAtom.data(), kMp4DayAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4DateAtom.data(), kMp4DateAtom.size())))
     {
-        if (dataType != 0 && dataType != 1)
-        {
-            return;
-        }
-
-        const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(payload), payloadSize));
+        const DecodedField field = decodeMp4Text(dataType, payload, payloadSize);
         if (!field.success)
         {
             return;
@@ -2897,7 +2888,10 @@ void TagReader::ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std
         {
             return;
         }
-        if (dataType != 13 && dataType != 14)
+
+        const bool matchesDataType = (dataType == 13 && imageFormat == ImageFormat::Jpeg) ||
+                                     (dataType == 14 && imageFormat == ImageFormat::Png);
+        if (!matchesDataType)
         {
             return;
         }
@@ -3691,7 +3685,8 @@ void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::
                 const uint32_t dataType = ReadBE32(data.data());
                 if ((AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || type == std::string(atomType)) && (dataType == 1 || dataType == 0))
                 {
-                    const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8));
+                    const DecodedField field = dataType == 1 ? DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8), "utf-8")
+                                                              : DecodeRawText(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8));
                     const std::string text = field.success ? field.value : std::string{};
                     if (!text.empty())
                     {
