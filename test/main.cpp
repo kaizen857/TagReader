@@ -30,6 +30,11 @@ void PrintTag(const MusicTag &tag)
     std::cout << "rating: " << static_cast<unsigned>(tag.rating()) << '\n';
     std::cout << "coverPath: " << tag.coverPath().string() << '\n';
     std::cout << "lyricsCount: " << tag.lyrics().size() << '\n';
+    std::cout << "lyrics:\n";
+    for (const auto &lyric : tag.lyrics().lyrics())
+    {
+        std::cout << "[" << lyric.timestamp() << "]:" << lyric.text() << '\n';
+    }
 }
 } // namespace
 

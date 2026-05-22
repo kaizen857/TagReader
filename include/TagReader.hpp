@@ -122,6 +122,7 @@ private:
     static void ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics);
     static void ReadMP4LyricsAtomTree(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit);
     static void ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
+    static void ReadMP4FreeformLyricsItem(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit);
     static void AppendPlainLyrics(RawLyrics &lyrics, std::string text);
     static void AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds timestamp, std::string text);
     static bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timestamp);

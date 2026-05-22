@@ -271,6 +271,10 @@ enum class ImageFormat
     Unknown,
     Png,
     Jpeg,
+    Bmp,
+    Webp,
+    Gif,
+    Tiff,
 };
 
 ImageFormat DetectImageFormat(const uint8_t *data, std::size_t size)
@@ -288,6 +292,26 @@ ImageFormat DetectImageFormat(const uint8_t *data, std::size_t size)
     if (size >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
     {
         return ImageFormat::Jpeg;
+    }
+
+    if (size >= 2 && data[0] == 'B' && data[1] == 'M')
+    {
+        return ImageFormat::Bmp;
+    }
+
+    if (size >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P')
+    {
+        return ImageFormat::Webp;
+    }
+
+    if (size >= 6 && data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8' && (data[4] == '7' || data[4] == '9') && data[5] == 'a')
+    {
+        return ImageFormat::Gif;
+    }
+
+    if (size >= 4 && ((data[0] == 'I' && data[1] == 'I' && data[2] == 0x2A && data[3] == 0x00) || (data[0] == 'M' && data[1] == 'M' && data[2] == 0x00 && data[3] == 0x2A)))
+    {
+        return ImageFormat::Tiff;
     }
 
     return ImageFormat::Unknown;
@@ -324,6 +348,27 @@ struct SwsContextDeleter
         sws_freeContext(context);
     }
 };
+
+std::vector<uint8_t> ReadImageBytes(const uint8_t *data, std::size_t size)
+{
+    if (data == nullptr || size == 0 || size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        return {};
+    }
+
+    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
+    if (packet == nullptr)
+    {
+        return {};
+    }
+
+    if (av_new_packet(packet.get(), static_cast<int>(size)) < 0)
+    {
+        return {};
+    }
+    std::memcpy(packet->data, data, size);
+    return std::vector<uint8_t>(packet->data, packet->data + packet->size);
+}
 
 std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
 {
@@ -367,9 +412,9 @@ std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
     return std::vector<uint8_t>(packet->data, packet->data + packet->size);
 }
 
-std::vector<uint8_t> ConvertJpegToPng(const uint8_t *data, std::size_t size)
+std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AVCodecID codecId)
 {
-    const AVCodec *decoder = avcodec_find_decoder(AV_CODEC_ID_MJPEG);
+    const AVCodec *decoder = avcodec_find_decoder(codecId);
     if (decoder == nullptr)
     {
         return {};
@@ -381,20 +426,35 @@ std::vector<uint8_t> ConvertJpegToPng(const uint8_t *data, std::size_t size)
         return {};
     }
 
-    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
     std::unique_ptr<AVFrame, AvFrameDeleter> decodedFrame(av_frame_alloc());
-    if (packet == nullptr || decodedFrame == nullptr)
+    if (decodedFrame == nullptr)
     {
         return {};
     }
 
-    if (av_new_packet(packet.get(), static_cast<int>(size)) < 0)
+    const std::vector<uint8_t> packetBytes = ReadImageBytes(data, size);
+    if (packetBytes.empty())
     {
         return {};
     }
-    std::memcpy(packet->data, data, size);
+
+    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
+    if (packet == nullptr)
+    {
+        return {};
+    }
+    if (av_new_packet(packet.get(), static_cast<int>(packetBytes.size())) < 0)
+    {
+        return {};
+    }
+    std::memcpy(packet->data, packetBytes.data(), packetBytes.size());
 
     if (avcodec_send_packet(decoderContext.get(), packet.get()) < 0 || avcodec_receive_frame(decoderContext.get(), decodedFrame.get()) < 0)
+    {
+        return {};
+    }
+
+    if (decodedFrame->width <= 0 || decodedFrame->height <= 0 || av_image_check_size(decodedFrame->width, decodedFrame->height, 0, nullptr) < 0)
     {
         return {};
     }
@@ -431,13 +491,14 @@ std::vector<uint8_t> ConvertJpegToPng(const uint8_t *data, std::size_t size)
     return EncodeFrameAsPng(rgbFrame.get());
 }
 
+std::vector<uint8_t> ConvertJpegToPng(const uint8_t *data, std::size_t size)
+{
+    return ConvertImageToPng(data, size, AV_CODEC_ID_MJPEG);
+}
+
 std::filesystem::path WriteCoverAsPng(const std::filesystem::path &audioPath, const uint8_t *data, std::size_t size)
 {
     const ImageFormat format = DetectImageFormat(data, size);
-    if (format == ImageFormat::Unknown)
-    {
-        return {};
-    }
 
     // All public cover exports use PNG paths; JPEG sources must be transcoded, not renamed.
     const std::filesystem::path coverPath = MakeCoverPathForAudioFile(audioPath);
@@ -452,7 +513,47 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &audioPath, co
         return coverPath;
     }
 
-    const std::vector<uint8_t> png = ConvertJpegToPng(data, size);
+    std::vector<uint8_t> png;
+    if (format == ImageFormat::Jpeg)
+    {
+        png = ConvertImageToPng(data, size, AV_CODEC_ID_MJPEG);
+    }
+    else if (format == ImageFormat::Bmp)
+    {
+        png = ConvertImageToPng(data, size, AV_CODEC_ID_BMP);
+    }
+    else if (format == ImageFormat::Webp)
+    {
+        png = ConvertImageToPng(data, size, AV_CODEC_ID_WEBP);
+    }
+    else if (format == ImageFormat::Gif)
+    {
+        png = ConvertImageToPng(data, size, AV_CODEC_ID_GIF);
+    }
+    else if (format == ImageFormat::Tiff)
+    {
+        png = ConvertImageToPng(data, size, AV_CODEC_ID_TIFF);
+    }
+    else
+    {
+        constexpr std::array<AVCodecID, 5> fallbackCodecs{
+            AV_CODEC_ID_WEBP,
+            AV_CODEC_ID_GIF,
+            AV_CODEC_ID_TIFF,
+            AV_CODEC_ID_BMP,
+            AV_CODEC_ID_MJPEG,
+        };
+
+        for (AVCodecID codecId : fallbackCodecs)
+        {
+            png = ConvertImageToPng(data, size, codecId);
+            if (!png.empty())
+            {
+                break;
+            }
+        }
+    }
+
     if (png.empty() || DetectImageFormat(png.data(), png.size()) != ImageFormat::Png)
     {
         return {};
@@ -598,18 +699,26 @@ void TagReader::DetectStream(ReadContext &context)
         }
     }
 
-    for (unsigned int i = 0; i < formatContext->nb_streams; ++i)
+    const int bestAudioStream = av_find_best_stream(context.formatContext.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+    if (bestAudioStream >= 0)
     {
-        const AVStream *stream = formatContext->streams[i];
-        if (stream == nullptr || stream->codecpar == nullptr)
+        context.audioStreamIndex = bestAudioStream;
+    }
+    else
+    {
+        for (unsigned int i = 0; i < formatContext->nb_streams; ++i)
         {
-            continue;
-        }
+            const AVStream *stream = formatContext->streams[i];
+            if (stream == nullptr || stream->codecpar == nullptr)
+            {
+                continue;
+            }
 
-        if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-        {
-            context.audioStreamIndex = static_cast<int>(i);
-            break;
+            if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+            {
+                context.audioStreamIndex = static_cast<int>(i);
+                break;
+            }
         }
     }
 
@@ -746,6 +855,54 @@ bool TryAddUintmax(std::uintmax_t base, std::uintmax_t delta, std::uintmax_t &re
     }
     result = base + delta;
     return true;
+}
+
+uint32_t DetectAudioBitDepth(const AVCodecParameters *codecpar)
+{
+    if (codecpar == nullptr)
+    {
+        return 0;
+    }
+
+    if (codecpar->bits_per_raw_sample > 0)
+    {
+        return static_cast<uint32_t>(codecpar->bits_per_raw_sample);
+    }
+
+    if (codecpar->bits_per_coded_sample > 0)
+    {
+        return static_cast<uint32_t>(codecpar->bits_per_coded_sample);
+    }
+
+    return 0;
+}
+
+std::string NormalizeFormatName(const std::filesystem::path &filePath, std::string_view containerName)
+{
+    std::string normalized = ToLower(std::string(containerName));
+    if (normalized.empty())
+    {
+        return normalized;
+    }
+
+    if (normalized.find(',') == std::string::npos)
+    {
+        return normalized;
+    }
+
+    std::string extension = ToLower(filePath.extension().string());
+    if (!extension.empty() && extension.front() == '.')
+    {
+        extension.erase(extension.begin());
+    }
+
+    if (!extension.empty())
+    {
+        return extension;
+    }
+
+    const auto comma = normalized.find(',');
+    return comma == std::string::npos ? normalized : normalized.substr(0, comma);
 }
 
 template <typename Handler>
@@ -1198,6 +1355,11 @@ bool TryReadUtf16Text(const uint8_t *data, std::size_t size, bool defaultBigEndi
         }
     }
 
+    if ((size - start) % 2 != 0)
+    {
+        return false;
+    }
+
     for (std::size_t i = start; i + 1 < size; i += 2)
     {
         const uint16_t ch = bigEndian ? ReadBE16(data + i) : static_cast<uint16_t>(data[i] | (static_cast<uint16_t>(data[i + 1]) << 8));
@@ -1358,6 +1520,86 @@ std::string ReadId3TextFrame(const uint8_t *data, std::size_t size)
 bool AtomTypeIs(std::string_view atomType, std::string_view expected)
 {
     return atomType.size() == expected.size() && std::memcmp(atomType.data(), expected.data(), expected.size()) == 0;
+}
+
+struct Mp4AtomHeader
+{
+    std::uintmax_t offset{};
+    std::uintmax_t headerSize{};
+    std::uintmax_t payloadOffset{};
+    std::uintmax_t atomEnd{};
+    uint64_t atomSize{};
+    std::string atomType;
+};
+
+bool ReadMp4AtomHeader(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, Mp4AtomHeader &atom)
+{
+    atom = {};
+    if (limit <= offset)
+    {
+        return false;
+    }
+
+    std::uintmax_t basicHeaderEnd = 0;
+    if (!TryAddUintmax(offset, 8, basicHeaderEnd) || basicHeaderEnd > limit)
+    {
+        return false;
+    }
+
+    const std::vector<uint8_t> header = ReadRange(input, offset, 8);
+    if (header.size() != 8)
+    {
+        return false;
+    }
+
+    uint64_t atomSize = ReadBE32(header.data());
+    std::string atomType(reinterpret_cast<const char *>(header.data() + 4), 4);
+    std::uintmax_t headerSize = 8;
+    std::uintmax_t payloadOffset = basicHeaderEnd;
+
+    if (atomSize == 1)
+    {
+        std::uintmax_t extHeaderEnd = 0;
+        if (!TryAddUintmax(offset, 16, extHeaderEnd) || extHeaderEnd > limit)
+        {
+            return false;
+        }
+
+        const std::vector<uint8_t> ext = ReadRange(input, basicHeaderEnd, 8);
+        if (ext.size() != 8)
+        {
+            return false;
+        }
+
+        atomSize = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
+        headerSize = 16;
+        payloadOffset = extHeaderEnd;
+    }
+
+    std::uintmax_t atomEnd = limit;
+    if (atomSize != 0)
+    {
+        if (atomSize < headerSize)
+        {
+            return false;
+        }
+        if (atomSize > std::numeric_limits<std::uintmax_t>::max())
+        {
+            return false;
+        }
+        if (!TryAddUintmax(offset, static_cast<std::uintmax_t>(atomSize), atomEnd) || atomEnd > limit)
+        {
+            return false;
+        }
+    }
+
+    atom.offset = offset;
+    atom.headerSize = headerSize;
+    atom.payloadOffset = payloadOffset;
+    atom.atomEnd = atomEnd;
+    atom.atomSize = atomSize;
+    atom.atomType = std::move(atomType);
+    return true;
 }
 
 constexpr std::array<char, 4> kMp4TitleAtom{static_cast<char>(0xA9), 'n', 'a', 'm'};
@@ -1682,16 +1924,16 @@ TagReader::RawMediaInfo TagReader::ReadMediaInfo(const ReadContext &context)
     mediaInfo.channels = audioStream->codecpar->channels > 0 ? static_cast<uint8_t>(audioStream->codecpar->channels) : 0;
 #endif
 
-    mediaInfo.bitDepth = audioStream->codecpar->bits_per_coded_sample > 0 ? static_cast<uint32_t>(audioStream->codecpar->bits_per_coded_sample) : 0;
+    mediaInfo.bitDepth = DetectAudioBitDepth(audioStream->codecpar);
 
     // 格式名优先使用前面探测阶段保存的容器短名。
     if (!context.containerName.empty())
     {
-        mediaInfo.format = context.containerName;
+        mediaInfo.format = NormalizeFormatName(context.filePath, context.containerName);
     }
     else if (formatContext->iformat != nullptr && formatContext->iformat->name != nullptr)
     {
-        mediaInfo.format = formatContext->iformat->name;
+        mediaInfo.format = NormalizeFormatName(context.filePath, formatContext->iformat->name);
     }
 
     return mediaInfo;
@@ -2261,8 +2503,14 @@ void TagReader::ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metada
     }
 
     std::uintmax_t cursor = 4;
-    while (cursor + 4 <= context.fileSize)
+    while (true)
     {
+        std::uintmax_t blockHeaderEnd = 0;
+        if (!TryAddUintmax(cursor, 4, blockHeaderEnd) || blockHeaderEnd > context.fileSize)
+        {
+            break;
+        }
+
         const std::vector<uint8_t> blockHeader = ReadRange(context.input, cursor, 4);
         if (blockHeader.size() != 4)
         {
@@ -2274,7 +2522,8 @@ void TagReader::ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metada
         const uint32_t blockSize = ReadBE24(blockHeader.data() + 1);
         cursor += 4;
 
-        if (blockSize > context.fileSize - cursor)
+        std::uintmax_t blockEnd = 0;
+        if (!TryAddUintmax(cursor, blockSize, blockEnd) || blockEnd > context.fileSize)
         {
             throw std::runtime_error("truncated FLAC metadata block");
         }
@@ -2304,7 +2553,7 @@ void TagReader::ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metada
             ReadFlacPictureEntry(context, metadata, picture.data(), picture.size());
         }
 
-        cursor += blockSize;
+        cursor = blockEnd;
         if (lastBlock)
         {
             break;
@@ -2328,8 +2577,14 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
     std::uintmax_t cursor = 0;
     std::vector<uint8_t> packet;
     bool sawIdentificationHeader = false;
-    while (cursor + 27 <= context.fileSize)
+    while (true)
     {
+        std::uintmax_t pageHeaderEnd = 0;
+        if (!TryAddUintmax(cursor, 27, pageHeaderEnd) || pageHeaderEnd > context.fileSize)
+        {
+            break;
+        }
+
         const std::vector<uint8_t> pageHeader = ReadRange(context.input, cursor, 27);
         if (pageHeader.size() != 27 || std::string_view(reinterpret_cast<const char *>(pageHeader.data()), 4) != "OggS")
         {
@@ -2337,7 +2592,13 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
         }
 
         const uint8_t segmentCount = pageHeader[26];
-        const std::vector<uint8_t> segmentTable = ReadRange(context.input, cursor + 27, segmentCount);
+        std::uintmax_t segmentTableOffset = 0;
+        if (!TryAddUintmax(cursor, 27, segmentTableOffset))
+        {
+            return false;
+        }
+
+        const std::vector<uint8_t> segmentTable = ReadRange(context.input, segmentTableOffset, segmentCount);
         if (segmentTable.size() != segmentCount)
         {
             return false;
@@ -2349,7 +2610,13 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
             payloadSize += seg;
         }
 
-        const std::vector<uint8_t> payload = ReadRange(context.input, cursor + 27 + segmentCount, payloadSize);
+        std::uintmax_t payloadOffset = 0;
+        if (!TryAddUintmax(segmentTableOffset, segmentCount, payloadOffset))
+        {
+            return false;
+        }
+
+        const std::vector<uint8_t> payload = ReadRange(context.input, payloadOffset, payloadSize);
         if (payload.size() != payloadSize)
         {
             return false;
@@ -2385,7 +2652,12 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
             }
         }
 
-        cursor += 27 + segmentCount + payloadSize;
+        std::uintmax_t nextCursor = 0;
+        if (!TryAddUintmax(payloadOffset, payloadSize, nextCursor))
+        {
+            return false;
+        }
+        cursor = nextCursor;
     }
 
     return false;
@@ -2581,82 +2853,54 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
 
     // depth tracks the strict metadata path: root -> moov -> udta -> meta(full box) -> ilst.
     std::uintmax_t cursor = offset;
-    while (cursor + 8 <= limit)
+    while (cursor < limit)
     {
-        const std::vector<uint8_t> header = ReadRange(context.input, cursor, 8);
-        if (header.size() != 8)
+        Mp4AtomHeader atom;
+        if (!ReadMp4AtomHeader(context.input, cursor, limit, atom))
         {
             return;
         }
 
-        uint64_t atomSize = ReadBE32(header.data());
-        const std::string atomType(reinterpret_cast<const char *>(header.data() + 4), 4);
-
-        if (atomSize == 1)
+        if (depth == 0 && AtomTypeIs(atom.atomType, "moov"))
         {
-            if (cursor + 16 > limit)
+            if (atom.payloadOffset < atom.atomEnd)
+            {
+                ReadMP4AtomTree(context, metadata, atom.payloadOffset, atom.atomEnd, 1);
+            }
+        }
+        else if (depth == 1 && AtomTypeIs(atom.atomType, "udta"))
+        {
+            if (atom.payloadOffset < atom.atomEnd)
+            {
+                ReadMP4AtomTree(context, metadata, atom.payloadOffset, atom.atomEnd, 2);
+            }
+        }
+        else if (depth == 2 && AtomTypeIs(atom.atomType, "meta"))
+        {
+            std::uintmax_t childOffset = 0;
+            if (!TryAddUintmax(atom.payloadOffset, 4, childOffset))
             {
                 return;
             }
-
-            const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
-            if (ext.size() != 8)
+            if (childOffset < atom.atomEnd)
             {
-                return;
+                ReadMP4AtomTree(context, metadata, childOffset, atom.atomEnd, 3);
             }
-            atomSize = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
         }
-
-        std::uintmax_t atomEnd = limit;
-        if (atomSize != 0)
+        else if (depth == 3 && AtomTypeIs(atom.atomType, "ilst"))
         {
-            if (atomSize < 8)
+            if (atom.payloadOffset < atom.atomEnd)
             {
-                return;
+                ReadMP4AtomTree(context, metadata, atom.payloadOffset, atom.atomEnd, 4);
             }
-
-            if (!TryAddUintmax(cursor, static_cast<std::uintmax_t>(atomSize), atomEnd) || atomEnd > limit)
-            {
-                return;
-            }
+        }
+        else if (depth == 4 && (AtomTypeIs(atom.atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size())) || AtomTypeIs(atom.atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size())) || AtomTypeIs(atom.atomType, "aART") || AtomTypeIs(atom.atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size())) || AtomTypeIs(atom.atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size())) || AtomTypeIs(atom.atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size())) || AtomTypeIs(atom.atomType, std::string_view(kMp4DayAtom.data(), kMp4DayAtom.size())) || AtomTypeIs(atom.atomType, std::string_view(kMp4DateAtom.data(), kMp4DateAtom.size())) || AtomTypeIs(atom.atomType, "trkn") || AtomTypeIs(atom.atomType, "disk") || AtomTypeIs(atom.atomType, "covr")))
+        {
+            ReadMP4ItemAtom(context, metadata, atom.atomType, atom.payloadOffset, atom.atomEnd);
         }
 
-        if (depth == 0 && AtomTypeIs(atomType, "moov"))
-        {
-            if (cursor + 8 < atomEnd)
-            {
-                ReadMP4AtomTree(context, metadata, cursor + 8, atomEnd, 1);
-            }
-        }
-        else if (depth == 1 && AtomTypeIs(atomType, "udta"))
-        {
-            if (cursor + 8 < atomEnd)
-            {
-                ReadMP4AtomTree(context, metadata, cursor + 8, atomEnd, 2);
-            }
-        }
-        else if (depth == 2 && AtomTypeIs(atomType, "meta"))
-        {
-            const std::uintmax_t childOffset = cursor + 12;
-            if (childOffset < atomEnd)
-            {
-                ReadMP4AtomTree(context, metadata, childOffset, atomEnd, 3);
-            }
-        }
-        else if (depth == 3 && AtomTypeIs(atomType, "ilst"))
-        {
-            if (cursor + 8 < atomEnd)
-            {
-                ReadMP4AtomTree(context, metadata, cursor + 8, atomEnd, 4);
-            }
-        }
-        else if (depth == 4 && (AtomTypeIs(atomType, std::string_view(kMp4TitleAtom.data(), kMp4TitleAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4ArtistAtom.data(), kMp4ArtistAtom.size())) || AtomTypeIs(atomType, "aART") || AtomTypeIs(atomType, std::string_view(kMp4AlbumAtom.data(), kMp4AlbumAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4ComposerAtom.data(), kMp4ComposerAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4GenreAtom.data(), kMp4GenreAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4DayAtom.data(), kMp4DayAtom.size())) || AtomTypeIs(atomType, std::string_view(kMp4DateAtom.data(), kMp4DateAtom.size())) || AtomTypeIs(atomType, "trkn") || AtomTypeIs(atomType, "disk") || AtomTypeIs(atomType, "covr")))
-        {
-            ReadMP4ItemAtom(context, metadata, atomType, cursor + 8, atomEnd);
-        }
-
-        cursor = atomEnd;
-        if (atomSize == 0)
+        cursor = atom.atomEnd;
+        if (atom.atomSize == 0)
         {
             return;
         }
@@ -2665,58 +2909,25 @@ void TagReader::ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std
 
 void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit)
 {
-    if (!context.input.is_open() || offset + 8 > limit)
+    if (!context.input.is_open() || limit <= offset)
     {
         return;
     }
 
-    const std::vector<uint8_t> header = ReadRange(context.input, offset, 8);
-    if (header.size() != 8)
+    Mp4AtomHeader atom;
+    if (!ReadMp4AtomHeader(context.input, offset, limit, atom))
     {
         return;
     }
 
-    uint64_t size = ReadBE32(header.data());
-    std::string type(reinterpret_cast<const char *>(header.data() + 4), 4);
-    std::uintmax_t payloadOffset = offset + 8;
-    if (size == 1)
+    if (atom.atomType == "data")
     {
-        if (offset + 16 > limit)
+        if (atom.payloadOffset > atom.atomEnd)
         {
             return;
         }
 
-        const std::vector<uint8_t> ext = ReadRange(context.input, offset + 8, 8);
-        if (ext.size() != 8)
-        {
-            return;
-        }
-        size = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
-        payloadOffset += 8;
-    }
-
-    if (size != 0)
-    {
-        std::uintmax_t sizeEnd = 0;
-        if (size < 8 || !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), sizeEnd) || sizeEnd > limit)
-        {
-            return;
-        }
-    }
-
-    if (type == "data")
-    {
-        std::uintmax_t dataLimit = limit;
-        if (size != 0 && !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), dataLimit))
-        {
-            return;
-        }
-        if (payloadOffset > dataLimit)
-        {
-            return;
-        }
-
-        const std::vector<uint8_t> data = ReadRange(context.input, payloadOffset, static_cast<std::size_t>(dataLimit - payloadOffset));
+        const std::vector<uint8_t> data = ReadRange(context.input, atom.payloadOffset, static_cast<std::size_t>(atom.atomEnd - atom.payloadOffset));
         if (data.size() < 8)
         {
             return;
@@ -2727,61 +2938,24 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
     }
 
     // 兼容 `ilst` 的子项：继续扫描内部 item atom。
-    std::uintmax_t cursor = payloadOffset;
-    std::uintmax_t atomLimit = limit;
-    if (size != 0 && !TryAddUintmax(offset, static_cast<std::uintmax_t>(size), atomLimit))
+    std::uintmax_t cursor = atom.payloadOffset;
+    const std::uintmax_t atomLimit = atom.atomEnd;
+    while (cursor < atomLimit)
     {
-        return;
-    }
-    while (cursor + 8 <= atomLimit)
-    {
-        const std::vector<uint8_t> childHeader = ReadRange(context.input, cursor, 8);
-        if (childHeader.size() != 8)
+        Mp4AtomHeader childAtom;
+        if (!ReadMp4AtomHeader(context.input, cursor, atomLimit, childAtom))
         {
             return;
         }
 
-        uint64_t childSize = ReadBE32(childHeader.data());
-        std::string childType(reinterpret_cast<const char *>(childHeader.data() + 4), 4);
-        std::uintmax_t childPayloadOffset = cursor + 8;
-        if (childSize == 1)
+        if (childAtom.atomType == "data")
         {
-            if (cursor + 16 > atomLimit)
+            if (childAtom.payloadOffset > childAtom.atomEnd)
             {
                 return;
             }
 
-            const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
-            if (ext.size() != 8)
-            {
-                return;
-            }
-            childSize = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
-            childPayloadOffset += 8;
-        }
-
-        if (childSize != 0)
-        {
-            std::uintmax_t childEnd = 0;
-            if (childSize < 8 || !TryAddUintmax(cursor, static_cast<std::uintmax_t>(childSize), childEnd) || childEnd > atomLimit)
-            {
-                return;
-            }
-        }
-
-        if (childType == "data")
-        {
-            std::uintmax_t childLimit = atomLimit;
-            if (childSize != 0 && !TryAddUintmax(cursor, static_cast<std::uintmax_t>(childSize), childLimit))
-            {
-                return;
-            }
-            if (childPayloadOffset > childLimit)
-            {
-                return;
-            }
-
-            const std::vector<uint8_t> data = ReadRange(context.input, childPayloadOffset, static_cast<std::size_t>(childLimit - childPayloadOffset));
+            const std::vector<uint8_t> data = ReadRange(context.input, childAtom.payloadOffset, static_cast<std::size_t>(childAtom.atomEnd - childAtom.payloadOffset));
             if (data.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(data.data());
@@ -2789,12 +2963,11 @@ void TagReader::ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std
             }
         }
 
-        if (childSize == 0)
+        cursor = childAtom.atomEnd;
+        if (childAtom.atomSize == 0)
         {
             return;
         }
-
-        cursor += childSize;
     }
 }
 
@@ -2883,15 +3056,7 @@ void TagReader::ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std
     }
     else if (atomType == "covr")
     {
-        const ImageFormat imageFormat = DetectImageFormat(payload, payloadSize);
-        if (imageFormat == ImageFormat::Unknown)
-        {
-            return;
-        }
-
-        const bool matchesDataType = (dataType == 13 && imageFormat == ImageFormat::Jpeg) ||
-                                     (dataType == 14 && imageFormat == ImageFormat::Png);
-        if (!matchesDataType)
+        if (payload == nullptr || payloadSize == 0)
         {
             return;
         }
@@ -2984,6 +3149,9 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
 void TagReader::ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, std::size_t cursor)
 {
     (void)context;
+    RawLyrics ultCandidate{};
+    RawLyrics sltCandidate{};
+
     while (cursor + 6 <= tagBytes.size())
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
@@ -3016,13 +3184,72 @@ void TagReader::ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, 
                 p += descSize + EncodedTerminatorWidth(encoding);
                 if (p < frameSize)
                 {
-                    AppendPlainLyrics(lyrics, ReadId3ByteString(frameData + p, frameSize - p, encoding));
+                    AppendPlainLyrics(ultCandidate, ReadId3ByteString(frameData + p, frameSize - p, encoding));
                 }
             }
         }
-        // v2.2 SLT is intentionally skipped until timestamp conversion is implemented.
+        else if (frameId == "SLT" && frameSize > 6 && sltCandidate.timedLines.empty())
+        {
+            const uint8_t encoding = frameData[0];
+            const uint8_t timestampFormat = frameData[4];
+            const uint8_t contentType = frameData[5];
+            (void)contentType;
+            if (timestampFormat == 2)
+            {
+                std::vector<std::pair<std::chrono::microseconds, std::string>> timedLines;
+
+                std::size_t p = 1 + 3 + 1 + 1;
+                const std::size_t descriptorSize = FindEncodedTerminator(frameData + p, frameSize - p, encoding);
+                if (descriptorSize < frameSize - p)
+                {
+                    p += descriptorSize + EncodedTerminatorWidth(encoding);
+                    while (p < frameSize)
+                    {
+                        const std::size_t textStart = p;
+                        const std::size_t lineSize = FindEncodedTerminator(frameData + p, frameSize - p, encoding);
+                        if (lineSize >= frameSize - p)
+                        {
+                            break;
+                        }
+
+                        const std::string line = ReadId3ByteString(frameData + textStart, lineSize, encoding);
+                        p += lineSize + EncodedTerminatorWidth(encoding);
+                        if (p + 4 > frameSize)
+                        {
+                            break;
+                        }
+
+                        const uint32_t timestampMs = ReadBE32(frameData + p);
+                        p += 4;
+                        std::string normalizedLine = TrimText(line);
+                        if (!normalizedLine.empty())
+                        {
+                            timedLines.emplace_back(std::chrono::microseconds(static_cast<int64_t>(timestampMs) * 1000), std::move(normalizedLine));
+                        }
+                    }
+
+                    if (!timedLines.empty())
+                    {
+                        sltCandidate.timedLines = std::move(timedLines);
+                    }
+                }
+            }
+        }
 
         cursor += 6 + static_cast<std::size_t>(frameSize);
+    }
+
+    if (!lyrics.text.empty() || !lyrics.timedLines.empty())
+    {
+        return;
+    }
+    if (!sltCandidate.timedLines.empty())
+    {
+        lyrics.timedLines = std::move(sltCandidate.timedLines);
+    }
+    else if (!ultCandidate.text.empty())
+    {
+        lyrics.text = std::move(ultCandidate.text);
     }
 }
 
@@ -3295,53 +3522,46 @@ void TagReader::ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics)
 void TagReader::ReadMP4LyricsAtomTree(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit)
 {
     std::uintmax_t cursor = offset;
-    while (cursor + 8 <= limit)
+    while (cursor < limit)
     {
-        const std::vector<uint8_t> header = ReadRange(context.input, cursor, 8);
-        if (header.size() != 8)
+        Mp4AtomHeader atom;
+        if (!ReadMp4AtomHeader(context.input, cursor, limit, atom))
         {
             return;
         }
 
-        uint64_t atomSize = ReadBE32(header.data());
-        const std::string atomType(reinterpret_cast<const char *>(header.data() + 4), 4);
-        std::uintmax_t payloadOffset = cursor + 8;
-        if (atomSize == 1)
+        if (AtomTypeIs(atom.atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())))
         {
-            const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
-            if (ext.size() != 8)
+            ReadMP4LyricsItem(context, lyrics, atom.atomType, atom.payloadOffset, atom.atomEnd);
+        }
+        else if (atom.atomType == "----")
+        {
+            if (lyrics.text.empty() && lyrics.timedLines.empty())
             {
-                return;
+                ReadMP4FreeformLyricsItem(context, lyrics, atom.payloadOffset, atom.atomEnd);
             }
-            atomSize = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
-            payloadOffset += 8;
         }
-
-        if (atomSize == 0)
+        else if (atom.atomType == "moov" || atom.atomType == "udta" || atom.atomType == "meta" || atom.atomType == "ilst")
         {
-            return;
-        }
-
-        const std::uintmax_t atomEnd = cursor + static_cast<std::uintmax_t>(atomSize);
-        if (atomSize < 8 || atomEnd > limit)
-        {
-            return;
-        }
-
-        if (AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())))
-        {
-            ReadMP4LyricsItem(context, lyrics, atomType, payloadOffset, atomEnd);
-        }
-        else if (atomType == "moov" || atomType == "udta" || atomType == "meta" || atomType == "ilst")
-        {
-            const std::uintmax_t childOffset = atomType == "meta" ? cursor + 12 : payloadOffset;
-            if (childOffset < atomEnd)
+            std::uintmax_t childOffset = atom.payloadOffset;
+            if (atom.atomType == "meta")
             {
-                ReadMP4LyricsAtomTree(context, lyrics, childOffset, atomEnd);
+                if (!TryAddUintmax(atom.payloadOffset, 4, childOffset))
+                {
+                    return;
+                }
+            }
+            if (childOffset < atom.atomEnd)
+            {
+                ReadMP4LyricsAtomTree(context, lyrics, childOffset, atom.atomEnd);
             }
         }
 
-        cursor = atomEnd;
+        cursor = atom.atomEnd;
+        if (atom.atomSize == 0)
+        {
+            return;
+        }
     }
 }
 
@@ -3644,46 +3864,27 @@ void TagReader::AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds t
 
 void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit)
 {
-    if (!context.input.is_open() || offset + 8 > limit)
+    if (!context.input.is_open() || limit <= offset)
     {
         return;
     }
 
     std::uintmax_t cursor = offset;
-    while (cursor + 8 <= limit)
+    while (cursor < limit)
     {
-        const std::vector<uint8_t> header = ReadRange(context.input, cursor, 8);
-        if (header.size() != 8)
+        Mp4AtomHeader atom;
+        if (!ReadMp4AtomHeader(context.input, cursor, limit, atom))
         {
             return;
         }
 
-        uint64_t size = ReadBE32(header.data());
-        const std::string type(reinterpret_cast<const char *>(header.data() + 4), 4);
-        std::uintmax_t payloadOffset = cursor + 8;
-        if (size == 1)
+        if (atom.atomType == "data")
         {
-            const std::vector<uint8_t> ext = ReadRange(context.input, cursor + 8, 8);
-            if (ext.size() != 8)
-            {
-                return;
-            }
-            size = (static_cast<uint64_t>(ReadBE32(ext.data())) << 32) | ReadBE32(ext.data() + 4);
-            payloadOffset += 8;
-        }
-
-        if (size < 8 || size > limit - cursor)
-        {
-            return;
-        }
-
-        if (type == "data")
-        {
-            const std::vector<uint8_t> data = ReadRange(context.input, payloadOffset, static_cast<std::size_t>(cursor + size - payloadOffset));
+            const std::vector<uint8_t> data = ReadRange(context.input, atom.payloadOffset, static_cast<std::size_t>(atom.atomEnd - atom.payloadOffset));
             if (data.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(data.data());
-                if ((AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || type == std::string(atomType)) && (dataType == 1 || dataType == 0))
+                if ((AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || atom.atomType == std::string(atomType)) && (dataType == 1 || dataType == 0))
                 {
                     const DecodedField field = dataType == 1 ? DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8), "utf-8")
                                                               : DecodeRawText(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8));
@@ -3696,7 +3897,85 @@ void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::
             }
         }
 
-        cursor += static_cast<std::uintmax_t>(size);
+        cursor = atom.atomEnd;
+        if (atom.atomSize == 0)
+        {
+            return;
+        }
+    }
+}
+
+void TagReader::ReadMP4FreeformLyricsItem(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit)
+{
+    if (!context.input.is_open() || limit <= offset)
+    {
+        return;
+    }
+
+    std::string mean;
+    std::string name;
+    std::string text;
+
+    std::uintmax_t cursor = offset;
+    while (cursor < limit)
+    {
+        Mp4AtomHeader atom;
+        if (!ReadMp4AtomHeader(context.input, cursor, limit, atom))
+        {
+            return;
+        }
+
+        const std::vector<uint8_t> payload = ReadRange(context.input, atom.payloadOffset, static_cast<std::size_t>(atom.atomEnd - atom.payloadOffset));
+        if (atom.atomType == "mean" || atom.atomType == "name")
+        {
+            if (payload.size() >= 4)
+            {
+                const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(payload.data() + 4), payload.size() - 4));
+                if (field.success)
+                {
+                    if (atom.atomType == "mean")
+                    {
+                        mean = field.value;
+                    }
+                    else
+                    {
+                        name = field.value;
+                    }
+                }
+            }
+        }
+        else if (atom.atomType == "data")
+        {
+            if (payload.size() >= 8)
+            {
+                const uint32_t dataType = ReadBE32(payload.data());
+                DecodedField field{};
+                if (dataType == 1)
+                {
+                    field = DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(payload.data() + 8), payload.size() - 8), "utf-8");
+                }
+                else if (dataType == 0)
+                {
+                    field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(payload.data() + 8), payload.size() - 8));
+                }
+
+                if (field.success && !field.value.empty())
+                {
+                    text = std::move(field.value);
+                }
+            }
+        }
+
+        cursor = atom.atomEnd;
+        if (atom.atomSize == 0)
+        {
+            break;
+        }
+    }
+
+    if (mean == "com.apple.iTunes" && ToLower(name) == "lyrics" && !text.empty())
+    {
+        ReadLyricsFromPlainText(lyrics, text);
     }
 }
 

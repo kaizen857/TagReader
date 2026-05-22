@@ -25,7 +25,12 @@
 - 问题: `TryReadUtf16Text()` 只按 `i + 1 < size` 步进，遇到奇数长度时会忽略末尾半个字节并返回成功，而不是判定为损坏输入。
 - 影响: 损坏的 UTF-16 标签可能被错误接受为有效文本，造成字段污染或误判。
 
-### 6. 元数据结构体中的 MP4 封面兼容性过于严格
-- 位置: `src/TagReader.cpp:2801-2904`
-- 问题: `covr` 只接受 `dataType == 13` 对应 JPEG、`dataType == 14` 对应 PNG，并且必须能识别出签名。
-- 影响: 一些写入不规范但仍可解码的 MP4 封面会被直接跳过，导致封面缺失。
+### 6. 封面导出只支持 PNG/JPEG，不能处理 BMP 等其他格式
+- 位置: `src/TagReader.cpp:269-294`, `src/TagReader.cpp:434-462`, `src/TagReader.cpp:2801-2904`
+- 问题: `DetectImageFormat()` 只识别 PNG/JPEG；`WriteCoverAsPng()` 遇到 BMP、WEBP、GIF、TIFF 等其他图像格式会直接返回空路径，不会尝试通过 FFmpeg/OpenCV 等图像后端解码后统一转 PNG。MP4 `covr` 还额外限制 `dataType == 13` 必须对应 JPEG、`dataType == 14` 必须对应 PNG。
+- 影响: 音频文件内封面只要不是 PNG/JPEG，就无法导出；部分不规范但可解码的 MP4 封面也会被跳过，最终 `coverPath` 为空。
+
+### 7. `bitDepth` 与 `format` 的媒体信息输出不稳定
+- 位置: `src/TagReader.cpp:1829-1891`
+- 问题: `ReadMediaInfo()` 之前只读取 `codecpar->bits_per_coded_sample` 作为位深，导致 FLAC 等格式明明存在原始位深信息却仍可能输出 `0`；同时直接使用 `iformat->name` 作为格式名，会让 `m4a` 这类文件输出 `mov,mp4,m4a,3gp,3g2,mj2` 这类候选列表，而不是单一格式名。
+- 影响: 最终 `MusicTag` 的 `bitDepth` 与 `format` 字段不符合用户预期，尤其是 FLAC 位深丢失和 M4A 格式名过宽泛会直接影响展示层。
