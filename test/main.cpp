@@ -40,16 +40,17 @@ void PrintTag(const MusicTag &tag)
 
 int main(int argc, char *argv[])
 {
-    // 测试程序只接受一个音频文件路径，便于直接从终端验证库行为。
     if (argc < 2)
     {
-        std::cerr << "usage: " << argv[0] << " <audio-file-path>\n";
+        std::cerr << "usage: " << argv[0] << " <audio-file-path> [cover-export-dir]\n";
         return 1;
     }
 
     try
     {
-        const MusicTag tag = TagReader::Read(std::filesystem::path(argv[1]));
+        const MusicTag tag = argc >= 3
+                                 ? TagReader::Read(std::filesystem::path(argv[1]), std::filesystem::path(argv[2]))
+                                 : TagReader::Read(std::filesystem::path(argv[1]));
         PrintTag(tag);
     }
     catch (const std::exception &ex)

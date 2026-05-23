@@ -8,6 +8,7 @@
 #include <functional>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -19,8 +20,18 @@ class TagReader
 {
 public:
     static MusicTag Read(const std::filesystem::path &filePath);
+    static MusicTag Read(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir);
 
 private:
+    enum class DetectedContainer
+    {
+        Unknown,
+        Mp3,
+        Flac,
+        OggVorbis,
+        Mp4,
+    };
+
     struct ReadContext
     {
         struct FormatContextDeleter
@@ -29,11 +40,13 @@ private:
         };
 
         std::filesystem::path filePath;
+        std::filesystem::path coverExportDir;
         std::ifstream input;
         std::uintmax_t fileSize{};
         std::filesystem::file_time_type lastModified{};
         std::unique_ptr<AVFormatContext, FormatContextDeleter> formatContext;
         int audioStreamIndex{-1};
+        DetectedContainer detectedContainer{DetectedContainer::Unknown};
         std::string containerName;
         std::string containerLongName;
         std::vector<std::string> metadataSourcePriority;
@@ -79,15 +92,26 @@ private:
         bool success{};
     };
 
+    struct Id3TagView
+    {
+        uint8_t versionMajor{};
+        uint8_t flags{};
+        std::size_t cursor{};
+        std::size_t limit{};
+        std::vector<uint8_t> bytes;
+    };
+
 private:
     static void ValidatePath(const std::filesystem::path &filePath);
+    static void ValidateCoverExportDir(const std::filesystem::path &coverExportDir);
     static ReadContext OpenContext(const std::filesystem::path &filePath);
     static void DetectStream(ReadContext &context);
     static RawMediaInfo ReadMediaInfo(const ReadContext &context);
     static RawMetadata ReadMetadata(ReadContext &context);
     static RawLyrics ReadLyrics(ReadContext &context);
     static DecodedField NormalizeText(std::string_view value);
-    static std::string DetectContainerFromSignature(ReadContext &context);
+    static DetectedContainer DetectContainer(ReadContext &context);
+    static std::string NormalizeContainerFormatName(const ReadContext &context);
     static std::string DetectTextEncoding(std::string_view raw);
     static DecodedField DecodeTextToUtf8(std::string_view raw, std::string_view encoding);
     static DecodedField DecodeRawText(std::string_view raw);
@@ -97,6 +121,7 @@ private:
 
     static void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata);
     static void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata);
+    static bool ReadId3TagBytes(ReadContext &context, Id3TagView &tagView);
     static void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, std::size_t cursor);
     static void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit);
     static void ReadID3v22Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
@@ -111,8 +136,10 @@ private:
     static void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata);
     static void ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata, const uint8_t *pictureData, std::size_t pictureSize);
     static void ReadMP4Metadata(ReadContext &context, RawMetadata &metadata);
-    static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit, std::uint32_t depth = 0);
-    static void ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
+    static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit, std::uint32_t depth, std::size_t &visitedAtoms);
+    static void ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms);
+    static DecodedField DecodeMp4TextData(std::uint32_t dataType, const uint8_t *payload, std::size_t payloadSize);
+    static std::optional<std::uint16_t> ParseMp4TrackDiskNumber(const uint8_t *payload, std::size_t payloadSize);
     static void ReadMP4DataAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uint32_t dataType, const uint8_t *payload, std::size_t payloadSize);
 
     static void ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics);
