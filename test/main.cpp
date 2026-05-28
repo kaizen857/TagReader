@@ -1,5 +1,14 @@
 #include "TagReader.hpp"
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+#include <libavutil/log.h>
+#ifdef __cplusplus
+}
+#endif
+
 #include <iostream>
 #include <filesystem>
 #include <string>
@@ -40,6 +49,8 @@ void PrintTag(const MusicTag &tag)
 
 int main(int argc, char *argv[])
 {
+    av_log_set_level(AV_LOG_QUIET);
+
     if (argc < 2)
     {
         std::cerr << "usage: " << argv[0] << " <audio-file-path> [cover-export-dir]\n";

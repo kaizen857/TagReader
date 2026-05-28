@@ -96,6 +96,7 @@ private:
     {
         uint8_t versionMajor{};
         uint8_t flags{};
+        bool tagUnsync{};
         std::size_t cursor{};
         std::size_t limit{};
         std::vector<uint8_t> bytes;
@@ -123,7 +124,7 @@ private:
     static void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata);
     static bool ReadId3TagBytes(ReadContext &context, Id3TagView &tagView);
     static void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, std::size_t cursor);
-    static void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit);
+    static void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, bool tagUnsync, std::size_t cursor, std::size_t limit);
     static void ReadID3v22Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const uint8_t *frameData, std::size_t frameSize);
     static void ReadID3v2Frame(ReadContext &context, RawMetadata &metadata, std::string_view frameId, const uint8_t *frameData, std::size_t frameSize);
@@ -136,7 +137,7 @@ private:
     static void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata);
     static void ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata, const uint8_t *pictureData, std::size_t pictureSize);
     static void ReadMP4Metadata(ReadContext &context, RawMetadata &metadata);
-    static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit, std::uint32_t depth, std::size_t &visitedAtoms);
+    static void ReadMP4AtomTree(ReadContext &context, RawMetadata &metadata, std::uintmax_t offset, std::uintmax_t limit);
     static void ReadMP4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms);
     static DecodedField DecodeMp4TextData(std::uint32_t dataType, const uint8_t *payload, std::size_t payloadSize);
     static std::optional<std::uint16_t> ParseMp4TrackDiskNumber(const uint8_t *payload, std::size_t payloadSize);
@@ -148,13 +149,13 @@ private:
     static void ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text);
     static void ReadMP4Lyrics(ReadContext &context, RawLyrics &lyrics);
     static void ReadMP4LyricsAtomTree(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit);
-    static void ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit);
-    static void ReadMP4FreeformLyricsItem(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit);
+    static void ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view atomType, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms);
+    static void ReadMP4FreeformLyricsItem(ReadContext &context, RawLyrics &lyrics, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms);
     static void AppendPlainLyrics(RawLyrics &lyrics, std::string text);
     static void AppendTimedLyrics(RawLyrics &lyrics, std::chrono::microseconds timestamp, std::string text);
     static bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timestamp);
     static void ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, std::size_t cursor);
-    static void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit);
+    static void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, bool tagUnsync, std::size_t cursor, std::size_t limit);
 };
 
 #endif
