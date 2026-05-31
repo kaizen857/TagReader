@@ -30,6 +30,7 @@ extern "C"
 #include <stdexcept>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #if defined(TAGREADER_HAS_ICONV)
@@ -360,6 +361,16 @@ std::filesystem::path BuildCoverCachePath(const std::filesystem::path &coverExpo
     return coverExportDir / std::string(hex.substr(0, 2)) / (std::string(hex.substr(2)) + ".png");
 }
 
+[[noreturn]] void ThrowCoverCacheValidationError(const std::filesystem::path &path, const std::string &reason)
+{
+    throw std::runtime_error("invalid cover cache file " + path.string() + ": " + reason);
+}
+
+bool IsCoverExportOrCacheError(std::string_view message)
+{
+    return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
+}
+
 struct FileDescriptor
 {
     int fd{-1};
@@ -425,11 +436,11 @@ void FsyncDirectory(const std::filesystem::path &directory)
     FileDescriptor fd(::open(directory.c_str(), flags));
     if (fd.get() < 0)
     {
-        throw std::runtime_error("failed to open cover cache directory for fsync: " + directory.string());
+        throw std::runtime_error("cover cache failed to open directory for fsync: " + directory.string() + ": " + std::strerror(errno));
     }
     if (::fsync(fd.get()) != 0)
     {
-        throw std::runtime_error("failed to fsync cover cache directory: " + directory.string());
+        throw std::runtime_error("cover cache failed to fsync directory: " + directory.string() + ": " + std::strerror(errno));
     }
 }
 
@@ -473,13 +484,109 @@ void WriteAll(int fd, const uint8_t *data, std::size_t size, const std::filesyst
             {
                 continue;
             }
-            throw std::runtime_error("failed to write cover file: " + path.string());
+            throw std::runtime_error("cover export failed to write cover file: " + path.string() + ": " + std::strerror(errno));
         }
         if (result == 0)
         {
-            throw std::runtime_error("failed to write complete cover file: " + path.string());
+            throw std::runtime_error("cover export failed to write complete cover file: " + path.string());
         }
         written += static_cast<std::size_t>(result);
+    }
+}
+
+void ValidateExistingCoverCacheFile(const std::filesystem::path &path, const std::vector<uint8_t> &expectedBytes)
+{
+    if (expectedBytes.empty() || expectedBytes.size() > kCoverDecodeLimits.maxOutputBytes)
+    {
+        ThrowCoverCacheValidationError(path, "unexpected PNG byte size");
+    }
+
+    std::error_code statusEc;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(path, statusEc);
+    if (statusEc)
+    {
+        ThrowCoverCacheValidationError(path, "failed to query path: " + statusEc.message());
+    }
+    if (std::filesystem::is_symlink(status))
+    {
+        ThrowCoverCacheValidationError(path, "symlink is not trusted");
+    }
+    if (!std::filesystem::is_regular_file(status))
+    {
+        ThrowCoverCacheValidationError(path, "path is not a regular file");
+    }
+
+    int flags = O_RDONLY | O_CLOEXEC;
+#if defined(O_NOFOLLOW)
+    flags |= O_NOFOLLOW;
+#endif
+    FileDescriptor fd(::open(path.c_str(), flags));
+    if (fd.get() < 0)
+    {
+        ThrowCoverCacheValidationError(path, "failed to open for validation");
+    }
+
+    struct stat statBuffer
+    {
+    };
+    if (::fstat(fd.get(), &statBuffer) != 0)
+    {
+        ThrowCoverCacheValidationError(path, "failed to stat opened file");
+    }
+    if (!S_ISREG(statBuffer.st_mode))
+    {
+        ThrowCoverCacheValidationError(path, "opened path is not a regular file");
+    }
+    if (statBuffer.st_size < 0)
+    {
+        ThrowCoverCacheValidationError(path, "invalid file size");
+    }
+
+    const auto existingSize = static_cast<std::uintmax_t>(statBuffer.st_size);
+    if (existingSize > kCoverDecodeLimits.maxOutputBytes)
+    {
+        ThrowCoverCacheValidationError(path, "file is oversized");
+    }
+    if (existingSize != expectedBytes.size())
+    {
+        ThrowCoverCacheValidationError(path, "bytes do not match current cover");
+    }
+
+    std::vector<uint8_t> existingBytes(expectedBytes.size());
+    std::size_t readBytes = 0;
+    while (readBytes < existingBytes.size())
+    {
+        const std::size_t remaining = existingBytes.size() - readBytes;
+        const std::size_t chunk = std::min<std::size_t>(remaining, static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+        const ssize_t result = ::read(fd.get(), existingBytes.data() + readBytes, chunk);
+        if (result < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            ThrowCoverCacheValidationError(path, "failed to read for validation");
+        }
+        if (result == 0)
+        {
+            ThrowCoverCacheValidationError(path, "short read during validation");
+        }
+        readBytes += static_cast<std::size_t>(result);
+    }
+
+    uint8_t trailingByte{};
+    const ssize_t trailingRead = ::read(fd.get(), &trailingByte, 1);
+    if (trailingRead < 0)
+    {
+        ThrowCoverCacheValidationError(path, "failed to verify end of file");
+    }
+    if (trailingRead != 0)
+    {
+        ThrowCoverCacheValidationError(path, "file has trailing bytes");
+    }
+    if (existingBytes != expectedBytes)
+    {
+        ThrowCoverCacheValidationError(path, "bytes do not match current cover");
     }
 }
 
@@ -494,7 +601,7 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
     std::filesystem::create_directories(finalPath.parent_path(), ec);
     if (ec)
     {
-        throw std::runtime_error("failed to create cover cache directory: " + ec.message());
+        throw std::runtime_error("cover cache failed to create directory " + finalPath.parent_path().string() + ": " + ec.message());
     }
 
     if (std::filesystem::exists(finalPath, ec))
@@ -503,7 +610,7 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
     }
     if (ec)
     {
-        throw std::runtime_error("failed to query cover cache file: " + ec.message());
+        throw std::runtime_error("cover cache failed to query file " + finalPath.string() + ": " + ec.message());
     }
 
     for (int attempt = 0; attempt < 16; ++attempt)
@@ -520,7 +627,7 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
             {
                 continue;
             }
-            throw std::runtime_error("failed to create temporary cover file: " + tempPath.string());
+            throw std::runtime_error("cover export failed to create temporary cover file: " + tempPath.string() + ": " + std::strerror(errno));
         }
 
         try
@@ -528,11 +635,11 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
             WriteAll(fd.get(), data, size, tempPath);
             if (::fsync(fd.get()) != 0)
             {
-                throw std::runtime_error("failed to fsync cover file: " + tempPath.string());
+                throw std::runtime_error("cover export failed to fsync cover file: " + tempPath.string() + ": " + std::strerror(errno));
             }
             if (::close(fd.release()) != 0)
             {
-                throw std::runtime_error("failed to close cover file: " + tempPath.string());
+                throw std::runtime_error("cover export failed to close cover file: " + tempPath.string() + ": " + std::strerror(errno));
             }
         }
         catch (...)
@@ -547,10 +654,10 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
         {
             return true;
         }
-        throw std::runtime_error("failed to publish cover file: " + finalPath.string());
+        throw std::runtime_error("cover export failed to publish cover file: " + finalPath.string() + ": " + std::strerror(errno));
     }
 
-    throw std::runtime_error("failed to create unique temporary cover file for: " + finalPath.string());
+    throw std::runtime_error("cover export failed to create unique temporary cover file for: " + finalPath.string());
 }
 
 // Cover image decode helpers
@@ -882,25 +989,15 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
 
     // All public cover exports use PNG paths; JPEG sources must be transcoded, not renamed.
     const std::filesystem::path coverPath = BuildCoverCachePath(coverExportDir, HashEmbeddedImageBytes(data, size));
-    std::error_code existsEc;
-    if (std::filesystem::exists(coverPath, existsEc))
-    {
-        return coverPath;
-    }
-    if (existsEc)
-    {
-        throw std::runtime_error("failed to query cover cache file: " + existsEc.message());
-    }
-
     std::error_code ec;
     std::filesystem::create_directories(coverPath.parent_path(), ec);
     if (ec)
     {
-        throw std::runtime_error("failed to create cover cache shard directory: " + ec.message());
+        throw std::runtime_error("cover cache failed to create shard directory " + coverPath.parent_path().string() + ": " + ec.message());
     }
     if (ToLower(coverPath.extension().string()) != ".png")
     {
-        throw std::runtime_error("cover export path must use .png extension");
+        throw std::runtime_error("cover export path must use .png extension: " + coverPath.string());
     }
 
     std::vector<uint8_t> png = DecodeAndEncodeCoverPng(data, size);
@@ -909,10 +1006,23 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
         return {};
     }
 
+    std::error_code statusEc;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(coverPath, statusEc);
+    if (statusEc && statusEc != std::errc::no_such_file_or_directory)
+    {
+        throw std::runtime_error("cover cache failed to query file " + coverPath.string() + ": " + statusEc.message());
+    }
+    if (!statusEc && std::filesystem::exists(status))
+    {
+        ValidateExistingCoverCacheFile(coverPath, png);
+        return coverPath;
+    }
+
     if (!AtomicWriteFileIfAbsent(coverPath, png.data(), png.size()))
     {
         return {};
     }
+    ValidateExistingCoverCacheFile(coverPath, png);
     return coverPath;
 }
 } // namespace
@@ -1176,6 +1286,31 @@ bool ParseDecimalU16Strict(std::string_view text, uint16_t &value)
 
     value = static_cast<uint16_t>(result);
     return true;
+}
+
+bool IsLrcMetadataLine(std::string_view line)
+{
+    if (line.size() < 4 || line.front() != '[')
+    {
+        return false;
+    }
+
+    const std::size_t close = line.find(']');
+    if (close == std::string_view::npos)
+    {
+        return false;
+    }
+
+    const std::string_view token = line.substr(1, close - 1);
+    const std::size_t colon = token.find(':');
+    if (colon == std::string_view::npos)
+    {
+        return false;
+    }
+
+    const std::string key = ToLower(std::string(token.substr(0, colon)));
+    return key == "ar" || key == "ti" || key == "al" || key == "by" || key == "offset" ||
+           key == "au" || key == "length" || key == "re" || key == "ve";
 }
 
 uint16_t ParseYearOnly(std::string_view text)
@@ -1568,6 +1703,15 @@ bool ShouldProcessId3v23Or24MetadataFrame(std::string_view frameId)
     }
 
     return IsId3PictureFrame(frameId) || IsId3v23Or24SupportedTextFrame(frameId);
+}
+
+bool Id3v22TagFlagsAreSupported(uint8_t tagFlags)
+{
+    constexpr uint8_t kUnsynchronization = 0x80;
+    constexpr uint8_t kCompression = 0x40;
+    constexpr uint8_t kKnownFlags = kUnsynchronization | kCompression;
+
+    return (tagFlags & ~kKnownFlags) == 0 && (tagFlags & kCompression) == 0;
 }
 
 bool Id3v23Or24FrameDataIsUnsupported(uint8_t versionMajor, uint16_t frameFlags)
@@ -2249,6 +2393,56 @@ enum class ParseStatus
     ResourceLimit
 };
 
+bool IsLikelyMp4AtomType(std::string_view atomType)
+{
+    if (atomType.size() != 4)
+    {
+        return false;
+    }
+
+    return std::all_of(atomType.begin(), atomType.end(), [](unsigned char ch)
+                       { return (ch >= 0x20 && ch <= 0x7E) || ch == 0xA9; });
+}
+
+std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit)
+{
+    std::uintmax_t cursor = offset;
+    while (cursor < limit)
+    {
+        std::uintmax_t headerEnd = 0;
+        if (!TryAddUintmax(cursor, 8, headerEnd) || headerEnd > limit)
+        {
+            return std::nullopt;
+        }
+
+        const std::vector<uint8_t> header = ReadRange(input, cursor, 8, 8);
+        if (header.size() != 8)
+        {
+            return std::nullopt;
+        }
+
+        const std::uint64_t atomSize = ReadBE32(header.data());
+        const std::string_view atomType(reinterpret_cast<const char *>(header.data() + 4), 4);
+        if ((atomSize == 0 || atomSize >= 8) && IsLikelyMp4AtomType(atomType))
+        {
+            if (atomSize == 0)
+            {
+                return cursor;
+            }
+
+            std::uintmax_t atomEnd = 0;
+            if (atomSize <= std::numeric_limits<std::uintmax_t>::max() && TryAddUintmax(cursor, static_cast<std::uintmax_t>(atomSize), atomEnd) && atomEnd <= limit)
+            {
+                return cursor;
+            }
+        }
+
+        ++cursor;
+    }
+
+    return std::nullopt;
+}
+
 std::optional<Mp4AtomRange> ReadMp4MetaChildRange(std::ifstream &input, const Mp4AtomHeader &atom)
 {
     if (atom.payloadOffset > atom.atomEnd)
@@ -2294,6 +2488,7 @@ ParseStatus ForEachMp4ChildAtom(std::ifstream &input, std::uintmax_t offset, std
     }
 
     std::uintmax_t cursor = offset;
+    ParseStatus recoveredStatus = ParseStatus::Ok;
     while (cursor < limit)
     {
         if (++visitedAtoms > kMaxMp4Atoms)
@@ -2316,6 +2511,23 @@ ParseStatus ForEachMp4ChildAtom(std::ifstream &input, std::uintmax_t offset, std
             return ParseStatus::NotFound;
         }
 
+        if (atom.atomSize == 0)
+        {
+            const std::optional<std::uintmax_t> nextSibling = FindNextMp4SiblingAfterSizeZero(input, atom.payloadOffset, limit);
+            if (!nextSibling.has_value())
+            {
+                return recoveredStatus;
+            }
+            if (*nextSibling <= cursor || *nextSibling >= limit)
+            {
+                return ParseStatus::Malformed;
+            }
+
+            recoveredStatus = ParseStatus::Malformed;
+            cursor = *nextSibling;
+            continue;
+        }
+
         const std::uintmax_t nextCursor = atom.atomEnd;
         if (nextCursor <= cursor)
         {
@@ -2323,13 +2535,9 @@ ParseStatus ForEachMp4ChildAtom(std::ifstream &input, std::uintmax_t offset, std
         }
         cursor = nextCursor;
 
-        if (atom.atomSize == 0)
-        {
-            return ParseStatus::Ok;
-        }
     }
 
-    return ParseStatus::Ok;
+    return recoveredStatus;
 }
 
 constexpr std::array<char, 4> kMp4TitleAtom{static_cast<char>(0xA9), 'n', 'a', 'm'};
@@ -2379,7 +2587,7 @@ ParseStatus WalkMp4IlstItems(std::ifstream &input, std::uintmax_t offset, std::u
         stack.pop_back();
         std::vector<PendingMp4AtomRange> childRanges;
 
-        const ParseStatus status = ForEachMp4ChildAtom(input, range.offset, range.limit, range.state == Mp4PathState::Root, visitedAtoms, [&](const Mp4AtomHeader &atom)
+        const ParseStatus status = ForEachMp4ChildAtom(input, range.offset, range.limit, true, visitedAtoms, [&](const Mp4AtomHeader &atom)
                                                        {
             if (range.state == Mp4PathState::Ilst)
             {
@@ -2429,7 +2637,7 @@ ParseStatus WalkMp4IlstItems(std::ifstream &input, std::uintmax_t offset, std::u
                 descend = true;
             }
 
-            if (descend && childOffset < atom.atomEnd)
+            if (descend && atom.atomSize != 0 && childOffset < atom.atomEnd)
             {
                 childRanges.push_back(PendingMp4AtomRange{childOffset, atom.atomEnd, childState});
             }
@@ -2816,8 +3024,12 @@ TagReader::RawMetadata TagReader::ReadMetadata(ReadContext &context)
         catch (const std::filesystem::filesystem_error &)
         {
         }
-        catch (const std::runtime_error &)
+        catch (const std::runtime_error &ex)
         {
+            if (IsCoverExportOrCacheError(ex.what()))
+            {
+                throw;
+            }
         }
     };
 
@@ -3564,13 +3776,44 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
         return false;
     }
 
+    enum class VorbisStreamStage
+    {
+        LookingForIdentification,
+        LookingForComment,
+        Done,
+        Rejected,
+    };
+
+    struct VorbisStreamState
+    {
+        std::uint32_t serial{};
+        std::uint32_t expectedSequence{};
+        bool hasSequence{};
+        VorbisStreamStage stage{VorbisStreamStage::LookingForIdentification};
+        std::vector<uint8_t> packet;
+    };
+
+    auto findState = [](std::vector<VorbisStreamState> &states, std::uint32_t serial) -> VorbisStreamState &
+    {
+        auto it = std::find_if(states.begin(), states.end(), [serial](const VorbisStreamState &state)
+                               { return state.serial == serial; });
+        if (it == states.end())
+        {
+            states.push_back(VorbisStreamState{.serial = serial});
+            return states.back();
+        }
+        return *it;
+    };
+
+    auto hasVorbisPrefix = [](const std::vector<uint8_t> &bytes, uint8_t packetType)
+    {
+        return bytes.size() >= 7 && bytes[0] == packetType && std::string_view(reinterpret_cast<const char *>(bytes.data() + 1), 6) == "vorbis";
+    };
+
     std::uintmax_t cursor = 0;
-    std::vector<uint8_t> packet;
+    std::vector<VorbisStreamState> states;
     std::size_t totalScannedBytes = 0;
     std::size_t pageCount = 0;
-    std::optional<std::uint32_t> expectedSerial;
-    std::uint32_t expectedSequence = 0;
-    bool sawIdentificationHeader = false;
     while (true)
     {
         if (++pageCount > kMaxOggPages)
@@ -3593,19 +3836,22 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
         const bool continuation = (pageHeader[5] & 0x01) != 0;
         const std::uint32_t serial = ReadLE32(pageHeader.data() + 14);
         const std::uint32_t sequence = ReadLE32(pageHeader.data() + 18);
-        if (!expectedSerial.has_value())
+        VorbisStreamState &state = findState(states, serial);
+        if (!state.hasSequence)
         {
-            expectedSerial = serial;
-            expectedSequence = sequence;
+            state.hasSequence = true;
+            state.expectedSequence = sequence;
         }
-        else if (serial != *expectedSerial || sequence != expectedSequence + 1)
+        else if (sequence != state.expectedSequence + 1)
         {
-            return false;
+            state.stage = VorbisStreamStage::Rejected;
+            state.packet.clear();
         }
-        expectedSequence = sequence;
-        if (!packet.empty() && !continuation)
+        state.expectedSequence = sequence;
+        if (!state.packet.empty() && !continuation)
         {
-            return false;
+            state.stage = VorbisStreamStage::Rejected;
+            state.packet.clear();
         }
 
         const uint8_t segmentCount = pageHeader[26];
@@ -3659,6 +3905,18 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
             return false;
         }
 
+        if (state.stage == VorbisStreamStage::Rejected || state.stage == VorbisStreamStage::Done)
+        {
+            cursor = nextCursor;
+            continue;
+        }
+        if (continuation && state.packet.empty())
+        {
+            state.stage = VorbisStreamStage::Rejected;
+            cursor = nextCursor;
+            continue;
+        }
+
         std::size_t payloadCursor = 0;
         for (uint8_t segmentSize : segmentTable)
         {
@@ -3667,30 +3925,35 @@ bool TagReader::ReadOggVorbisCommentEntries(ReadContext &context, const std::fun
                 return false;
             }
 
-            if (segmentSize > kMaxOggPacketBytes - packet.size())
+            if (segmentSize > kMaxOggPacketBytes - state.packet.size())
             {
                 return false;
             }
 
-            packet.insert(packet.end(), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor + segmentSize));
+            state.packet.insert(state.packet.end(), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor), payload.begin() + static_cast<std::ptrdiff_t>(payloadCursor + segmentSize));
             payloadCursor += segmentSize;
 
             if (segmentSize < 255)
             {
-                if (packet.size() > 7 && packet[0] == 0x01 && std::string_view(reinterpret_cast<const char *>(packet.data() + 1), 6) == "vorbis")
+                if (state.stage == VorbisStreamStage::LookingForIdentification && hasVorbisPrefix(state.packet, 0x01))
                 {
-                    sawIdentificationHeader = true;
+                    state.stage = VorbisStreamStage::LookingForComment;
                 }
-                else if (sawIdentificationHeader && packet.size() > 7 && packet[0] == 0x03 && std::string_view(reinterpret_cast<const char *>(packet.data() + 1), 6) == "vorbis")
+                else if (state.stage == VorbisStreamStage::LookingForComment && hasVorbisPrefix(state.packet, 0x03))
                 {
-                    const uint8_t *commentData = packet.data() + 7;
-                    const std::size_t commentSize = packet.size() - 7;
+                    const uint8_t *commentData = state.packet.data() + 7;
+                    const std::size_t commentSize = state.packet.size() - 7;
                     const bool ok = ForEachVorbisCommentEntry(commentData, commentSize, [&](std::string_view entry)
                                                               { handler(entry); });
+                    state.stage = VorbisStreamStage::Done;
                     return ok;
                 }
+                else if (state.stage == VorbisStreamStage::LookingForIdentification)
+                {
+                    state.stage = VorbisStreamStage::Rejected;
+                }
 
-                packet.clear();
+                state.packet.clear();
             }
         }
 
@@ -4046,7 +4309,7 @@ void TagReader::ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
 
     if (tagView.versionMajor == 2)
     {
-        if (tagView.flags != 0)
+        if (!Id3v22TagFlagsAreSupported(tagView.flags))
         {
             return;
         }
@@ -4096,7 +4359,7 @@ void TagReader::ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, 
                 p += descSize + EncodedTerminatorWidth(encoding);
                 if (p < frameSize)
                 {
-                    AppendPlainLyrics(ultCandidate, ReadId3ByteString(frameData + p, frameSize - p, encoding));
+                    ReadLyricsFromPlainText(ultCandidate, ReadId3ByteString(frameData + p, frameSize - p, encoding));
                 }
             }
         }
@@ -4158,6 +4421,10 @@ void TagReader::ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, 
     if (!sltCandidate.timedLines.empty())
     {
         lyrics.timedLines = std::move(sltCandidate.timedLines);
+    }
+    else if (!ultCandidate.timedLines.empty())
+    {
+        lyrics.timedLines = std::move(ultCandidate.timedLines);
     }
     else if (!ultCandidate.text.empty())
     {
@@ -4233,7 +4500,7 @@ void TagReader::ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyri
                 {
                     text = ReadId3ByteString(frameData.data() + p, frameData.size() - p, encoding);
                 }
-                AppendPlainLyrics(usltCandidate, std::move(text));
+                ReadLyricsFromPlainText(usltCandidate, text);
             }
         }
         else if (frameId == "SYLT")
@@ -4317,7 +4584,7 @@ void TagReader::ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyri
                     if (valueOffset < payloadSize)
                     {
                         const std::string value = ReadId3ByteString(payload + valueOffset, payloadSize - valueOffset, encoding);
-                        AppendPlainLyrics(txxxCandidate, value);
+                        ReadLyricsFromPlainText(txxxCandidate, value);
                     }
                 }
             }
@@ -4330,13 +4597,21 @@ void TagReader::ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyri
     {
         return;
     }
-    if (!usltCandidate.text.empty())
+    if (!usltCandidate.timedLines.empty())
+    {
+        lyrics.timedLines = std::move(usltCandidate.timedLines);
+    }
+    else if (!usltCandidate.text.empty())
     {
         lyrics.text = std::move(usltCandidate.text);
     }
     else if (!syltCandidate.timedLines.empty())
     {
         lyrics.timedLines = std::move(syltCandidate.timedLines);
+    }
+    else if (!txxxCandidate.timedLines.empty())
+    {
+        lyrics.timedLines = std::move(txxxCandidate.timedLines);
     }
     else if (!txxxCandidate.text.empty())
     {
@@ -4483,7 +4758,6 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
 
     std::string plain;
     std::vector<std::pair<std::chrono::microseconds, std::string>> timed;
-    bool skippedInvalidTimestampLine = false;
 
     std::size_t start = 0;
     while (start <= text.size())
@@ -4493,9 +4767,22 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
 
         if (!line.empty())
         {
+            if (IsLrcMetadataLine(line))
+            {
+                if (end == std::string_view::npos)
+                {
+                    break;
+                }
+
+                start = end + 1;
+                while (start < text.size() && (text[start] == '\r' || text[start] == '\n'))
+                {
+                    ++start;
+                }
+                continue;
+            }
+
             std::size_t scan = 0;
-            bool sawBracketToken = false;
-            bool invalidTimestampToken = false;
             std::array<std::chrono::microseconds, kMaxLrcTimestampsPerLine> timestamps{};
             std::size_t timestampCount = 0;
             while (scan < line.size() && line[scan] == '[')
@@ -4505,12 +4792,10 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
                 {
                     break;
                 }
-                sawBracketToken = true;
 
                 std::chrono::microseconds ts{};
                 if (!ParseLrcTimestamp(line.substr(scan, close - scan + 1), ts))
                 {
-                    invalidTimestampToken = true;
                     break;
                 }
 
@@ -4521,7 +4806,7 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
                 scan = close + 1;
             }
 
-            if (timestampCount > 0 && !invalidTimestampToken)
+            if (timestampCount > 0)
             {
                 const std::string lyricText = TrimText(std::string(line.substr(scan)));
                 if (!lyricText.empty())
@@ -4536,18 +4821,11 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
             }
             else
             {
-                if (sawBracketToken)
+                if (!plain.empty())
                 {
-                    skippedInvalidTimestampLine = true;
+                    plain.push_back('\n');
                 }
-                else
-                {
-                    if (!plain.empty())
-                    {
-                        plain.push_back('\n');
-                    }
-                    plain.append(std::string(line));
-                }
+                plain.append(std::string(line));
             }
         }
 
@@ -4574,9 +4852,9 @@ void TagReader::ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text
     }
     else
     {
-        if (!plain.empty() || !skippedInvalidTimestampLine)
+        if (!plain.empty())
         {
-            AppendPlainLyrics(lyrics, std::move(plain.empty() ? std::string(text) : plain));
+            AppendPlainLyrics(lyrics, std::move(plain));
         }
     }
 }
@@ -4860,13 +5138,12 @@ void TagReader::ReadMP4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::
             if (data.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(data.data());
-                if ((AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || atom.atomType == std::string(atomType)) && (dataType == 1 || dataType == 0))
+                if (AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || atom.atomType == std::string(atomType))
                 {
-                    const DecodedField field = dataType == 1 ? DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8), "utf-8") : DecodeRawText(std::string_view(reinterpret_cast<const char *>(data.data() + 8), data.size() - 8));
-                    const std::string text = field.success ? field.value : std::string{};
-                    if (!text.empty())
+                    const DecodedField field = DecodeMp4TextData(dataType, data.data() + 8, data.size() - 8);
+                    if (field.success && !field.value.empty())
                     {
-                        AppendPlainLyrics(lyrics, text);
+                        AppendPlainLyrics(lyrics, field.value);
                     }
                 }
             }
@@ -4912,15 +5189,7 @@ void TagReader::ReadMP4FreeformLyricsItem(ReadContext &context, RawLyrics &lyric
             if (payload.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(payload.data());
-                DecodedField field{};
-                if (dataType == 1)
-                {
-                    field = DecodeTextToUtf8(std::string_view(reinterpret_cast<const char *>(payload.data() + 8), payload.size() - 8), "utf-8");
-                }
-                else if (dataType == 0)
-                {
-                    field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(payload.data() + 8), payload.size() - 8));
-                }
+                const DecodedField field = DecodeMp4TextData(dataType, payload.data() + 8, payload.size() - 8);
 
                 if (field.success && !field.value.empty())
                 {

@@ -17,6 +17,7 @@ from pathlib import Path
 DEFAULT_OUT_DIR = Path("/tmp/opencode/tagreader_fuzz_corpus")
 MAX_TEXT_FIELD_BYTES = 1024 * 1024
 MAX_DECODED_TEXT_BYTES = 2 * 1024 * 1024
+MAX_LYRICS_BYTES = 8 * 1024 * 1024
 MAX_PLAIN_LYRICS_BYTES = 1024 * 1024
 MAX_LYRIC_LINES = 20000
 MAX_LRC_TIMESTAMPS_PER_LINE = 32
@@ -47,6 +48,10 @@ def extended_atom(atom_type: bytes, payload: bytes) -> bytes:
 
 def data_atom(data_type: int, payload: bytes) -> bytes:
     return atom(b"data", struct.pack(">II", data_type, 0) + payload)
+
+
+def utf16be_bom_text(text: str) -> bytes:
+    return b"\xfe\xff" + text.encode("utf-16-be")
 
 
 def mp4_metadata_file(ilst_payload: bytes, full_box: bytes = b"\0\0\0\0") -> bytes:
@@ -100,6 +105,12 @@ def ogg_page(serial: int, sequence: int, header_type: int, segments: list[int], 
     )
 
 
+def ogg_segments(size: int) -> list[int]:
+    segments = [255] * (size // 255)
+    segments.append(size % 255)
+    return segments
+
+
 def vorbis_block(entries: list[bytes], vendor: bytes = b"vendor") -> bytes:
     payload = struct.pack("<I", len(vendor)) + vendor + struct.pack("<I", len(entries))
     for entry in entries:
@@ -143,6 +154,7 @@ def generate_id3(out_dir: Path) -> None:
     v22 = id3_tag(2, id3v22_frame(b"TT2", b"\x03v22 title"))
     v23 = id3_tag(3, id3v23_frame(b"TIT2", b"\x03v23 title"))
     v24 = id3_tag(4, id3v24_frame(b"TIT2", b"\x03v24 title"))
+    v22_flagged_lyrics = id3_tag(2, id3v22_frame(b"ULT", b"\x03eng\0ID3v22 flagged lyric line"), 0x80)
     truncated = b"ID3\x04\0\0" + syncsafe32(32) + b"TIT2\0"
     oversized = b"ID3\x04\0\0" + syncsafe32(17 * 1024 * 1024)
 
@@ -190,11 +202,33 @@ def generate_id3(out_dir: Path) -> None:
         3,
         id3v23_frame(b"USLT", b"\x03eng\0" + b"".join(lrc_line(1, b"line") for _ in range(MAX_LYRIC_LINES + 16))),
     )
+    lrc_bracket_plain = id3_tag(
+        3,
+        id3v23_frame(b"USLT", b"\x03eng\0[ar:Unit Test Artist]\n[Verse]\n[hello]\n[Chorus] sing"),
+    )
+    lrc_timed_multi = id3_tag(
+        3,
+        id3v23_frame(b"USLT", b"\x03eng\0[00:01.00]first timed line\n[00:02.00]second timed line"),
+    )
     plain_over_limit = id3_tag(3, id3v23_frame(b"USLT", b"\x03eng\0" + b"P" * (MAX_PLAIN_LYRICS_BYTES + 1)))
     slt_many_lines = id3_tag(2, id3v22_frame(b"SLT", slt_many_lines_payload))
     sylt_many_lines = id3_tag(3, id3v23_frame(b"SYLT", sylt_many_lines_payload))
+    public_api_multi_field = id3_tag(
+        3,
+        id3v23_frame(b"TIT2", b"\x03public title")
+        + id3v23_frame(b"TPE1", b"\x03public artist")
+        + id3v23_frame(b"TALB", b"\x03public album")
+        + id3v23_frame(b"TRCK", b"\x0312/34")
+        + id3v23_frame(b"TPOS", b"\x032/5")
+        + id3v23_frame(b"USLT", b"\x03eng\0[00:01.25]public lyric\nplain fallback"),
+    )
+    public_api_txxx_lrc = id3_tag(
+        4,
+        id3v24_frame(b"TXXX", b"\x03LYRICS\0[00:00.00]first\n[00:00.50][00:01.00]repeat"),
+    )
 
     write_seed(out_dir, "id3", "id3v22_minimal.mp3", v22)
+    write_seed(out_dir, "id3", "id3v22_lyrics_flagged.mp3", v22_flagged_lyrics)
     write_seed(out_dir, "id3", "id3v23_minimal.mp3", v23)
     write_seed(out_dir, "id3", "id3v24_minimal.mp3", v24)
     write_seed(out_dir, "id3", "id3v24_truncated.mp3", truncated)
@@ -210,9 +244,13 @@ def generate_id3(out_dir: Path) -> None:
     write_seed(out_dir, "id3", "id3v24_tag_unsync_apic.mp3", tag_unsync_apic_v24)
     write_seed(out_dir, "id3", "id3v23_lrc_timestamp_explosion.mp3", lrc_many_timestamps)
     write_seed(out_dir, "id3", "id3v23_lrc_line_cap.mp3", lrc_many_lines)
+    write_seed(out_dir, "id3", "id3v23_lrc_bracket_plain.mp3", lrc_bracket_plain)
+    write_seed(out_dir, "id3", "id3v23_lrc_timed_multi.mp3", lrc_timed_multi)
     write_seed(out_dir, "id3", "id3v23_plain_lyrics_over_limit.mp3", plain_over_limit)
     write_seed(out_dir, "id3", "id3v22_slt_line_cap.mp3", slt_many_lines)
     write_seed(out_dir, "id3", "id3v23_sylt_line_cap.mp3", sylt_many_lines)
+    write_seed(out_dir, "id3", "id3v23_public_api_multi_field.mp3", public_api_multi_field)
+    write_seed(out_dir, "id3", "id3v24_public_api_txxx_lrc.mp3", public_api_txxx_lrc)
 
 
 def generate_flac(out_dir: Path) -> None:
@@ -270,6 +308,36 @@ def generate_ogg(out_dir: Path) -> None:
     invalid_key = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_key_comment)], invalid_key_comment)
     invalid_value = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_value_comment)], invalid_value_comment)
     invalid_lyrics = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_lyrics_comment)], invalid_lyrics_comment)
+    public_api_comment = b"\x03vorbis" + vorbis_block(
+        [
+            b"TITLE=ogg public title",
+            b"ARTIST=ogg public artist",
+            b"ALBUM=ogg public album",
+            b"TRACKNUMBER=7/12",
+            b"DISCNUMBER=1/2",
+            b"LYRICS=[00:02.00]ogg timed lyric\nplain ogg lyric",
+            b"UNSYNCEDLYRICS=unsynced fallback",
+        ]
+    ) + b"\x01"
+    public_api = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(public_api_comment)], public_api_comment)
+    multistream_serial = 0x87654321
+    opus_head = b"OpusHead" + b"\x01\x01" + b"\x00" * 16
+    multistream_comment = b"\x03vorbis" + vorbis_block(
+        [
+            b"TITLE=ogg multistream title",
+            b"ARTIST=ogg multistream artist",
+            b"ALBUM=ogg multistream album",
+            b"LYRICS=ogg multistream lyric",
+        ]
+    ) + b"\x01"
+    multistream = (
+        ogg_page(0x0BADF00D, 0, 0x02, [len(opus_head)], opus_head)
+        + ogg_page(multistream_serial, 0, 0x02, [len(ident)], ident)
+        + ogg_page(multistream_serial, 1, 0, ogg_segments(len(multistream_comment)), multistream_comment)
+    )
+    resource_limit = ogg_page(serial, 0, 0x02, [len(ident)], ident) + b"".join(
+        ogg_page(serial, sequence, 0x01 if sequence > 1 else 0, [255], b"R" * 255) for sequence in range(1, 512)
+    )
 
     write_seed(out_dir, "ogg", "ogg_valid_vorbis_pages.ogg", valid)
     write_seed(out_dir, "ogg", "ogg_truncated_page.ogg", truncated)
@@ -279,6 +347,9 @@ def generate_ogg(out_dir: Path) -> None:
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_key_then_title.ogg", invalid_key)
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_value_then_artist.ogg", invalid_value)
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_lyrics_then_title.ogg", invalid_lyrics)
+    write_seed(out_dir, "ogg", "ogg_public_api_comments_and_lrc.ogg", public_api)
+    write_seed(out_dir, "ogg", "ogg_vorbis_multistream_target_comments.ogg", multistream)
+    write_seed(out_dir, "ogg", "ogg_comment_resource_limit.ogg", resource_limit)
 
 
 def generate_mp4(out_dir: Path) -> None:
@@ -302,6 +373,45 @@ def generate_mp4(out_dir: Path) -> None:
     nested_item = atom(b"\xa9nam", atom(b"free", data_atom(1, b"ignored nested data")) + data_atom(1, b"mp4 nested sibling"))
     deep_metadata = mp4_metadata_file(nested_item)
     covr_invalid_then_valid = mp4_metadata_file(atom(b"covr", data_atom(13, b"bad-image") + data_atom(14, PNG_1X1)))
+    public_api_item = (
+        atom(b"\xa9nam", data_atom(1, b"mp4 public title"))
+        + atom(b"\xa9ART", data_atom(1, b"mp4 public artist"))
+        + atom(b"\xa9alb", data_atom(1, b"mp4 public album"))
+        + atom(b"trkn", data_atom(0, b"\0\0\0\7\0\f\0\0"))
+        + atom(b"disk", data_atom(0, b"\0\0\0\1\0\2\0\0"))
+        + atom(b"\xa9lyr", data_atom(1, b"[00:03.00]mp4 timed lyric\nmp4 plain lyric"))
+    )
+    freeform_lyrics = atom(
+        b"----",
+        atom(b"mean", b"\0\0\0\0com.apple.iTunes")
+        + atom(b"name", b"\0\0\0\0Lyrics")
+        + data_atom(1, b"[00:04.50]freeform lyric"),
+    )
+    public_api = mp4_metadata_file(public_api_item + freeform_lyrics)
+    zero_size = atom(b"ftyp", b"M4A \0\0\0\0M4A ") + atom(b"moov", atom(b"udta", atom(b"meta", b"\0\0\0\0" + atom(b"ilst", struct.pack(">I4s", 0, b"free") + title))))
+    size0_tail = mp4_metadata_file(
+        atom(b"\xa9nam", data_atom(1, b"Size0 Tail OK"))
+        + atom(b"\xa9ART", data_atom(1, b"Size0 Artist"))
+        + struct.pack(">I4s", 0, b"free")
+    )
+    size0_hidden_sibling = mp4_metadata_file(
+        struct.pack(">I4s", 0, b"free")
+        + b"bad!"
+        + atom(b"\xa9nam", data_atom(1, b"After Size0"))
+        + atom(b"\xa9ART", data_atom(1, b"Recovered Artist"))
+    )
+    lyrics_utf16 = mp4_metadata_file(atom(b"\xa9lyr", data_atom(2, utf16be_bom_text("MP4 UTF16 lyric line"))))
+    lyrics_utf8 = mp4_metadata_file(atom(b"\xa9lyr", data_atom(1, b"MP4 UTF8 lyric line")))
+    lyrics_oversized = mp4_metadata_file(atom(b"\xa9lyr", data_atom(1, b"O" * (MAX_LYRICS_BYTES + 1))))
+    lyrics_utf16_odd = mp4_metadata_file(atom(b"\xa9lyr", data_atom(2, b"\xfe\xff\0M\0")))
+    freeform_lyrics_utf16 = mp4_metadata_file(
+        atom(
+            b"----",
+            atom(b"mean", b"\0\0\0\0com.apple.iTunes")
+            + atom(b"name", b"\0\0\0\0Lyrics")
+            + data_atom(2, utf16be_bom_text("MP4 UTF16 lyric line")),
+        )
+    )
 
     write_seed(out_dir, "mp4", "mp4_valid_tree.m4a", valid)
     write_seed(out_dir, "mp4", "mp4_truncated_atom.m4a", truncated)
@@ -313,6 +423,15 @@ def generate_mp4(out_dir: Path) -> None:
     write_seed(out_dir, "mp4", "mp4_extended_atom.m4a", extended)
     write_seed(out_dir, "mp4", "mp4_deep_metadata_item.m4a", deep_metadata)
     write_seed(out_dir, "mp4", "mp4_covr_invalid_then_valid.m4a", covr_invalid_then_valid)
+    write_seed(out_dir, "mp4", "mp4_public_api_metadata_and_lyrics.m4a", public_api)
+    write_seed(out_dir, "mp4", "mp4_zero_size_atom_before_title.m4a", zero_size)
+    write_seed(out_dir, "mp4", "mp4_size0_tail_ok.m4a", size0_tail)
+    write_seed(out_dir, "mp4", "mp4_size0_hides_metadata.m4a", size0_hidden_sibling)
+    write_seed(out_dir, "mp4", "mp4_lyrics_utf16_bom.m4a", lyrics_utf16)
+    write_seed(out_dir, "mp4", "mp4_lyrics_utf8.m4a", lyrics_utf8)
+    write_seed(out_dir, "mp4", "mp4_lyrics_oversized.m4a", lyrics_oversized)
+    write_seed(out_dir, "mp4", "mp4_lyrics_utf16_odd.m4a", lyrics_utf16_odd)
+    write_seed(out_dir, "mp4", "mp4_freeform_lyrics_utf16_bom.m4a", freeform_lyrics_utf16)
 
 
 def generate_image(out_dir: Path) -> None:

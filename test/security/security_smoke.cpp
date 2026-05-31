@@ -12,6 +12,7 @@ extern "C"
 #include <exception>
 #include <filesystem>
 #include <future>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -30,6 +31,47 @@ void PrintTagSummary(const std::filesystem::path &samplePath, const MusicTag &ta
     std::cout << "title: " << tag.title() << '\n';
     std::cout << "lyricsCount: " << tag.lyrics().size() << '\n';
     std::cout << "coverPath: " << tag.coverPath().string() << '\n';
+}
+
+bool ErrorMentionsCoverCacheAndPath(const std::exception &ex, const std::filesystem::path &coverPath)
+{
+    const std::string message = ex.what();
+    return message.find("cover cache") != std::string::npos && message.find(coverPath.string()) != std::string::npos;
+}
+
+bool RunPollutedCoverCacheSmoke(const std::filesystem::path &samplePath, const std::filesystem::path &coverExportDir, const std::filesystem::path &coverPath)
+{
+    std::ofstream output(coverPath, std::ios::binary | std::ios::trunc);
+    if (!output)
+    {
+        std::cerr << "cover cache pollution setup failed for " << coverPath.string() << '\n';
+        return false;
+    }
+    output << "polluted cover cache entry\n";
+    output.close();
+    if (!output)
+    {
+        std::cerr << "cover cache pollution write failed for " << coverPath.string() << '\n';
+        return false;
+    }
+
+    try
+    {
+        (void)TagReader::Read(samplePath, coverExportDir);
+    }
+    catch (const std::exception &ex)
+    {
+        if (!ErrorMentionsCoverCacheAndPath(ex, coverPath))
+        {
+            std::cerr << "cover cache pollution error missing diagnostic details for " << coverPath.string() << ": " << ex.what() << '\n';
+            return false;
+        }
+        std::cout << "cover cache polluted assertion passed: " << coverPath.string() << '\n';
+        return true;
+    }
+
+    std::cerr << "cover cache polluted entry was accepted for " << coverPath.string() << '\n';
+    return false;
 }
 
 bool RunCoverCacheSmoke(const std::filesystem::path &samplePath, const std::filesystem::path &coverExportDir, const MusicTag &firstTag)
@@ -91,6 +133,11 @@ bool RunCoverCacheSmoke(const std::filesystem::path &samplePath, const std::file
     if (ec || concurrentMtime != firstMtime)
     {
         std::cerr << "cover cache concurrent read modified mtime for " << coverPath.string() << '\n';
+        return false;
+    }
+
+    if (!RunPollutedCoverCacheSmoke(samplePath, coverExportDir, coverPath))
+    {
         return false;
     }
 
