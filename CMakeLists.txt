@@ -44,6 +44,22 @@ find_package(Iconv)
 # 3. 库目标
 add_library(TagReaderCore STATIC
     src/TagReader.cpp
+    src/core/TagPipeline.cpp
+    src/media/FfmpegSession.cpp
+    src/media/MediaInfoReader.cpp
+    src/media/ContainerDetector.cpp
+    src/io/ByteReader.cpp
+    src/text/TextCodec.cpp
+    src/text/TextNormalize.cpp
+    src/cover/CoverCache.cpp
+    src/cover/CoverDecoder.cpp
+    src/formats/id3/Id3Parser.cpp
+    src/formats/id3/Id3Frames.cpp
+    src/formats/vorbis/VorbisCommentParser.cpp
+    src/formats/flac/FlacParser.cpp
+    src/formats/ogg-vorbis/OggVorbisParser.cpp
+    src/formats/mp4/Mp4AtomReader.cpp
+    src/formats/mp4/Mp4Parser.cpp
 )
 
 tagreader_enable_sanitizers(TagReaderCore)
@@ -51,6 +67,8 @@ tagreader_enable_sanitizers(TagReaderCore)
 target_include_directories(TagReaderCore
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(TagReaderCore
