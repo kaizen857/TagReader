@@ -1,6 +1,7 @@
 #include "formats/flac/FlacParser.hpp"
 
 #include "cover/CoverCache.hpp"
+#include "formats/vorbis/VorbisCommentLimits.hpp"
 #include "formats/vorbis/VorbisCommentParser.hpp"
 #include "io/ByteReader.hpp"
 
@@ -67,6 +68,11 @@ bool ForEachFlacVorbisCommentEntry(const uint8_t *data, std::size_t size, Handle
 
     const uint32_t commentCount = ReadLE32(data + cursor);
     cursor += 4;
+    if (commentCount > tagreader_vorbis::kMaxVorbisComments || commentCount > (size - cursor) / 4)
+    {
+        return false;
+    }
+
     for (uint32_t i = 0; i < commentCount; ++i)
     {
         if (size - cursor < 4)

@@ -32,7 +32,7 @@ struct TestCase
 constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
-    {"TR-AUDIT-003", false},
+    {"TR-AUDIT-003", true},
     {"TR-AUDIT-004", false},
     {"TR-AUDIT-005", false},
     {"TR-AUDIT-006", false},
@@ -161,6 +161,13 @@ void AppendU32BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
 }
 
+void AppendU24BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
+{
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+}
+
 void AppendU32LE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
 {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
@@ -185,9 +192,21 @@ std::uint32_t ReadU32BE(const std::vector<std::uint8_t> &bytes, std::size_t offs
            static_cast<std::uint32_t>(bytes[offset + 3]);
 }
 
+std::uint32_t ReadU24BE(const std::vector<std::uint8_t> &bytes, std::size_t offset)
+{
+    return (static_cast<std::uint32_t>(bytes[offset]) << 16) |
+           (static_cast<std::uint32_t>(bytes[offset + 1]) << 8) |
+           static_cast<std::uint32_t>(bytes[offset + 2]);
+}
+
 std::vector<std::uint8_t> Bytes(std::string_view text)
 {
     return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
+void AppendBytes(std::vector<std::uint8_t> &bytes, std::string_view text)
+{
+    bytes.insert(bytes.end(), text.begin(), text.end());
 }
 
 std::uint32_t OggCrc(const std::vector<std::uint8_t> &bytes)
@@ -384,6 +403,183 @@ bool GenerateOggVorbisSample(const std::filesystem::path &path, std::string_view
     return true;
 }
 
+bool GenerateFlacSample(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-003 requires audio-backed FLAC samples\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a flac \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate FLAC sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::initializer_list<std::string_view> comments)
+{
+    std::vector<std::uint8_t> payload;
+    constexpr std::string_view kVendor = "tagreader-regression";
+    AppendU32LE(payload, static_cast<std::uint32_t>(kVendor.size()));
+    AppendBytes(payload, kVendor);
+    AppendU32LE(payload, commentCount);
+    for (std::string_view comment : comments)
+    {
+        AppendU32LE(payload, static_cast<std::uint32_t>(comment.size()));
+        AppendBytes(payload, comment);
+    }
+    return payload;
+}
+
+bool ReplaceFlacVorbisCommentBlock(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &payload)
+{
+    const std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.size() < 8 || std::string_view(reinterpret_cast<const char *>(data.data()), 4) != "fLaC")
+    {
+        std::cerr << "failed to read base FLAC sample: " << basePath.string() << '\n';
+        return false;
+    }
+    if (payload.size() > 0xFFFFFFU)
+    {
+        std::cerr << "FLAC Vorbis comment payload too large\n";
+        return false;
+    }
+
+    std::size_t cursor = 4;
+    while (cursor + 4 <= data.size())
+    {
+        const bool lastBlock = (data[cursor] & 0x80) != 0;
+        const std::uint8_t blockType = data[cursor] & 0x7F;
+        const std::uint32_t blockSize = ReadU24BE(data, cursor + 1);
+        const std::size_t blockEnd = cursor + 4 + blockSize;
+        if (blockEnd > data.size())
+        {
+            break;
+        }
+
+        if (blockType == 4)
+        {
+            std::vector<std::uint8_t> output;
+            output.insert(output.end(), data.begin(), data.begin() + static_cast<std::ptrdiff_t>(cursor));
+            output.push_back(static_cast<std::uint8_t>((lastBlock ? 0x80 : 0x00) | 4));
+            AppendU24BE(output, static_cast<std::uint32_t>(payload.size()));
+            output.insert(output.end(), payload.begin(), payload.end());
+            output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(blockEnd), data.end());
+            return WriteBinaryFile(outputPath, output);
+        }
+
+        cursor = blockEnd;
+        if (lastBlock)
+        {
+            break;
+        }
+    }
+
+    std::cerr << "base FLAC sample has no Vorbis comment block: " << basePath.string() << '\n';
+    return false;
+}
+
+bool PatchOggVorbisCommentCount(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, std::uint32_t commentCount, std::string_view firstComment = {})
+{
+    std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.empty())
+    {
+        std::cerr << "failed to read base Ogg sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::size_t cursor = 0;
+    while (cursor + 27 <= data.size())
+    {
+        if (std::string_view(reinterpret_cast<const char *>(data.data() + cursor), 4) != "OggS")
+        {
+            break;
+        }
+
+        const std::uint8_t segmentCount = data[cursor + 26];
+        if (cursor + 27 + segmentCount > data.size())
+        {
+            break;
+        }
+
+        std::size_t payloadSize = 0;
+        for (std::size_t i = 0; i < segmentCount; ++i)
+        {
+            payloadSize += data[cursor + 27 + i];
+        }
+        const std::size_t payloadOffset = cursor + 27 + segmentCount;
+        const std::size_t pageEnd = payloadOffset + payloadSize;
+        if (pageEnd > data.size())
+        {
+            break;
+        }
+
+        const bool isCommentPage = payloadSize >= 15 && data[payloadOffset] == 0x03 &&
+                                   std::string_view(reinterpret_cast<const char *>(data.data() + payloadOffset + 1), 6) == "vorbis";
+        if (isCommentPage)
+        {
+            const std::size_t vendorLengthOffset = payloadOffset + 7;
+            const std::uint32_t vendorLength = static_cast<std::uint32_t>(data[vendorLengthOffset]) |
+                                               (static_cast<std::uint32_t>(data[vendorLengthOffset + 1]) << 8) |
+                                               (static_cast<std::uint32_t>(data[vendorLengthOffset + 2]) << 16) |
+                                               (static_cast<std::uint32_t>(data[vendorLengthOffset + 3]) << 24);
+            const std::size_t countOffset = vendorLengthOffset + 4 + vendorLength;
+            if (countOffset + 4 > pageEnd)
+            {
+                break;
+            }
+
+            if (!firstComment.empty())
+            {
+                const std::size_t firstLengthOffset = countOffset + 4;
+                if (firstLengthOffset + 4 > pageEnd)
+                {
+                    break;
+                }
+                const std::uint32_t firstLength = static_cast<std::uint32_t>(data[firstLengthOffset]) |
+                                                  (static_cast<std::uint32_t>(data[firstLengthOffset + 1]) << 8) |
+                                                  (static_cast<std::uint32_t>(data[firstLengthOffset + 2]) << 16) |
+                                                  (static_cast<std::uint32_t>(data[firstLengthOffset + 3]) << 24);
+                const std::size_t firstCommentOffset = firstLengthOffset + 4;
+                if (firstComment.size() > firstLength || firstCommentOffset + firstLength > pageEnd)
+                {
+                    break;
+                }
+
+                std::fill(data.begin() + static_cast<std::ptrdiff_t>(firstCommentOffset), data.begin() + static_cast<std::ptrdiff_t>(firstCommentOffset + firstLength), static_cast<std::uint8_t>(' '));
+                std::copy(firstComment.begin(), firstComment.end(), data.begin() + static_cast<std::ptrdiff_t>(firstCommentOffset));
+            }
+
+            data[countOffset] = static_cast<std::uint8_t>(commentCount & 0xFF);
+            data[countOffset + 1] = static_cast<std::uint8_t>((commentCount >> 8) & 0xFF);
+            data[countOffset + 2] = static_cast<std::uint8_t>((commentCount >> 16) & 0xFF);
+            data[countOffset + 3] = static_cast<std::uint8_t>((commentCount >> 24) & 0xFF);
+
+            data[cursor + 22] = 0;
+            data[cursor + 23] = 0;
+            data[cursor + 24] = 0;
+            data[cursor + 25] = 0;
+            const std::vector<std::uint8_t> page(data.begin() + static_cast<std::ptrdiff_t>(cursor), data.begin() + static_cast<std::ptrdiff_t>(pageEnd));
+            const std::uint32_t crc = OggCrc(page);
+            data[cursor + 22] = static_cast<std::uint8_t>(crc & 0xFF);
+            data[cursor + 23] = static_cast<std::uint8_t>((crc >> 8) & 0xFF);
+            data[cursor + 24] = static_cast<std::uint8_t>((crc >> 16) & 0xFF);
+            data[cursor + 25] = static_cast<std::uint8_t>((crc >> 24) & 0xFF);
+            return WriteBinaryFile(outputPath, data);
+        }
+
+        cursor = pageEnd;
+    }
+
+    std::cerr << "base Ogg sample has no patchable Vorbis comment packet: " << basePath.string() << '\n';
+    return false;
+}
+
 bool PrependManySerialPages(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, std::size_t serialCount)
 {
     const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
@@ -403,6 +599,7 @@ std::string DescribeTag(const MusicTag &tag)
     std::string text;
     text += "title=" + std::string(tag.title()) + "\n";
     text += "artist=" + std::string(tag.artist()) + "\n";
+    text += "album=" + std::string(tag.album()) + "\n";
     text += "coverPath=" + tag.coverPath().string() + "\n";
     text += "lyricsCount=" + std::to_string(tag.lyrics().size()) + "\n";
     return text;
@@ -545,6 +742,89 @@ bool RunTrAudit002()
     return passed;
 }
 
+bool RunTrAudit003()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-003";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path baseFlacPath = evidenceRoot / "base.flac";
+    const std::filesystem::path normalFlacPath = evidenceRoot / "normal.flac";
+    const std::filesystem::path malformedFlacPath = evidenceRoot / "comment_count_max.flac";
+    const std::filesystem::path baseOggPath = evidenceRoot / "base.ogg";
+    const std::filesystem::path normalOggPath = evidenceRoot / "normal.ogg";
+    const std::filesystem::path malformedOggPath = evidenceRoot / "comment_count_max.ogg";
+
+    const std::vector<std::uint8_t> normalFlacComments = VorbisCommentPayload(1, {"TITLE=flac-count-one"});
+    const std::vector<std::uint8_t> malformedFlacComments = VorbisCommentPayload(0xFFFFFFFFU, {});
+    if (!GenerateFlacSample(baseFlacPath) ||
+        !GenerateOggVorbisSample(baseOggPath, "", "") ||
+        !GenerateOggVorbisSample(normalOggPath, "ogg-count-one", "") ||
+        !ReplaceFlacVorbisCommentBlock(baseFlacPath, normalFlacPath, normalFlacComments) ||
+        !ReplaceFlacVorbisCommentBlock(baseFlacPath, malformedFlacPath, malformedFlacComments) ||
+        !PatchOggVorbisCommentCount(normalOggPath, normalOggPath, 1, "TITLE=ogg-count-one") ||
+        !PatchOggVorbisCommentCount(baseOggPath, malformedOggPath, 0xFFFFFFFFU))
+    {
+        return false;
+    }
+
+    const MusicTag normalFlacTag = TagReader::Read(normalFlacPath);
+    const MusicTag malformedFlacTag = TagReader::Read(malformedFlacPath);
+    const MusicTag normalOggTag = TagReader::Read(normalOggPath);
+    const MusicTag malformedOggTag = TagReader::Read(malformedOggPath);
+
+    const bool normalFlacTitleOk = Expect(normalFlacTag.title() == "flac-count-one", "normal FLAC Vorbis comment count=1 should parse title");
+    const bool normalOggTitleOk = Expect(normalOggTag.title() == "ogg-count-one", "normal Ogg Vorbis comment count=1 should parse title");
+    const bool malformedFlacTitleEmpty = Expect(malformedFlacTag.title().empty(), "malformed FLAC comment count max should not produce title metadata");
+    const bool malformedFlacArtistEmpty = Expect(malformedFlacTag.artist().empty(), "malformed FLAC comment count max should not produce artist metadata");
+    const bool malformedFlacAlbumEmpty = Expect(malformedFlacTag.album().empty(), "malformed FLAC comment count max should not produce album metadata");
+    const bool malformedOggTitleEmpty = Expect(malformedOggTag.title().empty(), "malformed Ogg comment count max should not produce title metadata");
+    const bool malformedOggArtistEmpty = Expect(malformedOggTag.artist().empty(), "malformed Ogg comment count max should not produce artist metadata");
+    const bool malformedOggAlbumEmpty = Expect(malformedOggTag.album().empty(), "malformed Ogg comment count max should not produce album metadata");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-003 flac comment-count-limit title=" + std::string(normalFlacTag.title()) + "\n" +
+        "TR-AUDIT-003 ogg comment-count-limit title=" + std::string(normalOggTag.title()) + "\n";
+    const std::string summary =
+        "case=TR-AUDIT-003\n"
+        "marker=flac comment-count-limit\n"
+        "marker=ogg comment-count-limit\n"
+        "normalFlacSample=" + normalFlacPath.string() + "\n" +
+        "malformedFlacSample=" + malformedFlacPath.string() + "\n" +
+        "normalOggSample=" + normalOggPath.string() + "\n" +
+        "malformedOggSample=" + malformedOggPath.string() + "\n" +
+        "normalFlacTitle=" + std::string(normalFlacTag.title()) + "\n" +
+        "normalOggTitle=" + std::string(normalOggTag.title()) + "\n" +
+        "malformedFlacTitle=" + std::string(malformedFlacTag.title()) + "\n" +
+        "malformedOggTitle=" + std::string(malformedOggTag.title()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "normal_flac_output.txt", DescribeTag(normalFlacTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_flac_output.txt", DescribeTag(malformedFlacTag)) &&
+                            WriteTextFile(evidenceRoot / "normal_ogg_output.txt", DescribeTag(normalOggTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_ogg_output.txt", DescribeTag(malformedOggTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = normalFlacTitleOk && normalOggTitleOk && malformedFlacTitleEmpty && malformedFlacArtistEmpty && malformedFlacAlbumEmpty && malformedOggTitleEmpty && malformedOggArtistEmpty && malformedOggAlbumEmpty;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-003 flac comment-count-limit ogg comment-count-limit\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -569,6 +849,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-002")
     {
         if (!RunTrAudit002())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-003")
+    {
+        if (!RunTrAudit003())
         {
             return 1;
         }
