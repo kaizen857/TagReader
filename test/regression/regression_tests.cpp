@@ -17,6 +17,7 @@ extern "C"
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -45,7 +46,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-012", true},
     {"TR-AUDIT-013", true},
     {"TR-AUDIT-014", true},
-    {"TR-AUDIT-015", false},
+    {"TR-AUDIT-015", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -2262,6 +2263,148 @@ bool RunTrAudit014()
     return passed;
 }
 
+struct ExpectedStringFields
+{
+    std::filesystem::path samplePath;
+    std::string title;
+    std::string artist;
+    std::string album;
+    std::string composer;
+};
+
+bool TagMatchesExpectedStrings(const MusicTag &tag, const ExpectedStringFields &expected, std::string_view context)
+{
+    bool ok = true;
+    ok = Expect(tag.title() == expected.title, std::string(context) + " title should match its sample") && ok;
+    ok = Expect(tag.artist() == expected.artist, std::string(context) + " artist should match its sample") && ok;
+    ok = Expect(tag.album() == expected.album, std::string(context) + " album should match its sample") && ok;
+    ok = Expect(tag.composer() == expected.composer, std::string(context) + " composer should match its sample") && ok;
+    return ok;
+}
+
+std::string DescribeExpectedStringFields(const ExpectedStringFields &expected)
+{
+    return "sample=" + expected.samplePath.string() + "\n" +
+           "expectedTitle=" + expected.title + "\n" +
+           "expectedArtist=" + expected.artist + "\n" +
+           "expectedAlbum=" + expected.album + "\n" +
+           "expectedComposer=" + expected.composer + "\n";
+}
+
+bool RunTrAudit015()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-015";
+    constexpr int kSampleCount = 8;
+    constexpr int kConcurrentReads = 16;
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    std::vector<ExpectedStringFields> expectedFields;
+    expectedFields.reserve(kSampleCount);
+    for (int sampleIndex = 0; sampleIndex < kSampleCount; ++sampleIndex)
+    {
+        ExpectedStringFields expected{
+            evidenceRoot / ("sample-" + std::to_string(sampleIndex) + ".mp3"),
+            "tr-audit-015-title-" + std::to_string(sampleIndex),
+            "tr-audit-015-artist-" + std::to_string(sampleIndex),
+            "tr-audit-015-album-" + std::to_string(sampleIndex),
+            "tr-audit-015-composer-" + std::to_string(sampleIndex),
+        };
+        const std::vector<std::uint8_t> frames = Concat({
+            Id3v23Frame("TIT2", Id3Latin1TextPayload(expected.title)),
+            Id3v23Frame("TPE1", Id3Latin1TextPayload(expected.artist)),
+            Id3v23Frame("TALB", Id3Latin1TextPayload(expected.album)),
+            Id3v23Frame("TCOM", Id3Latin1TextPayload(expected.composer)),
+        });
+        if (!PrependId3Tag(basePath, expected.samplePath, frames))
+        {
+            return false;
+        }
+        expectedFields.push_back(std::move(expected));
+    }
+
+    bool sequentialOk = true;
+    std::string perSampleOutput;
+    for (std::size_t index = 0; index < expectedFields.size(); ++index)
+    {
+        const MusicTag tag = TagReader::Read(expectedFields[index].samplePath);
+        sequentialOk = TagMatchesExpectedStrings(tag, expectedFields[index], "sequential sample " + std::to_string(index)) && sequentialOk;
+        perSampleOutput += DescribeExpectedStringFields(expectedFields[index]);
+        perSampleOutput += DescribeTag(tag);
+        perSampleOutput += "\n";
+    }
+
+    std::vector<std::future<bool>> futures;
+    futures.reserve(kConcurrentReads);
+    for (int worker = 0; worker < kConcurrentReads; ++worker)
+    {
+        futures.push_back(std::async(std::launch::async, [worker, &expectedFields]()
+                                     {
+                                         const ExpectedStringFields &expected = expectedFields[static_cast<std::size_t>(worker) % expectedFields.size()];
+                                         const MusicTag tag = TagReader::Read(expected.samplePath);
+                                         return tag.title() == expected.title &&
+                                                tag.artist() == expected.artist &&
+                                                tag.album() == expected.album &&
+                                                tag.composer() == expected.composer;
+                                     }));
+    }
+
+    bool concurrentOk = true;
+    for (int worker = 0; worker < kConcurrentReads; ++worker)
+    {
+        try
+        {
+            concurrentOk = Expect(futures[static_cast<std::size_t>(worker)].get(), "concurrent worker " + std::to_string(worker) + " should read only its sample strings") && concurrentOk;
+        }
+        catch (const std::exception &ex)
+        {
+            std::cerr << "concurrent worker " << worker << " read error: " << ex.what() << '\n';
+            concurrentOk = false;
+        }
+    }
+
+    const std::string stdoutLike =
+        "TR-AUDIT-015 concurrent-strings-ok workers=16 samples=8\n"
+        "TR-AUDIT-015 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-015\n"
+        "marker=concurrent-strings-ok\n"
+        "baseSample=" + basePath.string() + "\n" +
+        "sampleCount=" + std::to_string(expectedFields.size()) + "\n" +
+        "concurrentWorkers=" + std::to_string(kConcurrentReads) + "\n" +
+        "sequentialOk=" + (sequentialOk ? std::string("true") : std::string("false")) + "\n" +
+        "concurrentOk=" + (concurrentOk ? std::string("true") : std::string("false")) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "samples_output.txt", perSampleOutput) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = sequentialOk && concurrentOk;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-015 concurrent-strings-ok workers=16 samples=8\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -2418,6 +2561,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-014")
     {
         if (!RunTrAudit014())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-015")
+    {
+        if (!RunTrAudit015())
         {
             return 1;
         }

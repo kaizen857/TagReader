@@ -2,26 +2,22 @@
 #define __TAG__HPP__
 
 #include "Lyrics.hpp"
-#include <boost/flyweight.hpp>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <string>
-#include <string_view>
 #include <utility>
 
 class MusicTag
 {
-    using FlyStr = boost::flyweight<std::string>;
-
 private:
     // 曲目元数据信息
-    FlyStr title_;           // 标题
-    FlyStr genre_;           // 流派
-    FlyStr artist_;          // 艺术家
-    FlyStr album_;           // 专辑
-    FlyStr albumArtist_;     // 专辑艺术家
-    FlyStr composer_;        // 作曲家
+    std::string title_;      // 标题
+    std::string genre_;      // 流派
+    std::string artist_;     // 艺术家
+    std::string album_;      // 专辑
+    std::string albumArtist_; // 专辑艺术家
+    std::string composer_;   // 作曲家
     uint16_t year_{};        // 年份
     uint16_t trackNumber_{}; // 音轨
     uint16_t discNumber_{};  // 光盘
@@ -37,7 +33,7 @@ private:
     uint32_t bitDepth_{};                            // 比特深度
     uint32_t bitRate_{};                             // 比特率
     uint8_t channels_{};                             // 声道数
-    FlyStr format_{};                                // 音频格式
+    std::string format_{};                           // 音频格式
 
     // 播放统计
     uint32_t playCount_{};                               // 播放次数
@@ -47,35 +43,35 @@ private:
 public:
     MusicTag() = default;
 
-    std::string_view title() const noexcept
-    { return title_.get(); }
-    void setTitle(std::string_view value)
-    { title_ = std::string(value); }
+    const std::string &title() const noexcept
+    { return title_; }
+    void setTitle(std::string value)
+    { title_ = std::move(value); }
 
-    std::string_view genre() const noexcept
-    { return genre_.get(); }
-    void setGenre(std::string_view value)
-    { genre_ = std::string(value); }
+    const std::string &genre() const noexcept
+    { return genre_; }
+    void setGenre(std::string value)
+    { genre_ = std::move(value); }
 
-    std::string_view artist() const noexcept
-    { return artist_.get(); }
-    void setArtist(std::string_view value)
-    { artist_ = std::string(value); }
+    const std::string &artist() const noexcept
+    { return artist_; }
+    void setArtist(std::string value)
+    { artist_ = std::move(value); }
 
-    std::string_view album() const noexcept
-    { return album_.get(); }
-    void setAlbum(std::string_view value)
-    { album_ = std::string(value); }
+    const std::string &album() const noexcept
+    { return album_; }
+    void setAlbum(std::string value)
+    { album_ = std::move(value); }
 
-    std::string_view albumArtist() const noexcept
-    { return albumArtist_.get(); }
-    void setAlbumArtist(std::string_view value)
-    { albumArtist_ = std::string(value); }
+    const std::string &albumArtist() const noexcept
+    { return albumArtist_; }
+    void setAlbumArtist(std::string value)
+    { albumArtist_ = std::move(value); }
 
-    std::string_view composer() const noexcept
-    { return composer_.get(); }
-    void setComposer(std::string_view value)
-    { composer_ = std::string(value); }
+    const std::string &composer() const noexcept
+    { return composer_; }
+    void setComposer(std::string value)
+    { composer_ = std::move(value); }
 
     uint16_t year() const noexcept
     { return year_; }
@@ -144,10 +140,10 @@ public:
     void setChannels(uint8_t value) noexcept
     { channels_ = value; }
 
-    std::string_view format() const noexcept
-    { return format_.get(); }
-    void setFormat(std::string_view value)
-    { format_ = std::string(value); }
+    const std::string &format() const noexcept
+    { return format_; }
+    void setFormat(std::string value)
+    { format_ = std::move(value); }
 
     uint32_t playCount() const noexcept
     { return playCount_; }
