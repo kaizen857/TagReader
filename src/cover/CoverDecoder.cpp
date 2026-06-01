@@ -14,7 +14,6 @@ extern "C"
 #endif
 
 #include <array>
-#include <cstring>
 #include <limits>
 #include <memory>
 
@@ -23,6 +22,7 @@ namespace tagreader_cover
 namespace
 {
 constexpr tagreader_internal::CoverDecodeLimits kCoverDecodeLimits{};
+constexpr std::size_t kMaxUnknownMagicFallbackCodecs = 2;
 
 enum class ImageFormat
 {
@@ -107,27 +107,6 @@ struct SwsContextDeleter
     }
 };
 
-std::vector<uint8_t> ReadImageBytes(const uint8_t *data, std::size_t size)
-{
-    if (data == nullptr || size == 0 || size > kCoverDecodeLimits.maxInputBytes || size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
-    {
-        return {};
-    }
-
-    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
-    if (packet == nullptr)
-    {
-        return {};
-    }
-
-    if (av_new_packet(packet.get(), static_cast<int>(size)) < 0)
-    {
-        return {};
-    }
-    std::memcpy(packet->data, data, size);
-    return std::vector<uint8_t>(packet->data, packet->data + packet->size);
-}
-
 bool DecodedFrameWithinCoverLimits(const AVFrame *frame)
 {
     if (frame == nullptr || frame->width <= 0 || frame->height <= 0)
@@ -197,6 +176,11 @@ std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
 
 std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AVCodecID codecId)
 {
+    if (data == nullptr || size == 0 || size > kCoverDecodeLimits.maxInputBytes || size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        return {};
+    }
+
     const AVCodec *decoder = avcodec_find_decoder(codecId);
     if (decoder == nullptr)
     {
@@ -215,22 +199,13 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
         return {};
     }
 
-    const std::vector<uint8_t> packetBytes = ReadImageBytes(data, size);
-    if (packetBytes.empty())
-    {
-        return {};
-    }
-
     std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
     if (packet == nullptr)
     {
         return {};
     }
-    if (av_new_packet(packet.get(), static_cast<int>(packetBytes.size())) < 0)
-    {
-        return {};
-    }
-    std::memcpy(packet->data, packetBytes.data(), packetBytes.size());
+    packet->data = const_cast<uint8_t *>(data);
+    packet->size = static_cast<int>(size);
 
     if (avcodec_send_packet(decoderContext.get(), packet.get()) < 0 || avcodec_receive_frame(decoderContext.get(), decodedFrame.get()) < 0)
     {
@@ -318,16 +293,16 @@ std::vector<uint8_t> DecodeAndEncodeCoverPng(const uint8_t *data, std::size_t si
     {
         constexpr std::array<AVCodecID, 6> fallbackCodecs{
             AV_CODEC_ID_PNG,
+            AV_CODEC_ID_MJPEG,
             AV_CODEC_ID_WEBP,
             AV_CODEC_ID_GIF,
             AV_CODEC_ID_TIFF,
             AV_CODEC_ID_BMP,
-            AV_CODEC_ID_MJPEG,
         };
 
-        for (AVCodecID codecId : fallbackCodecs)
+        for (std::size_t index = 0; index < fallbackCodecs.size() && index < kMaxUnknownMagicFallbackCodecs; ++index)
         {
-            png = ConvertImageToPng(data, size, codecId);
+            png = ConvertImageToPng(data, size, fallbackCodecs[index]);
             if (!png.empty())
             {
                 break;

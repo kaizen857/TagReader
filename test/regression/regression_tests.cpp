@@ -44,7 +44,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-011", true},
     {"TR-AUDIT-012", true},
     {"TR-AUDIT-013", true},
-    {"TR-AUDIT-014", false},
+    {"TR-AUDIT-014", true},
     {"TR-AUDIT-015", false},
 }};
 
@@ -456,6 +456,24 @@ bool GenerateBaseMp3(const std::filesystem::path &path)
     if (!CommandSucceeds(command))
     {
         std::cerr << "failed to generate base MP3 sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool GenerateOneByOneJpeg(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-014 requires a generated JPEG cover sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i color=c=red:s=1x1 -frames:v 1 \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate JPEG cover sample with ffmpeg\n";
         return false;
     }
 
@@ -2131,6 +2149,119 @@ bool RunTrAudit013()
     return passed;
 }
 
+bool RunTrAudit014()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-014";
+    constexpr std::size_t kUnknownMagicPayloadSize = 2z * 1024 * 1024;
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path pngCoverExportDir = evidenceRoot / "png-covers";
+    const std::filesystem::path jpegCoverExportDir = evidenceRoot / "jpeg-covers";
+    const std::filesystem::path malformedCoverExportDir = evidenceRoot / "malformed-covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.m4a";
+    const std::filesystem::path jpegImagePath = evidenceRoot / "one_by_one.jpg";
+    const std::filesystem::path pngSamplePath = evidenceRoot / "normal-png-cover.m4a";
+    const std::filesystem::path jpegSamplePath = evidenceRoot / "normal-jpeg-cover.m4a";
+    const std::filesystem::path malformedSamplePath = evidenceRoot / "unknown-magic-2m-cover.m4a";
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> unknownMagicPayload(kUnknownMagicPayloadSize, 0xEE);
+    if (!GenerateBaseM4a(basePath) || !GenerateOneByOneJpeg(jpegImagePath))
+    {
+        return false;
+    }
+    const std::vector<std::uint8_t> validJpeg = ReadBinaryFile(jpegImagePath);
+    if (validJpeg.empty())
+    {
+        std::cerr << "failed to read generated JPEG cover sample: " << jpegImagePath.string() << '\n';
+        return false;
+    }
+    if (!InjectMp4Ilst(basePath, pngSamplePath, Mp4CoverItem(validPng)) ||
+        !InjectMp4Ilst(basePath, jpegSamplePath, Mp4CoverItem(validJpeg)) ||
+        !InjectMp4Ilst(basePath, malformedSamplePath, Mp4CoverItem(unknownMagicPayload)))
+    {
+        return false;
+    }
+
+    const MusicTag pngTag = TagReader::Read(pngSamplePath, pngCoverExportDir);
+    const std::filesystem::path pngCoverPath = pngTag.coverPath();
+    const bool pngCoverPathPresent = Expect(!pngCoverPath.empty(), "normal MP4 PNG cover should export a cover path");
+    const bool pngCoverExists = Expect(std::filesystem::is_regular_file(pngCoverPath, ec), "normal exported PNG cover should exist on disk");
+    ec.clear();
+    const bool pngCoverUnderExportDir = Expect(PathIsUnder(pngCoverPath, pngCoverExportDir), "normal exported PNG cover should stay under export directory");
+    const bool onePngAfterPngSample = Expect(CountPngFiles(pngCoverExportDir) == 1, "normal PNG cover sample should create exactly one PNG");
+
+    const MusicTag jpegTag = TagReader::Read(jpegSamplePath, jpegCoverExportDir);
+    const std::filesystem::path jpegCoverPath = jpegTag.coverPath();
+    const bool jpegCoverPathPresent = Expect(!jpegCoverPath.empty(), "normal MP4 JPEG cover should export a cover path");
+    const bool jpegCoverExists = Expect(std::filesystem::is_regular_file(jpegCoverPath, ec), "normal exported JPEG cover should exist on disk as PNG cache");
+    ec.clear();
+    const bool jpegCoverUnderExportDir = Expect(PathIsUnder(jpegCoverPath, jpegCoverExportDir), "normal exported JPEG cover should stay under export directory");
+    const bool onePngAfterJpegSample = Expect(CountPngFiles(jpegCoverExportDir) == 1, "normal JPEG cover sample should create exactly one PNG");
+
+    const MusicTag malformedTag = TagReader::Read(malformedSamplePath, malformedCoverExportDir);
+    const std::size_t malformedPngCount = CountPngFiles(malformedCoverExportDir);
+    const bool malformedCoverEmpty = Expect(malformedTag.coverPath().empty(), "2MiB unknown-magic MP4 cover should produce empty coverPath");
+    const bool malformedNoPng = Expect(malformedPngCount == 0, "2MiB unknown-magic MP4 cover should not create a PNG");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-014 valid-png-exported coverPath=" + pngCoverPath.string() + "\n"
+        "TR-AUDIT-014 valid-jpeg-exported coverPath=" + jpegCoverPath.string() + "\n"
+        "TR-AUDIT-014 malformed-cover-skipped coverPath=\n"
+        "TR-AUDIT-014 fallback-budget-enforced unknownMagicBytes=2097152\n"
+        "TR-AUDIT-014 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-014\n"
+        "marker=fallback-budget-enforced\n"
+        "marker=malformed-cover-skipped\n"
+        "normalPngSample=" + pngSamplePath.string() + "\n" +
+        "normalJpegSample=" + jpegSamplePath.string() + "\n" +
+        "malformedSample=" + malformedSamplePath.string() + "\n" +
+        "pngCoverExportDir=" + pngCoverExportDir.string() + "\n" +
+        "jpegCoverExportDir=" + jpegCoverExportDir.string() + "\n" +
+        "malformedCoverExportDir=" + malformedCoverExportDir.string() + "\n" +
+        "pngCoverPath=" + pngCoverPath.string() + "\n" +
+        "jpegCoverPath=" + jpegCoverPath.string() + "\n" +
+        "malformedCoverPath=" + malformedTag.coverPath().string() + "\n" +
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "validJpegBytes=" + std::to_string(validJpeg.size()) + "\n" +
+        "unknownMagicBytes=" + std::to_string(unknownMagicPayload.size()) + "\n" +
+        "pngFilesAfterPngSample=" + std::to_string(CountPngFiles(pngCoverExportDir)) + "\n" +
+        "pngFilesAfterJpegSample=" + std::to_string(CountPngFiles(jpegCoverExportDir)) + "\n" +
+        "pngFilesAfterMalformed=" + std::to_string(malformedPngCount) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "png_output.txt", DescribeTag(pngTag)) &&
+                            WriteTextFile(evidenceRoot / "jpeg_output.txt", DescribeTag(jpegTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_output.txt", DescribeTag(malformedTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = pngCoverPathPresent && pngCoverExists && pngCoverUnderExportDir && onePngAfterPngSample &&
+                        jpegCoverPathPresent && jpegCoverExists && jpegCoverUnderExportDir && onePngAfterJpegSample &&
+                        malformedCoverEmpty && malformedNoPng;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-014 valid-png-exported coverPath=" << pngCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-014 valid-jpeg-exported coverPath=" << jpegCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-014 malformed-cover-skipped coverPath=\n";
+        std::cout << "TR-AUDIT-014 fallback-budget-enforced unknownMagicBytes=2097152\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -2276,6 +2407,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-013")
     {
         if (!RunTrAudit013())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-014")
+    {
+        if (!RunTrAudit014())
         {
             return 1;
         }
