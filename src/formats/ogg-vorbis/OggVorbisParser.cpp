@@ -234,6 +234,7 @@ bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(
 
             if (segmentSize < 255)
             {
+                // Ogg packets can span pages; only classify Vorbis packets after lacing closes them.
                 if (state.stage == VorbisStreamStage::LookingForIdentification && HasVorbisPrefix(state.packet, 0x01))
                 {
                     state.stage = VorbisStreamStage::LookingForComment;

@@ -88,14 +88,8 @@ add_executable(TagReaderTest
 
 tagreader_enable_sanitizers(TagReaderTest)
 
-target_include_directories(TagReaderTest
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 target_link_libraries(TagReaderTest
     PRIVATE
-        PkgConfig::FFMPEG
         TagReaderCore
 )
 
@@ -123,11 +117,6 @@ if(TAGREADER_ENABLE_FUZZING)
         )
 
         tagreader_enable_sanitizers(TagReaderFuzz)
-
-        target_include_directories(TagReaderFuzz
-            PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/include
-        )
 
         target_compile_options(TagReaderFuzz PRIVATE -fsanitize=fuzzer)
         target_link_options(TagReaderFuzz PRIVATE -fsanitize=fuzzer)

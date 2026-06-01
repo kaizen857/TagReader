@@ -58,7 +58,7 @@ std::string HashEmbeddedImageBytes(const uint8_t *data, std::size_t size)
     std::uint64_t hashB = kFnvOffsetB ^ static_cast<std::uint64_t>(size);
     for (std::size_t i = 0; i < size; ++i)
     {
-        const std::uint64_t byte = data == nullptr ? 0 : data[i];
+        const std::uint64_t byte = data[i];
         hashA ^= byte;
         hashA *= kFnvPrimeA;
 
@@ -407,6 +407,7 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     }
     if (!statusEc && std::filesystem::exists(status))
     {
+        // Hash collisions or pre-existing files are treated as untrusted until bytes match.
         ValidateExistingCoverCacheFile(coverPath, png);
         return coverPath;
     }

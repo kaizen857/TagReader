@@ -134,6 +134,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                                 { tagreader_ogg_vorbis::ReadOggVorbisMetadata(context, metadata); });
         break;
     case TagFormat::Id3v2:
+        // ID3v2 is authoritative, but ID3v1 may still fill fields absent from the leading tag.
         ignoreMalformedMetadata([&]()
                                 { tagreader_id3::ReadID3v2Metadata(context, metadata); });
         ignoreMalformedMetadata([&]()
@@ -271,6 +272,7 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     tagreader_media::DetectStream(context);
 
     const TagFormat tagFormat = tagreader_media::DetectTagFormat(context);
+    // Use raw-byte tag detection for parser dispatch and user-facing format normalization.
     context.detectedContainer = tagreader_media::ContainerFromTagFormat(tagFormat);
 
     const RawMediaInfo mediaInfo = tagreader_media::ReadMediaInfo(context);

@@ -134,18 +134,12 @@ void DetectStream(tagreader_core::ReadContext &context)
     const AVFormatContext *formatContext = context.formatContext.get();
     context.audioStreamIndex = -1;
     context.containerName.clear();
-    context.containerLongName.clear();
-    context.metadataSourcePriority.clear();
 
     if (formatContext->iformat != nullptr)
     {
         if (formatContext->iformat->name != nullptr)
         {
             context.containerName = formatContext->iformat->name;
-        }
-        if (formatContext->iformat->long_name != nullptr)
-        {
-            context.containerLongName = formatContext->iformat->long_name;
         }
     }
 
@@ -174,15 +168,6 @@ void DetectStream(tagreader_core::ReadContext &context)
     if (context.audioStreamIndex < 0)
     {
         throw std::runtime_error("no audio stream found in input file");
-    }
-
-    if (!context.containerName.empty())
-    {
-        context.metadataSourcePriority.push_back(context.containerName);
-    }
-    if (!context.containerLongName.empty() && context.containerLongName != context.containerName)
-    {
-        context.metadataSourcePriority.push_back(context.containerLongName);
     }
 
     const AVStream *audioStream = formatContext->streams[context.audioStreamIndex];

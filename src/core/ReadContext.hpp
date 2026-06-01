@@ -6,7 +6,6 @@
 #include <fstream>
 #include <memory>
 #include <string>
-#include <vector>
 
 struct AVFormatContext;
 
@@ -37,8 +36,6 @@ struct ReadContext
     int audioStreamIndex{-1};
     DetectedContainer detectedContainer{DetectedContainer::Unknown};
     std::string containerName;
-    std::string containerLongName;
-    std::vector<std::string> metadataSourcePriority;
 };
 }
 

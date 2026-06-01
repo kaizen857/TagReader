@@ -389,14 +389,15 @@ bool PrepareId3v24FrameRegion(const std::vector<uint8_t> &tagBytes, uint8_t vers
 
         const std::size_t extSize = ReadSyncSafe32(tagBytes.data());
         std::size_t extendedEnd = 0;
-        if (extSize < 6 || !TryAddSize(0, extSize, extendedEnd) || extendedEnd > frameLimit)
+        // ID3v2.4 extended header size excludes the 4-byte size field itself.
+        if (extSize < 6 || !TryAddSize(4, extSize, extendedEnd) || extendedEnd > frameLimit)
         {
             return false;
         }
 
         const uint8_t flagBytes = tagBytes[4];
         std::size_t flagEnd = 0;
-        if (flagBytes == 0 || !TryAddSize(5, flagBytes, flagEnd) || flagEnd > extSize)
+        if (flagBytes == 0 || !TryAddSize(5, flagBytes, flagEnd) || flagEnd > extendedEnd)
         {
             return false;
         }

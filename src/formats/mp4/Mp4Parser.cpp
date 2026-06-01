@@ -291,7 +291,7 @@ void ReadMp4LyricsItem(ReadContext &context, RawLyrics &lyrics, std::string_view
             if (data.size() >= 8)
             {
                 const uint32_t dataType = ReadBE32(data.data());
-                if (AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())) || atom.atomType == std::string(atomType))
+                if (AtomTypeIs(atomType, std::string_view(kMp4LyricsAtom.data(), kMp4LyricsAtom.size())))
                 {
                     const DecodedField field = DecodeMp4TextData(dataType, data.data() + 8, data.size() - 8);
                     if (field.success && !field.value.empty())

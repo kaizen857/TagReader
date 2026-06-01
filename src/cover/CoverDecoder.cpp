@@ -338,8 +338,4 @@ std::vector<uint8_t> DecodeAndEncodeCoverPng(const uint8_t *data, std::size_t si
     return png;
 }
 
-std::size_t CoverPngMaxOutputBytes()
-{
-    return kCoverDecodeLimits.maxOutputBytes;
-}
 }
