@@ -34,7 +34,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
     {"TR-AUDIT-004", true},
-    {"TR-AUDIT-005", false},
+    {"TR-AUDIT-005", true},
     {"TR-AUDIT-006", false},
     {"TR-AUDIT-007", false},
     {"TR-AUDIT-008", false},
@@ -554,6 +554,86 @@ bool ReplaceFlacVorbisCommentBlock(const std::filesystem::path &basePath, const 
     return false;
 }
 
+std::vector<std::uint8_t> FlacPicturePayload(const std::vector<std::uint8_t> &imageBytes)
+{
+    constexpr std::string_view kPngMime = "image/png";
+    std::vector<std::uint8_t> payload;
+    AppendU32BE(payload, 3);
+    AppendU32BE(payload, static_cast<std::uint32_t>(kPngMime.size()));
+    AppendBytes(payload, kPngMime);
+    AppendU32BE(payload, 0);
+    AppendU32BE(payload, 1);
+    AppendU32BE(payload, 1);
+    AppendU32BE(payload, 32);
+    AppendU32BE(payload, 0);
+    AppendU32BE(payload, static_cast<std::uint32_t>(imageBytes.size()));
+    payload.insert(payload.end(), imageBytes.begin(), imageBytes.end());
+    return payload;
+}
+
+void AppendFlacMetadataBlock(std::vector<std::uint8_t> &output, std::uint8_t blockType, bool lastBlock, const std::vector<std::uint8_t> &payload)
+{
+    output.push_back(static_cast<std::uint8_t>((lastBlock ? 0x80 : 0x00) | (blockType & 0x7F)));
+    AppendU24BE(output, static_cast<std::uint32_t>(payload.size()));
+    output.insert(output.end(), payload.begin(), payload.end());
+}
+
+bool InjectFlacPictureBlocks(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &firstPicture, const std::vector<std::uint8_t> &secondPicture)
+{
+    const std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.size() < 42 || std::string_view(reinterpret_cast<const char *>(data.data()), 4) != "fLaC")
+    {
+        std::cerr << "failed to read base FLAC sample: " << basePath.string() << '\n';
+        return false;
+    }
+    if (firstPicture.size() > 0xFFFFFFU || secondPicture.size() > 0xFFFFFFU)
+    {
+        std::cerr << "FLAC picture payload too large\n";
+        return false;
+    }
+
+    std::size_t cursor = 4;
+    std::size_t audioStart = data.size();
+    bool foundStreamInfo = false;
+    std::vector<std::uint8_t> output{'f', 'L', 'a', 'C'};
+
+    while (cursor + 4 <= data.size())
+    {
+        const bool lastBlock = (data[cursor] & 0x80) != 0;
+        const std::uint8_t blockType = data[cursor] & 0x7F;
+        const std::uint32_t blockSize = ReadU24BE(data, cursor + 1);
+        const std::size_t blockPayload = cursor + 4;
+        const std::size_t blockEnd = blockPayload + blockSize;
+        if (blockEnd > data.size())
+        {
+            break;
+        }
+
+        foundStreamInfo = foundStreamInfo || blockType == 0;
+        output.push_back(blockType);
+        AppendU24BE(output, blockSize);
+        output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(blockPayload), data.begin() + static_cast<std::ptrdiff_t>(blockEnd));
+
+        cursor = blockEnd;
+        if (lastBlock)
+        {
+            audioStart = cursor;
+            break;
+        }
+    }
+
+    if (!foundStreamInfo || audioStart > data.size())
+    {
+        std::cerr << "base FLAC sample has no complete STREAMINFO metadata block: " << basePath.string() << '\n';
+        return false;
+    }
+
+    AppendFlacMetadataBlock(output, 6, false, firstPicture);
+    AppendFlacMetadataBlock(output, 6, true, secondPicture);
+    output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(audioStart), data.end());
+    return WriteBinaryFile(outputPath, output);
+}
+
 bool PatchOggVorbisCommentCount(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, std::uint32_t commentCount, std::string_view firstComment = {})
 {
     std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
@@ -976,6 +1056,88 @@ bool RunTrAudit004()
     return passed;
 }
 
+bool RunTrAudit005()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-005";
+    constexpr std::size_t kSecondPicturePayloadSize = 2z * 1024 * 1024;
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.flac";
+    const std::filesystem::path multiPicturePath = evidenceRoot / "multi_picture.flac";
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> secondPictureBytes(kSecondPicturePayloadSize, 0xDD);
+    const std::vector<std::uint8_t> firstPicture = FlacPicturePayload(validPng);
+    const std::vector<std::uint8_t> secondPicture = FlacPicturePayload(secondPictureBytes);
+
+    if (!GenerateFlacSample(basePath) || !InjectFlacPictureBlocks(basePath, multiPicturePath, firstPicture, secondPicture))
+    {
+        return false;
+    }
+
+    const MusicTag firstTag = TagReader::Read(multiPicturePath, coverExportDir);
+    const std::filesystem::path firstCoverPath = firstTag.coverPath();
+    const bool coverPathPresent = Expect(!firstCoverPath.empty(), "first valid FLAC PICTURE should export a cover path");
+    const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported FLAC cover should exist on disk");
+    ec.clear();
+    const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported FLAC cover should stay under cover export directory");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "duplicate FLAC PICTURE should not create a second PNG");
+    const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool firstMtimeOk = Expect(!ec, "exported FLAC cover mtime should be readable");
+    ec.clear();
+
+    const MusicTag repeatedTag = TagReader::Read(multiPicturePath, coverExportDir);
+    const bool repeatedPathSame = Expect(repeatedTag.coverPath() == firstCoverPath, "repeated FLAC cover read should reuse the same cache path");
+    const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated FLAC cover read should not rewrite cached PNG");
+    ec.clear();
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated FLAC cover read should still have one PNG");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-005 duplicate FLAC PICTURE skipped\n"
+        "TR-AUDIT-005 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-005\n"
+        "marker=duplicate FLAC PICTURE skipped\n"
+        "sample=" + multiPicturePath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + firstCoverPath.string() + "\n" +
+        "streamInfoBlocks=1\n"
+        "pictureBlocks=2\n"
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "firstPicturePayloadBytes=" + std::to_string(firstPicture.size()) + "\n" +
+        "secondPictureImageBytes=" + std::to_string(secondPictureBytes.size()) + "\n" +
+        "secondPicturePayloadBytes=" + std::to_string(secondPicture.size()) + "\n" +
+        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary) &&
+                            WriteTextFile(evidenceRoot / "first_read_output.txt", DescribeTag(firstTag)) &&
+                            WriteTextFile(evidenceRoot / "repeated_read_output.txt", DescribeTag(repeatedTag));
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = coverPathPresent && coverExists && coverUnderExportDir && onePngAfterFirstRead && firstMtimeOk && repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-005 duplicate FLAC PICTURE skipped\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1022,6 +1184,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-004")
     {
         if (!RunTrAudit004())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-005")
+    {
+        if (!RunTrAudit005())
         {
             return 1;
         }

@@ -100,6 +100,10 @@ void ReadFlacPictureEntry(ReadContext &context, RawMetadata &metadata, const uin
     {
         return;
     }
+    if (!metadata.coverPath.empty())
+    {
+        return;
+    }
 
     ByteCursor cursor(pictureData, pictureSize);
     const std::optional<std::uint32_t> pictureType = cursor.readU32Be();
@@ -217,7 +221,7 @@ void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata)
         }
         else if (blockType == 6)
         {
-            if (blockSize > kMaxCoverInputBytes)
+            if (!metadata.coverPath.empty() || blockSize > kMaxCoverInputBytes)
             {
                 cursor = blockEnd;
                 if (lastBlock)
