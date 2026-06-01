@@ -2,7 +2,6 @@
 
 #include "io/ByteReader.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -15,17 +14,6 @@ using tagreader_io::TryAddUintmax;
 
 namespace
 {
-bool IsLikelyMp4AtomType(std::string_view atomType)
-{
-    if (atomType.size() != 4)
-    {
-        return false;
-    }
-
-    return std::all_of(atomType.begin(), atomType.end(), [](unsigned char ch)
-                       { return (ch >= 0x20 && ch <= 0x7E) || ch == 0xA9; });
-}
-
 bool IsSupportedMp4MetadataItem(std::string_view atomType)
 {
     constexpr std::array<char, 4> kMp4TitleAtom{static_cast<char>(0xA9), 'n', 'a', 'm'};
@@ -133,40 +121,9 @@ bool ReadMp4AtomHeader(std::ifstream &input, std::uintmax_t offset, std::uintmax
 
 std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit)
 {
-    std::uintmax_t cursor = offset;
-    while (cursor < limit)
-    {
-        std::uintmax_t headerEnd = 0;
-        if (!TryAddUintmax(cursor, 8, headerEnd) || headerEnd > limit)
-        {
-            return std::nullopt;
-        }
-
-        const std::vector<uint8_t> header = ReadRange(input, cursor, 8, 8);
-        if (header.size() != 8)
-        {
-            return std::nullopt;
-        }
-
-        const std::uint64_t atomSize = ReadBE32(header.data());
-        const std::string_view atomType(reinterpret_cast<const char *>(header.data() + 4), 4);
-        if ((atomSize == 0 || atomSize >= 8) && IsLikelyMp4AtomType(atomType))
-        {
-            if (atomSize == 0)
-            {
-                return cursor;
-            }
-
-            std::uintmax_t atomEnd = 0;
-            if (atomSize <= std::numeric_limits<std::uintmax_t>::max() && TryAddUintmax(cursor, static_cast<std::uintmax_t>(atomSize), atomEnd) && atomEnd <= limit)
-            {
-                return cursor;
-            }
-        }
-
-        ++cursor;
-    }
-
+    (void)input;
+    (void)offset;
+    (void)limit;
     return std::nullopt;
 }
 
