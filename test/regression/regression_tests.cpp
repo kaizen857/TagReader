@@ -11,6 +11,7 @@ extern "C"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstdint>
 #include <exception>
@@ -37,7 +38,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-005", true},
     {"TR-AUDIT-006", true},
     {"TR-AUDIT-007", true},
-    {"TR-AUDIT-008", false},
+    {"TR-AUDIT-008", true},
     {"TR-AUDIT-009", false},
     {"TR-AUDIT-010", false},
     {"TR-AUDIT-011", false},
@@ -1465,6 +1466,83 @@ bool RunTrAudit007()
     return passed;
 }
 
+bool RunTrAudit008()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-008";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path lrcOverflowPath = evidenceRoot / "lrc_overflow.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::string lrcText =
+        "[01:02.340]ok\n"
+        "[999999999999999999999999:01.00]bad-minute\n"
+        "[01:999999999999999999999999.00]bad-second\n"
+        "[01:02.999999999999999999999999]bad-fraction\n";
+    const std::vector<std::uint8_t> lrcFrames = Id3v23Frame("USLT", Id3UsltPayload(lrcText));
+    if (!PrependId3Tag(basePath, lrcOverflowPath, lrcFrames))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(lrcOverflowPath);
+    const std::vector<Lyric> &syncedLyrics = tag.lyrics().lyrics();
+    const auto expectedTimestamp = std::chrono::minutes(1) + std::chrono::seconds(2) + std::chrono::milliseconds(340);
+
+    const bool onlyLegalSynced = Expect(syncedLyrics.size() == 1, "only the legal LRC timestamp should produce a synced lyric");
+    const bool legalTextPreserved = Expect(!syncedLyrics.empty() && syncedLyrics.front().text() == "ok", "legal LRC timestamp line should preserve lyric text");
+    const bool legalTimestampPreserved = Expect(!syncedLyrics.empty() && syncedLyrics.front().timestamp() == expectedTimestamp, "legal LRC timestamp should preserve expected timing");
+    const bool overflowRejected = Expect(std::none_of(syncedLyrics.begin(), syncedLyrics.end(), [](const Lyric &lyric)
+                                                     { return lyric.text() == "bad-minute" || lyric.text() == "bad-second" || lyric.text() == "bad-fraction"; }),
+                                         "overlong minute, second, and fraction fields must not enter synced lyrics");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-008 legal-lrc-preserved text=ok timestamp_us=62340000\n"
+        "TR-AUDIT-008 overflow-rejected minute second fraction\n"
+        "TR-AUDIT-008 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-008\n"
+        "marker=legal-lrc-preserved\n"
+        "marker=overflow-rejected\n"
+        "sample=" + lrcOverflowPath.string() + "\n" +
+        "syncedLyrics=" + std::to_string(syncedLyrics.size()) + "\n" +
+        "legalText=" + (syncedLyrics.empty() ? std::string() : std::string(syncedLyrics.front().text())) + "\n" +
+        "legalTimestampUs=" + (syncedLyrics.empty() ? std::string() : std::to_string(syncedLyrics.front().timestamp().count())) + "\n" +
+        "rejectedMinute=bad-minute\n"
+        "rejectedSecond=bad-second\n"
+        "rejectedFraction=bad-fraction\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "lrc_overflow_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = onlyLegalSynced && legalTextPreserved && legalTimestampPreserved && overflowRejected;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-008 legal-lrc-preserved text=ok timestamp_us=62340000\n";
+        std::cout << "TR-AUDIT-008 overflow-rejected minute second fraction\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1544,6 +1622,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-007")
     {
         if (!RunTrAudit007())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-008")
+    {
+        if (!RunTrAudit008())
         {
             return 1;
         }

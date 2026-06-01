@@ -50,7 +50,12 @@ bool ParseDecimalU16Strict(std::string_view text, uint16_t &value)
         {
             return false;
         }
-        result = result * 10 + static_cast<uint32_t>(ch - '0');
+        const uint32_t digit = static_cast<uint32_t>(ch - '0');
+        if (result > (std::numeric_limits<std::uint32_t>::max() - digit) / 10)
+        {
+            return false;
+        }
+        result = result * 10 + digit;
         if (result > std::numeric_limits<uint16_t>::max())
         {
             return false;
