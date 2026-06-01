@@ -149,6 +149,129 @@ bool IsLikelyId3v22FrameId(std::string_view frameId)
                        { return std::isalnum(ch) != 0 || ch == '_'; });
 }
 
+bool IsAllZeroFrom(const std::vector<uint8_t> &tagBytes, std::size_t cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (cursor >= limit)
+    {
+        return true;
+    }
+
+    return std::all_of(tagBytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+                       tagBytes.begin() + static_cast<std::ptrdiff_t>(limit),
+                       [](uint8_t byte)
+                       { return byte == 0; });
+}
+
+bool IsId3PaddingStartAtOriginalCursor(const std::vector<uint8_t> &tagBytes, std::size_t cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (cursor >= limit)
+    {
+        return true;
+    }
+    return tagBytes[cursor] == 0 || IsAllZeroFrom(tagBytes, cursor, limit);
+}
+
+bool IsValidId3v22FrameHeaderAt(const std::vector<uint8_t> &tagBytes, std::size_t cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (cursor + 6 > limit)
+    {
+        return false;
+    }
+
+    const uint8_t *frameHeader = tagBytes.data() + cursor;
+    const std::string_view frameId(reinterpret_cast<const char *>(frameHeader), 3);
+    if (!IsLikelyId3v22FrameId(frameId))
+    {
+        return false;
+    }
+
+    const uint32_t frameSize = ReadBE24(frameHeader + 3);
+    return frameSize != 0 && frameSize <= limit - cursor - 6;
+}
+
+bool IsValidId3v23Or24FrameHeaderAt(const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (cursor + 10 > limit)
+    {
+        return false;
+    }
+
+    const uint8_t *frameHeader = tagBytes.data() + cursor;
+    const std::string_view frameId(reinterpret_cast<const char *>(frameHeader), 4);
+    if (!IsLikelyId3FrameId(frameId))
+    {
+        return false;
+    }
+
+    uint32_t frameSize = 0;
+    if (versionMajor >= 4)
+    {
+        if (!IsValidSyncSafe32(frameHeader + 4))
+        {
+            return false;
+        }
+        frameSize = ReadSyncSafe32(frameHeader + 4);
+    }
+    else
+    {
+        frameSize = ReadBE32(frameHeader + 4);
+    }
+
+    return frameSize != 0 && frameSize <= limit - cursor - 10;
+}
+
+bool TryResyncId3v22Frame(const std::vector<uint8_t> &tagBytes, std::size_t &cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (IsId3PaddingStartAtOriginalCursor(tagBytes, cursor, limit))
+    {
+        return false;
+    }
+
+    for (std::size_t candidate = cursor + 1; candidate + 6 <= limit; ++candidate)
+    {
+        if (IsAllZeroFrom(tagBytes, candidate, limit))
+        {
+            return false;
+        }
+        if (IsValidId3v22FrameHeaderAt(tagBytes, candidate, limit))
+        {
+            cursor = candidate;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool TryResyncId3v23Or24Frame(const std::vector<uint8_t> &tagBytes, uint8_t versionMajor, std::size_t &cursor, std::size_t limit)
+{
+    limit = std::min(limit, tagBytes.size());
+    if (IsId3PaddingStartAtOriginalCursor(tagBytes, cursor, limit))
+    {
+        return false;
+    }
+
+    for (std::size_t candidate = cursor + 1; candidate + 10 <= limit; ++candidate)
+    {
+        if (IsAllZeroFrom(tagBytes, candidate, limit))
+        {
+            return false;
+        }
+        if (IsValidId3v23Or24FrameHeaderAt(tagBytes, versionMajor, candidate, limit))
+        {
+            cursor = candidate;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool IsId3v22SupportedTextFrame(std::string_view frameId)
 {
     return frameId == "TT2" || frameId == "TP1" || frameId == "TAL" || frameId == "TP2" ||
@@ -820,24 +943,31 @@ void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::ve
     while (cursor + 6 <= tagBytes.size())
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
-        if (frameHeader[0] == 0)
-        {
-            break;
-        }
-
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 3);
         if (!IsLikelyId3v22FrameId(frameId))
         {
+            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            {
+                continue;
+            }
             break;
         }
 
         const uint32_t frameSize = ReadBE24(frameHeader + 3);
         if (frameSize == 0)
         {
+            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            {
+                continue;
+            }
             break;
         }
         if (cursor + 6 + frameSize > tagBytes.size())
         {
+            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            {
+                continue;
+            }
             break;
         }
 
@@ -854,14 +984,13 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
     while (cursor + 10 <= limit)
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
-        if (frameHeader[0] == 0)
-        {
-            break;
-        }
-
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 4);
         if (!IsLikelyId3FrameId(frameId))
         {
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            {
+                continue;
+            }
             break;
         }
 
@@ -870,6 +999,10 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
         {
             if (!IsValidSyncSafe32(frameHeader + 4))
             {
+                if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+                {
+                    continue;
+                }
                 break;
             }
             frameSize = ReadSyncSafe32(frameHeader + 4);
@@ -881,10 +1014,18 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
 
         if (frameSize == 0)
         {
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            {
+                continue;
+            }
             break;
         }
         if (frameSize > limit - cursor - 10)
         {
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            {
+                continue;
+            }
             break;
         }
 
@@ -1171,20 +1312,23 @@ void ReadID3v22LyricsFrames(ReadContext &context, RawLyrics &lyrics, const std::
     while (cursor + 6 <= tagBytes.size())
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
-        if (frameHeader[0] == 0)
-        {
-            break;
-        }
-
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 3);
         if (!IsLikelyId3v22FrameId(frameId))
         {
+            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            {
+                continue;
+            }
             break;
         }
 
         const uint32_t frameSize = ReadBE24(frameHeader + 3);
         if (frameSize == 0 || cursor + 6 + frameSize > tagBytes.size())
         {
+            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            {
+                continue;
+            }
             break;
         }
 
@@ -1283,14 +1427,13 @@ void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const s
     while (cursor + 10 <= limit)
     {
         const uint8_t *frameHeader = tagBytes.data() + cursor;
-        if (frameHeader[0] == 0)
-        {
-            break;
-        }
-
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 4);
         if (!IsLikelyId3FrameId(frameId))
         {
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            {
+                continue;
+            }
             break;
         }
 
@@ -1299,6 +1442,10 @@ void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const s
         {
             if (!IsValidSyncSafe32(frameHeader + 4))
             {
+                if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+                {
+                    continue;
+                }
                 break;
             }
             frameSize = ReadSyncSafe32(frameHeader + 4);
@@ -1309,6 +1456,10 @@ void ReadID3v23Or24LyricsFrames(ReadContext &context, RawLyrics &lyrics, const s
         }
         if (frameSize == 0 || frameSize > limit - cursor - 10)
         {
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            {
+                continue;
+            }
             break;
         }
 

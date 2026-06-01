@@ -35,7 +35,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-003", true},
     {"TR-AUDIT-004", true},
     {"TR-AUDIT-005", true},
-    {"TR-AUDIT-006", false},
+    {"TR-AUDIT-006", true},
     {"TR-AUDIT-007", false},
     {"TR-AUDIT-008", false},
     {"TR-AUDIT-009", false},
@@ -159,6 +159,14 @@ void AppendU32BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
     bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+}
+
+void AppendSyncSafe32(std::vector<std::uint8_t> &bytes, std::uint32_t value)
+{
+    bytes.push_back(static_cast<std::uint8_t>((value >> 21) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 14) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 7) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0x7F));
 }
 
 void AppendU24BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
@@ -433,6 +441,80 @@ bool GenerateFlacSample(const std::filesystem::path &path)
     }
 
     return true;
+}
+
+bool GenerateBaseMp3(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-006 requires an audio-backed MP3 sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a libmp3lame -write_id3v1 0 -id3v2_version 0 \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate base MP3 sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::vector<std::uint8_t> Id3v23Frame(std::string_view frameId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, frameId);
+    AppendU32BE(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> Id3Latin1TextPayload(std::string_view text)
+{
+    std::vector<std::uint8_t> payload{0};
+    AppendBytes(payload, text);
+    return payload;
+}
+
+std::vector<std::uint8_t> Id3UsltPayload(std::string_view text)
+{
+    std::vector<std::uint8_t> payload{0, 'e', 'n', 'g', 0};
+    AppendBytes(payload, text);
+    return payload;
+}
+
+std::vector<std::uint8_t> Id3TxxxPayload(std::string_view description, std::string_view text)
+{
+    std::vector<std::uint8_t> payload{0};
+    AppendBytes(payload, description);
+    payload.push_back(0);
+    AppendBytes(payload, text);
+    return payload;
+}
+
+std::vector<std::uint8_t> Id3v23Tag(const std::vector<std::uint8_t> &frames)
+{
+    std::vector<std::uint8_t> bytes{'I', 'D', '3', 3, 0, 0};
+    AppendSyncSafe32(bytes, static_cast<std::uint32_t>(frames.size()));
+    bytes.insert(bytes.end(), frames.begin(), frames.end());
+    return bytes;
+}
+
+bool PrependId3Tag(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &frames)
+{
+    const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
+    if (base.empty())
+    {
+        std::cerr << "failed to read base MP3 sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> output = Id3v23Tag(frames);
+    output.insert(output.end(), base.begin(), base.end());
+    return WriteBinaryFile(outputPath, output);
 }
 
 std::vector<std::uint8_t> OneByOnePng()
@@ -1138,6 +1220,98 @@ bool RunTrAudit005()
     return passed;
 }
 
+bool RunTrAudit006()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-006";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path malformedTitlePath = evidenceRoot / "malformed-then-title.mp3";
+    const std::filesystem::path malformedLyricsPath = evidenceRoot / "malformed-then-lyrics.mp3";
+    const std::filesystem::path paddingPath = evidenceRoot / "padding-stop.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> malformedTitleFrames{'B', 'A', 'D', '!', 0x7F, 0xFF, 0xFF, 0xFF, 0, 0, 'x', 0, 'y', 'z'};
+    const std::vector<std::uint8_t> titleFrame = Id3v23Frame("TIT2", Id3Latin1TextPayload("after-bad-frame"));
+    malformedTitleFrames.insert(malformedTitleFrames.end(), titleFrame.begin(), titleFrame.end());
+
+    std::vector<std::uint8_t> malformedLyricsFrames{'J', 'U', 'N', 'K', 0x7F, 0xFF, 0xFF, 0xFF, 0, 0, 'a', 0, 'b', 'c'};
+    const std::vector<std::uint8_t> usltFrame = Id3v23Frame("USLT", Id3UsltPayload("recovered-lyrics"));
+    const std::vector<std::uint8_t> txxxFrame = Id3v23Frame("TXXX", Id3TxxxPayload("lyrics", "recovered-lyrics-txxx"));
+    malformedLyricsFrames.insert(malformedLyricsFrames.end(), usltFrame.begin(), usltFrame.end());
+    malformedLyricsFrames.insert(malformedLyricsFrames.end(), txxxFrame.begin(), txxxFrame.end());
+
+    std::vector<std::uint8_t> paddingFrames = Id3v23Frame("TIT2", Id3Latin1TextPayload("padding-title"));
+    paddingFrames.insert(paddingFrames.end(), {0, 0, 0, 0, 'T', 'P', 'E', '1', 0, 0, 0, 12, 0, 0, 0, 'p', 'a', 'd', 'd', 'i', 'n', 'g', '-', 'n', 'o', 'i', 's', 'e'});
+
+    if (!PrependId3Tag(basePath, malformedTitlePath, malformedTitleFrames) ||
+        !PrependId3Tag(basePath, malformedLyricsPath, malformedLyricsFrames) ||
+        !PrependId3Tag(basePath, paddingPath, paddingFrames))
+    {
+        return false;
+    }
+
+    const MusicTag malformedTitleTag = TagReader::Read(malformedTitlePath);
+    const MusicTag malformedLyricsTag = TagReader::Read(malformedLyricsPath);
+    const MusicTag paddingTag = TagReader::Read(paddingPath);
+
+    const bool titleRecovered = Expect(malformedTitleTag.title() == "after-bad-frame", "malformed ID3 frame should resync and recover later TIT2 title");
+    const bool lyricsRecovered = Expect(!malformedLyricsTag.lyrics().empty() && malformedLyricsTag.lyrics().lyrics().front().text() == "recovered-lyrics", "malformed ID3 frame should resync and recover later USLT lyrics");
+    const bool paddingTitleKept = Expect(paddingTag.title() == "padding-title", "padding sample should parse title before true padding");
+    const bool paddingArtistEmpty = Expect(paddingTag.artist().empty(), "true padding should stop before noise that looks like TPE1");
+    const bool paddingLyricsEmpty = Expect(paddingTag.lyrics().empty(), "true padding should not scan padding noise as lyrics");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-006 recovered-title after-bad-frame\n"
+        "TR-AUDIT-006 recovered-lyrics recovered-lyrics\n"
+        "TR-AUDIT-006 padding-stop no-padding-noise\n"
+        "TR-AUDIT-006 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-006\n"
+        "marker=recovered-title\n"
+        "marker=recovered-lyrics\n"
+        "marker=padding-stop\n"
+        "malformedThenTitleSample=" + malformedTitlePath.string() + "\n" +
+        "malformedThenLyricsSample=" + malformedLyricsPath.string() + "\n" +
+        "paddingSample=" + paddingPath.string() + "\n" +
+        "recoveredTitle=" + std::string(malformedTitleTag.title()) + "\n" +
+        "recoveredLyrics=" + (malformedLyricsTag.lyrics().empty() ? std::string() : std::string(malformedLyricsTag.lyrics().lyrics().front().text())) + "\n" +
+        "paddingTitle=" + std::string(paddingTag.title()) + "\n" +
+        "paddingArtist=" + std::string(paddingTag.artist()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "malformed_then_title_output.txt", DescribeTag(malformedTitleTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_then_lyrics_output.txt", DescribeTag(malformedLyricsTag)) &&
+                            WriteTextFile(evidenceRoot / "padding_stop_output.txt", DescribeTag(paddingTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = titleRecovered && lyricsRecovered && paddingTitleKept && paddingArtistEmpty && paddingLyricsEmpty;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-006 recovered-title after-bad-frame\n";
+        std::cout << "TR-AUDIT-006 recovered-lyrics recovered-lyrics\n";
+        std::cout << "TR-AUDIT-006 padding-stop no-padding-noise\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1195,6 +1369,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-005")
     {
         if (!RunTrAudit005())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-006")
+    {
+        if (!RunTrAudit006())
         {
             return 1;
         }
