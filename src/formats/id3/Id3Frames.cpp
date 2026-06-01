@@ -43,7 +43,8 @@ constexpr std::size_t kMaxDecodedTextBytes = 2z * 1024 * 1024;
 
 uint16_t ParseUInt16(const std::string &value)
 {
-    if (value.empty())
+    const std::string trimmed = TrimText(value);
+    if (trimmed.empty())
     {
         return 0;
     }
@@ -51,8 +52,8 @@ uint16_t ParseUInt16(const std::string &value)
     try
     {
         std::size_t consumed = 0;
-        const unsigned long parsed = std::stoul(value, &consumed, 10);
-        if (consumed == 0)
+        const unsigned long parsed = std::stoul(trimmed, &consumed, 10);
+        if (consumed != trimmed.size())
         {
             return 0;
         }
@@ -117,7 +118,22 @@ std::pair<uint16_t, uint16_t> ParseSlashNumber(const std::string &value)
     {
         return {ParseUInt16(value), 0};
     }
-    return {ParseUInt16(value.substr(0, slash)), ParseUInt16(value.substr(slash + 1))};
+
+    const std::string left = TrimText(value.substr(0, slash));
+    const std::string right = TrimText(value.substr(slash + 1));
+    if (left.empty() || right.empty())
+    {
+        return {0, 0};
+    }
+
+    const uint16_t current = ParseUInt16(left);
+    const uint16_t total = ParseUInt16(right);
+    if (current == 0 || total == 0)
+    {
+        return {0, 0};
+    }
+
+    return {current, total};
 }
 
 std::string ToLower(std::string value)

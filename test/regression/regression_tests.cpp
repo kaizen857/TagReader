@@ -36,7 +36,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-004", true},
     {"TR-AUDIT-005", true},
     {"TR-AUDIT-006", true},
-    {"TR-AUDIT-007", false},
+    {"TR-AUDIT-007", true},
     {"TR-AUDIT-008", false},
     {"TR-AUDIT-009", false},
     {"TR-AUDIT-010", false},
@@ -479,6 +479,15 @@ std::vector<std::uint8_t> Id3Latin1TextPayload(std::string_view text)
     return payload;
 }
 
+std::vector<std::uint8_t> Id3v22Frame(std::string_view frameId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, frameId);
+    AppendU24BE(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 std::vector<std::uint8_t> Id3UsltPayload(std::string_view text)
 {
     std::vector<std::uint8_t> payload{0, 'e', 'n', 'g', 0};
@@ -503,6 +512,14 @@ std::vector<std::uint8_t> Id3v23Tag(const std::vector<std::uint8_t> &frames)
     return bytes;
 }
 
+std::vector<std::uint8_t> Id3v22Tag(const std::vector<std::uint8_t> &frames)
+{
+    std::vector<std::uint8_t> bytes{'I', 'D', '3', 2, 0, 0};
+    AppendSyncSafe32(bytes, static_cast<std::uint32_t>(frames.size()));
+    bytes.insert(bytes.end(), frames.begin(), frames.end());
+    return bytes;
+}
+
 bool PrependId3Tag(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &frames)
 {
     const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
@@ -513,6 +530,20 @@ bool PrependId3Tag(const std::filesystem::path &basePath, const std::filesystem:
     }
 
     std::vector<std::uint8_t> output = Id3v23Tag(frames);
+    output.insert(output.end(), base.begin(), base.end());
+    return WriteBinaryFile(outputPath, output);
+}
+
+bool PrependId3v22Tag(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &frames)
+{
+    const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
+    if (base.empty())
+    {
+        std::cerr << "failed to read base MP3 sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> output = Id3v22Tag(frames);
     output.insert(output.end(), base.begin(), base.end());
     return WriteBinaryFile(outputPath, output);
 }
@@ -832,6 +863,8 @@ std::string DescribeTag(const MusicTag &tag)
     text += "title=" + std::string(tag.title()) + "\n";
     text += "artist=" + std::string(tag.artist()) + "\n";
     text += "album=" + std::string(tag.album()) + "\n";
+    text += "trackNumber=" + std::to_string(tag.trackNumber()) + "\n";
+    text += "discNumber=" + std::to_string(tag.discNumber()) + "\n";
     text += "coverPath=" + tag.coverPath().string() + "\n";
     text += "lyricsCount=" + std::to_string(tag.lyrics().size()) + "\n";
     return text;
@@ -1312,6 +1345,126 @@ bool RunTrAudit006()
     return passed;
 }
 
+bool RunTrAudit007()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-007";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path v23LegalPath = evidenceRoot / "v23-legal.mp3";
+    const std::filesystem::path v23PrefixJunkPath = evidenceRoot / "v23-prefix-junk.mp3";
+    const std::filesystem::path v23RightJunkPath = evidenceRoot / "v23-right-junk.mp3";
+    const std::filesystem::path v22LegalPath = evidenceRoot / "v22-legal.mp3";
+    const std::filesystem::path v22PrefixJunkPath = evidenceRoot / "v22-prefix-junk.mp3";
+    const std::filesystem::path v22RightJunkPath = evidenceRoot / "v22-right-junk.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> v23LegalFrames = Concat({
+        Id3v23Frame("TRCK", Id3Latin1TextPayload("003/010")),
+        Id3v23Frame("TPOS", Id3Latin1TextPayload("002/004")),
+    });
+    const std::vector<std::uint8_t> v23PrefixJunkFrames = Concat({
+        Id3v23Frame("TRCK", Id3Latin1TextPayload("12abc/7")),
+        Id3v23Frame("TPOS", Id3Latin1TextPayload("003x/01")),
+    });
+    const std::vector<std::uint8_t> v23RightJunkFrames = Concat({
+        Id3v23Frame("TRCK", Id3Latin1TextPayload("12/7abc")),
+        Id3v23Frame("TPOS", Id3Latin1TextPayload("3/01x")),
+    });
+    const std::vector<std::uint8_t> v22LegalFrames = Concat({
+        Id3v22Frame("TRK", Id3Latin1TextPayload("003/010")),
+        Id3v22Frame("TPA", Id3Latin1TextPayload("002/004")),
+    });
+    const std::vector<std::uint8_t> v22PrefixJunkFrames = Concat({
+        Id3v22Frame("TRK", Id3Latin1TextPayload("12abc/7")),
+        Id3v22Frame("TPA", Id3Latin1TextPayload("003x/01")),
+    });
+    const std::vector<std::uint8_t> v22RightJunkFrames = Concat({
+        Id3v22Frame("TRK", Id3Latin1TextPayload("12/7abc")),
+        Id3v22Frame("TPA", Id3Latin1TextPayload("3/01x")),
+    });
+
+    if (!PrependId3Tag(basePath, v23LegalPath, v23LegalFrames) ||
+        !PrependId3Tag(basePath, v23PrefixJunkPath, v23PrefixJunkFrames) ||
+        !PrependId3Tag(basePath, v23RightJunkPath, v23RightJunkFrames) ||
+        !PrependId3v22Tag(basePath, v22LegalPath, v22LegalFrames) ||
+        !PrependId3v22Tag(basePath, v22PrefixJunkPath, v22PrefixJunkFrames) ||
+        !PrependId3v22Tag(basePath, v22RightJunkPath, v22RightJunkFrames))
+    {
+        return false;
+    }
+
+    const MusicTag v23LegalTag = TagReader::Read(v23LegalPath);
+    const MusicTag v23PrefixJunkTag = TagReader::Read(v23PrefixJunkPath);
+    const MusicTag v23RightJunkTag = TagReader::Read(v23RightJunkPath);
+    const MusicTag v22LegalTag = TagReader::Read(v22LegalPath);
+    const MusicTag v22PrefixJunkTag = TagReader::Read(v22PrefixJunkPath);
+    const MusicTag v22RightJunkTag = TagReader::Read(v22RightJunkPath);
+
+    const bool v23LegalOk = Expect(v23LegalTag.trackNumber() == 3 && v23LegalTag.discNumber() == 2, "ID3v2.3 legal TRCK/TPOS values should parse current numbers");
+    const bool v22LegalOk = Expect(v22LegalTag.trackNumber() == 3 && v22LegalTag.discNumber() == 2, "ID3v2.2 legal TRK/TPA values should parse current numbers");
+    const bool v23PrefixRejected = Expect(v23PrefixJunkTag.trackNumber() == 0 && v23PrefixJunkTag.discNumber() == 0, "ID3v2.3 numeric-prefix junk should not pollute track/disc numbers");
+    const bool v22PrefixRejected = Expect(v22PrefixJunkTag.trackNumber() == 0 && v22PrefixJunkTag.discNumber() == 0, "ID3v2.2 numeric-prefix junk should not pollute track/disc numbers");
+    const bool v23RightRejected = Expect(v23RightJunkTag.trackNumber() == 0 && v23RightJunkTag.discNumber() == 0, "ID3v2.3 slash-right junk should reject the whole track/disc group");
+    const bool v22RightRejected = Expect(v22RightJunkTag.trackNumber() == 0 && v22RightJunkTag.discNumber() == 0, "ID3v2.2 slash-right junk should reject the whole track/disc group");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-007 v22-strict legal=003/010 prefix=12abc/7 right=12/7abc\n"
+        "TR-AUDIT-007 v23-strict legal=003/010 prefix=12abc/7 right=12/7abc\n"
+        "TR-AUDIT-007 strict-number-parse\n"
+        "TR-AUDIT-007 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-007\n"
+        "marker=v22-strict\n"
+        "marker=v23-strict\n"
+        "marker=strict-number-parse\n"
+        "v23LegalSample=" + v23LegalPath.string() + "\n" +
+        "v23PrefixJunkSample=" + v23PrefixJunkPath.string() + "\n" +
+        "v23RightJunkSample=" + v23RightJunkPath.string() + "\n" +
+        "v22LegalSample=" + v22LegalPath.string() + "\n" +
+        "v22PrefixJunkSample=" + v22PrefixJunkPath.string() + "\n" +
+        "v22RightJunkSample=" + v22RightJunkPath.string() + "\n" +
+        "v23LegalTrack=" + std::to_string(v23LegalTag.trackNumber()) + "\n" +
+        "v23LegalDisc=" + std::to_string(v23LegalTag.discNumber()) + "\n" +
+        "v22LegalTrack=" + std::to_string(v22LegalTag.trackNumber()) + "\n" +
+        "v22LegalDisc=" + std::to_string(v22LegalTag.discNumber()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "v23_legal_output.txt", DescribeTag(v23LegalTag)) &&
+                            WriteTextFile(evidenceRoot / "v23_prefix_junk_output.txt", DescribeTag(v23PrefixJunkTag)) &&
+                            WriteTextFile(evidenceRoot / "v23_right_junk_output.txt", DescribeTag(v23RightJunkTag)) &&
+                            WriteTextFile(evidenceRoot / "v22_legal_output.txt", DescribeTag(v22LegalTag)) &&
+                            WriteTextFile(evidenceRoot / "v22_prefix_junk_output.txt", DescribeTag(v22PrefixJunkTag)) &&
+                            WriteTextFile(evidenceRoot / "v22_right_junk_output.txt", DescribeTag(v22RightJunkTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = v23LegalOk && v22LegalOk && v23PrefixRejected && v22PrefixRejected && v23RightRejected && v22RightRejected;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-007 v22-strict legal=003/010 prefix=12abc/7 right=12/7abc\n";
+        std::cout << "TR-AUDIT-007 v23-strict legal=003/010 prefix=12abc/7 right=12/7abc\n";
+        std::cout << "TR-AUDIT-007 strict-number-parse\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1380,6 +1533,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-006")
     {
         if (!RunTrAudit006())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-007")
+    {
+        if (!RunTrAudit007())
         {
             return 1;
         }
