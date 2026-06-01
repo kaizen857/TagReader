@@ -3,11 +3,11 @@
 #include "formats/vorbis/VorbisCommentParser.hpp"
 #include "io/ByteReader.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace
@@ -22,6 +22,7 @@ using tagreader_io::TryAddUintmax;
 constexpr std::size_t kMaxOggPacketBytes = 8z * 1024 * 1024;
 constexpr std::size_t kMaxOggScannedBytes = 64z * 1024 * 1024;
 constexpr std::size_t kMaxOggPages = 100000;
+constexpr std::size_t kMaxOggLogicalStreams = 256;
 
 enum class VorbisStreamStage
 {
@@ -85,18 +86,6 @@ bool ForEachVorbisCommentEntry(const uint8_t *data, std::size_t size, Handler &&
     return true;
 }
 
-VorbisStreamState &FindState(std::vector<VorbisStreamState> &states, std::uint32_t serial)
-{
-    auto it = std::find_if(states.begin(), states.end(), [serial](const VorbisStreamState &state)
-                           { return state.serial == serial; });
-    if (it == states.end())
-    {
-        states.push_back(VorbisStreamState{.serial = serial});
-        return states.back();
-    }
-    return *it;
-}
-
 bool HasVorbisPrefix(const std::vector<uint8_t> &bytes, uint8_t packetType)
 {
     return bytes.size() >= 7 && bytes[0] == packetType && std::string_view(reinterpret_cast<const char *>(bytes.data() + 1), 6) == "vorbis";
@@ -110,7 +99,7 @@ bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(
     }
 
     std::uintmax_t cursor = 0;
-    std::vector<VorbisStreamState> states;
+    std::unordered_map<std::uint32_t, VorbisStreamState> states;
     std::size_t totalScannedBytes = 0;
     std::size_t pageCount = 0;
     while (true)
@@ -135,7 +124,16 @@ bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(
         const bool continuation = (pageHeader[5] & 0x01) != 0;
         const std::uint32_t serial = ReadLE32(pageHeader.data() + 14);
         const std::uint32_t sequence = ReadLE32(pageHeader.data() + 18);
-        VorbisStreamState &state = FindState(states, serial);
+        auto stateIt = states.find(serial);
+        if (stateIt == states.end())
+        {
+            if (states.size() >= kMaxOggLogicalStreams)
+            {
+                return false;
+            }
+            stateIt = states.try_emplace(serial, VorbisStreamState{.serial = serial}).first;
+        }
+        VorbisStreamState &state = stateIt->second;
         if (!state.hasSequence)
         {
             state.hasSequence = true;
