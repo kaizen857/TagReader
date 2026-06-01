@@ -43,7 +43,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-010", true},
     {"TR-AUDIT-011", true},
     {"TR-AUDIT-012", true},
-    {"TR-AUDIT-013", false},
+    {"TR-AUDIT-013", true},
     {"TR-AUDIT-014", false},
     {"TR-AUDIT-015", false},
 }};
@@ -2020,6 +2020,117 @@ bool RunTrAudit012()
     return passed;
 }
 
+bool RunTrAudit013()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-013";
+    constexpr std::string_view kOneByOnePngSha256 = "4ff6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path samplePath = evidenceRoot / "cover_sample.mp3";
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> apicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/png"), std::vector<std::uint8_t>{0, 3, 0}, validPng});
+    if (!GenerateBaseMp3(basePath) || !PrependId3Tag(basePath, samplePath, Id3v23Frame("APIC", apicPayload)))
+    {
+        return false;
+    }
+
+    const std::filesystem::path expectedCoverPath = coverExportDir / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
+    std::filesystem::create_directories(expectedCoverPath.parent_path(), ec);
+    if (ec)
+    {
+        std::cerr << "failed to create polluted cache directory: " << ec.message() << '\n';
+        return false;
+    }
+    if (!WriteBinaryFile(expectedCoverPath, Bytes("polluted cover cache entry")))
+    {
+        return false;
+    }
+
+    bool pollutedRejected = false;
+    std::string pollutedError;
+    try
+    {
+        (void)TagReader::Read(samplePath, coverExportDir);
+    }
+    catch (const std::exception &ex)
+    {
+        pollutedError = ex.what();
+        pollutedRejected = pollutedError.find("cover cache") != std::string::npos && pollutedError.find(expectedCoverPath.string()) != std::string::npos;
+    }
+
+    const bool pollutedRejectedOk = Expect(pollutedRejected, "polluted pre-existing cover cache file should be rejected with cover cache path diagnostic");
+    std::filesystem::remove(expectedCoverPath, ec);
+    ec.clear();
+
+    const MusicTag firstTag = TagReader::Read(samplePath, coverExportDir);
+    const std::filesystem::path firstCoverPath = firstTag.coverPath();
+    const bool coverPathPresent = Expect(!firstCoverPath.empty(), "valid ID3 APIC PNG should export a cover path");
+    const bool coverPathExpected = Expect(firstCoverPath == expectedCoverPath, "cover path should be SHA-256 sharded as first2/rest.png");
+    const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "SHA-256 cached cover should exist on disk");
+    ec.clear();
+    const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "SHA-256 cached cover should stay under export directory");
+    const bool hexLengthOk = Expect(kOneByOnePngSha256.size() == 64, "hardcoded SHA-256 hex should be 64 characters");
+    const bool shardDirOk = Expect(firstCoverPath.parent_path().filename().string() == std::string(kOneByOnePngSha256.substr(0, 2)), "cover cache shard directory should be first two hex chars");
+    const bool fileNameOk = Expect(firstCoverPath.filename().string() == std::string(kOneByOnePngSha256.substr(2)) + ".png", "cover cache filename should be remaining SHA-256 hex plus .png");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "SHA-256 cover cache should create exactly one PNG");
+    const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool firstMtimeOk = Expect(!ec, "SHA-256 cached cover mtime should be readable");
+    ec.clear();
+
+    const MusicTag repeatedTag = TagReader::Read(samplePath, coverExportDir);
+    const bool repeatedPathSame = Expect(repeatedTag.coverPath() == firstCoverPath, "repeated same-image read should reuse the same SHA-256 cache path");
+    const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated same-image read should not rewrite the cache file");
+    ec.clear();
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated same-image read should still have one PNG");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-013 sha256-cache-path coverPath=" + firstCoverPath.string() + "\n"
+        "TR-AUDIT-013 polluted-cache-rejected path=" + expectedCoverPath.string() + "\n"
+        "TR-AUDIT-013 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-013\n"
+        "marker=sha256-cache-path\n"
+        "marker=polluted-cache-rejected\n"
+        "sample=" + samplePath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "expectedSha256=" + std::string(kOneByOnePngSha256) + "\n" +
+        "expectedCoverPath=" + expectedCoverPath.string() + "\n" +
+        "coverPath=" + firstCoverPath.string() + "\n" +
+        "pollutedError=" + pollutedError + "\n" +
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "first_read_output.txt", DescribeTag(firstTag)) &&
+                            WriteTextFile(evidenceRoot / "repeated_read_output.txt", DescribeTag(repeatedTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = pollutedRejectedOk && coverPathPresent && coverPathExpected && coverExists && coverUnderExportDir && hexLengthOk && shardDirOk && fileNameOk && onePngAfterFirstRead && firstMtimeOk && repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-013 sha256-cache-path coverPath=" << firstCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-013 polluted-cache-rejected path=" << expectedCoverPath.string() << '\n';
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -2154,6 +2265,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-012")
     {
         if (!RunTrAudit012())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-013")
+    {
+        if (!RunTrAudit013())
         {
             return 1;
         }

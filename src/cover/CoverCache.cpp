@@ -3,13 +3,25 @@
 #include "cover/CoverDecoder.hpp"
 #include "TagReaderInternal.hpp"
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+#include <libavutil/mem.h>
+#include <libavutil/sha.h>
+#ifdef __cplusplus
+}
+#endif
+
 #include <algorithm>
 #include <atomic>
+#include <array>
 #include <cerrno>
 #include <cctype>
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -34,14 +46,14 @@ std::string ToLower(std::string value)
     return value;
 }
 
-std::string HexEncode(std::uint64_t value)
+std::string HexEncode(const std::array<uint8_t, 32> &digest)
 {
     constexpr char kHex[] = "0123456789abcdef";
-    std::string hex(16, '0');
-    for (std::size_t i = 0; i < hex.size(); ++i)
+    std::string hex(digest.size() * 2, '0');
+    for (std::size_t i = 0; i < digest.size(); ++i)
     {
-        const std::size_t shift = (hex.size() - 1 - i) * 4;
-        hex[i] = kHex[(value >> shift) & 0x0F];
+        hex[i * 2] = kHex[(digest[i] >> 4) & 0x0F];
+        hex[i * 2 + 1] = kHex[digest[i] & 0x0F];
     }
 
     return hex;
@@ -49,24 +61,22 @@ std::string HexEncode(std::uint64_t value)
 
 std::string HashEmbeddedImageBytes(const uint8_t *data, std::size_t size)
 {
-    constexpr std::uint64_t kFnvOffsetA = 14695981039346656037ULL;
-    constexpr std::uint64_t kFnvPrimeA = 1099511628211ULL;
-    constexpr std::uint64_t kFnvOffsetB = 1099511628211ULL;
-    constexpr std::uint64_t kFnvPrimeB = 14695981039346656037ULL;
-
-    std::uint64_t hashA = kFnvOffsetA;
-    std::uint64_t hashB = kFnvOffsetB ^ static_cast<std::uint64_t>(size);
-    for (std::size_t i = 0; i < size; ++i)
+    std::unique_ptr<AVSHA, decltype(&av_free)> sha(av_sha_alloc(), av_free);
+    if (!sha)
     {
-        const std::uint64_t byte = data[i];
-        hashA ^= byte;
-        hashA *= kFnvPrimeA;
-
-        hashB ^= byte + static_cast<std::uint64_t>(i & 0xFF);
-        hashB *= kFnvPrimeB;
+        throw std::runtime_error("cover cache failed to allocate SHA-256 context");
+    }
+    if (av_sha_init(sha.get(), 256) != 0)
+    {
+        throw std::runtime_error("cover cache failed to initialize SHA-256 context");
     }
 
-    return HexEncode(hashA) + HexEncode(hashB);
+    av_sha_update(sha.get(), data, static_cast<unsigned int>(size));
+
+    std::array<uint8_t, 32> digest{};
+    av_sha_final(sha.get(), digest.data());
+
+    return HexEncode(digest);
 }
 
 std::filesystem::path BuildCoverCachePath(const std::filesystem::path &coverExportDir, std::string_view hex)
