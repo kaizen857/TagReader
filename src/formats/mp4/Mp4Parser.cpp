@@ -250,6 +250,11 @@ void ReadMp4ItemAtom(ReadContext &context, RawMetadata &metadata, std::string_vi
         return;
     }
 
+    if (atomType == "covr" && !metadata.coverPath.empty())
+    {
+        return;
+    }
+
     const std::size_t maxPayloadSize = Mp4MetadataPayloadLimit(atomType);
     (void)ForEachMp4ChildAtom(context.input, offset, limit, false, visitedAtoms, [&](const Mp4AtomHeader &atom)
                               {

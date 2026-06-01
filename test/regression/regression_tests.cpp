@@ -33,7 +33,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
-    {"TR-AUDIT-004", false},
+    {"TR-AUDIT-004", true},
     {"TR-AUDIT-005", false},
     {"TR-AUDIT-006", false},
     {"TR-AUDIT-007", false},
@@ -292,9 +292,23 @@ std::vector<std::uint8_t> DataAtomUtf8(std::string_view text)
     return Atom({'d', 'a', 't', 'a'}, payload);
 }
 
+std::vector<std::uint8_t> DataAtomCover(const std::vector<std::uint8_t> &coverBytes)
+{
+    std::vector<std::uint8_t> payload;
+    AppendU32BE(payload, 13);
+    AppendU32BE(payload, 0);
+    payload.insert(payload.end(), coverBytes.begin(), coverBytes.end());
+    return Atom({'d', 'a', 't', 'a'}, payload);
+}
+
 std::vector<std::uint8_t> Mp4TextItem(std::array<std::uint8_t, 4> type, std::string_view text)
 {
     return Atom(type, DataAtomUtf8(text));
+}
+
+std::vector<std::uint8_t> Mp4CoverItem(const std::vector<std::uint8_t> &coverBytes)
+{
+    return Atom({'c', 'o', 'v', 'r'}, DataAtomCover(coverBytes));
 }
 
 std::vector<std::uint8_t> UdtaWithIlst(const std::vector<std::uint8_t> &ilstPayload)
@@ -419,6 +433,62 @@ bool GenerateFlacSample(const std::filesystem::path &path)
     }
 
     return true;
+}
+
+std::vector<std::uint8_t> OneByOnePng()
+{
+    return {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+        0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99,
+        0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+}
+
+std::size_t CountPngFiles(const std::filesystem::path &root)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec))
+    {
+        return 0;
+    }
+
+    std::size_t count = 0;
+    for (const std::filesystem::directory_entry &entry : std::filesystem::recursive_directory_iterator(root, ec))
+    {
+        if (ec)
+        {
+            break;
+        }
+        if (entry.is_regular_file(ec) && entry.path().extension() == ".png")
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool PathIsUnder(const std::filesystem::path &path, const std::filesystem::path &root)
+{
+    std::error_code ec;
+    const std::filesystem::path normalizedPath = std::filesystem::weakly_canonical(path, ec);
+    if (ec)
+    {
+        return false;
+    }
+    ec.clear();
+    const std::filesystem::path normalizedRoot = std::filesystem::weakly_canonical(root, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    const auto mismatch = std::mismatch(normalizedRoot.begin(), normalizedRoot.end(), normalizedPath.begin(), normalizedPath.end());
+    return mismatch.first == normalizedRoot.end();
 }
 
 std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::initializer_list<std::string_view> comments)
@@ -825,6 +895,87 @@ bool RunTrAudit003()
     return passed;
 }
 
+bool RunTrAudit004()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-004";
+    constexpr std::size_t kInvalidCoverPayloadSize = 2z * 1024 * 1024;
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.m4a";
+    const std::filesystem::path multiCovrPath = evidenceRoot / "multi_covr.m4a";
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> invalidCover(kInvalidCoverPayloadSize, 0xCC);
+    const std::vector<std::uint8_t> firstCoverItem = Mp4CoverItem(validPng);
+    const std::vector<std::uint8_t> secondCoverItem = Mp4CoverItem(invalidCover);
+    const std::vector<std::uint8_t> ilstPayload = Concat({firstCoverItem, secondCoverItem});
+
+    if (!GenerateBaseM4a(basePath) || !InjectMp4Ilst(basePath, multiCovrPath, ilstPayload))
+    {
+        return false;
+    }
+
+    const MusicTag firstTag = TagReader::Read(multiCovrPath, coverExportDir);
+    const std::filesystem::path firstCoverPath = firstTag.coverPath();
+    const bool coverPathPresent = Expect(!firstCoverPath.empty(), "first valid MP4 covr should export a cover path");
+    const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported MP4 cover should exist on disk");
+    ec.clear();
+    const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported MP4 cover should stay under cover export directory");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "duplicate invalid MP4 covr should not create a second PNG");
+    const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool firstMtimeOk = Expect(!ec, "exported MP4 cover mtime should be readable");
+    ec.clear();
+
+    const MusicTag repeatedTag = TagReader::Read(multiCovrPath, coverExportDir);
+    const bool repeatedPathSame = Expect(repeatedTag.coverPath() == firstCoverPath, "repeated MP4 cover read should reuse the same cache path");
+    const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated MP4 cover read should not rewrite cached PNG");
+    ec.clear();
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated MP4 cover read should still have one PNG");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-004 duplicate MP4 covr skipped\n"
+        "TR-AUDIT-004 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-004\n"
+        "marker=duplicate MP4 covr skipped\n"
+        "sample=" + multiCovrPath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + firstCoverPath.string() + "\n" +
+        "covrItems=2\n"
+        "dataItems=2\n"
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "invalidCoverBytes=" + std::to_string(invalidCover.size()) + "\n" +
+        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary) &&
+                            WriteTextFile(evidenceRoot / "first_read_output.txt", DescribeTag(firstTag)) &&
+                            WriteTextFile(evidenceRoot / "repeated_read_output.txt", DescribeTag(repeatedTag));
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = coverPathPresent && coverExists && coverUnderExportDir && onePngAfterFirstRead && firstMtimeOk && repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-004 duplicate MP4 covr skipped\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -860,6 +1011,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-003")
     {
         if (!RunTrAudit003())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-004")
+    {
+        if (!RunTrAudit004())
         {
             return 1;
         }
