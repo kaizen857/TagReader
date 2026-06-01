@@ -527,9 +527,8 @@ bool PrepareId3v24FrameRegion(const std::vector<uint8_t> &tagBytes, uint8_t vers
         }
 
         const std::size_t extSize = ReadSyncSafe32(tagBytes.data());
-        std::size_t extendedEnd = 0;
-        // ID3v2.4 extended header size excludes the 4-byte size field itself.
-        if (extSize < 6 || !TryAddSize(4, extSize, extendedEnd) || extendedEnd > frameLimit)
+        const std::size_t extendedEnd = extSize;
+        if (extSize < 6 || extendedEnd > frameLimit)
         {
             return false;
         }

@@ -42,7 +42,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-009", true},
     {"TR-AUDIT-010", true},
     {"TR-AUDIT-011", true},
-    {"TR-AUDIT-012", false},
+    {"TR-AUDIT-012", true},
     {"TR-AUDIT-013", false},
     {"TR-AUDIT-014", false},
     {"TR-AUDIT-015", false},
@@ -473,6 +473,17 @@ std::vector<std::uint8_t> Id3v23Frame(std::string_view frameId, const std::vecto
     return bytes;
 }
 
+std::vector<std::uint8_t> Id3v24Frame(std::string_view frameId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, frameId);
+    AppendSyncSafe32(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 std::vector<std::uint8_t> Id3Latin1TextPayload(std::string_view text)
 {
     std::vector<std::uint8_t> payload{0};
@@ -520,6 +531,14 @@ std::vector<std::uint8_t> Id3v23Tag(const std::vector<std::uint8_t> &frames)
     return bytes;
 }
 
+std::vector<std::uint8_t> Id3v24Tag(std::uint8_t flags, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes{'I', 'D', '3', 4, 0, flags};
+    AppendSyncSafe32(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 std::vector<std::uint8_t> Id3v22Tag(const std::vector<std::uint8_t> &frames)
 {
     std::vector<std::uint8_t> bytes{'I', 'D', '3', 2, 0, 0};
@@ -538,6 +557,20 @@ bool PrependId3Tag(const std::filesystem::path &basePath, const std::filesystem:
     }
 
     std::vector<std::uint8_t> output = Id3v23Tag(frames);
+    output.insert(output.end(), base.begin(), base.end());
+    return WriteBinaryFile(outputPath, output);
+}
+
+bool PrependId3v24Tag(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, std::uint8_t flags, const std::vector<std::uint8_t> &payload)
+{
+    const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
+    if (base.empty())
+    {
+        std::cerr << "failed to read base MP3 sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> output = Id3v24Tag(flags, payload);
     output.insert(output.end(), base.begin(), base.end());
     return WriteBinaryFile(outputPath, output);
 }
@@ -1882,6 +1915,111 @@ bool RunTrAudit011()
     return passed;
 }
 
+bool RunTrAudit012()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-012";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path standardExtPath = evidenceRoot / "v24-standard-extended.mp3";
+    const std::filesystem::path noExtPath = evidenceRoot / "v24-no-extended.mp3";
+    const std::filesystem::path tooSmallExtPath = evidenceRoot / "v24-too-small-extended.mp3";
+    const std::filesystem::path outOfBoundsExtPath = evidenceRoot / "v24-out-of-bounds-extended.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> standardTitleFrame = Id3v24Frame("TIT2", Id3Latin1TextPayload("v24-extended"));
+    const std::vector<std::uint8_t> controlTitleFrame = Id3v24Frame("TIT2", Id3Latin1TextPayload("v24-control"));
+    const std::vector<std::uint8_t> shiftedTitleFrame = Id3v24Frame("TIT2", Id3Latin1TextPayload("shifted-garbage"));
+
+    std::vector<std::uint8_t> standardExtPayload;
+    AppendSyncSafe32(standardExtPayload, 6);
+    standardExtPayload.push_back(1);
+    standardExtPayload.push_back(0);
+    standardExtPayload.insert(standardExtPayload.end(), standardTitleFrame.begin(), standardTitleFrame.end());
+
+    std::vector<std::uint8_t> tooSmallExtPayload;
+    AppendSyncSafe32(tooSmallExtPayload, 5);
+    tooSmallExtPayload.push_back(0);
+    tooSmallExtPayload.insert(tooSmallExtPayload.end(), shiftedTitleFrame.begin(), shiftedTitleFrame.end());
+
+    std::vector<std::uint8_t> outOfBoundsExtPayload;
+    AppendSyncSafe32(outOfBoundsExtPayload, 64);
+    outOfBoundsExtPayload.push_back(1);
+    outOfBoundsExtPayload.push_back(0);
+    outOfBoundsExtPayload.insert(outOfBoundsExtPayload.end(), shiftedTitleFrame.begin(), shiftedTitleFrame.end());
+
+    if (!PrependId3v24Tag(basePath, standardExtPath, 0x40, standardExtPayload) ||
+        !PrependId3v24Tag(basePath, noExtPath, 0x00, controlTitleFrame) ||
+        !PrependId3v24Tag(basePath, tooSmallExtPath, 0x40, tooSmallExtPayload) ||
+        !PrependId3v24Tag(basePath, outOfBoundsExtPath, 0x40, outOfBoundsExtPayload))
+    {
+        return false;
+    }
+
+    const MusicTag standardExtTag = TagReader::Read(standardExtPath);
+    const MusicTag noExtTag = TagReader::Read(noExtPath);
+    const MusicTag tooSmallExtTag = TryReadTagOrEmpty(tooSmallExtPath);
+    const MusicTag outOfBoundsExtTag = TryReadTagOrEmpty(outOfBoundsExtPath);
+
+    const bool standardExtOk = Expect(standardExtTag.title() == "v24-extended", "ID3v2.4 standard extended header should skip extSize bytes and parse following TIT2");
+    const bool noExtOk = Expect(noExtTag.title() == "v24-control", "ID3v2.4 tag without extended header should still parse TIT2");
+    const bool tooSmallRejected = Expect(tooSmallExtTag.title() != "shifted-garbage", "too-small ID3v2.4 extended header must not resync into shifted title");
+    const bool outOfBoundsRejected = Expect(outOfBoundsExtTag.title() != "shifted-garbage", "out-of-bounds ID3v2.4 extended header must not parse shifted title");
+    const bool malformedEmpty = Expect(tooSmallExtTag.title().empty() && outOfBoundsExtTag.title().empty(), "malformed ID3v2.4 extended headers should leave title empty");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-012 standard-ext-header-ok title=v24-extended\n"
+        "TR-AUDIT-012 no-ext-header-control title=v24-control\n"
+        "TR-AUDIT-012 malformed-ext-header-rejected\n"
+        "TR-AUDIT-012 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-012\n"
+        "marker=standard-ext-header-ok\n"
+        "marker=no-ext-header-control\n"
+        "marker=malformed-ext-header-rejected\n"
+        "standardExtSample=" + standardExtPath.string() + "\n" +
+        "noExtSample=" + noExtPath.string() + "\n" +
+        "tooSmallExtSample=" + tooSmallExtPath.string() + "\n" +
+        "outOfBoundsExtSample=" + outOfBoundsExtPath.string() + "\n" +
+        "standardExtTitle=" + std::string(standardExtTag.title()) + "\n" +
+        "noExtTitle=" + std::string(noExtTag.title()) + "\n" +
+        "tooSmallExtTitle=" + std::string(tooSmallExtTag.title()) + "\n" +
+        "outOfBoundsExtTitle=" + std::string(outOfBoundsExtTag.title()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "standard_ext_output.txt", DescribeTag(standardExtTag)) &&
+                            WriteTextFile(evidenceRoot / "no_ext_output.txt", DescribeTag(noExtTag)) &&
+                            WriteTextFile(evidenceRoot / "too_small_ext_output.txt", DescribeTag(tooSmallExtTag)) &&
+                            WriteTextFile(evidenceRoot / "out_of_bounds_ext_output.txt", DescribeTag(outOfBoundsExtTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = standardExtOk && noExtOk && tooSmallRejected && outOfBoundsRejected && malformedEmpty;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-012 standard-ext-header-ok title=v24-extended\n";
+        std::cout << "TR-AUDIT-012 no-ext-header-control title=v24-control\n";
+        std::cout << "TR-AUDIT-012 malformed-ext-header-rejected\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -2005,6 +2143,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-011")
     {
         if (!RunTrAudit011())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-012")
+    {
+        if (!RunTrAudit012())
         {
             return 1;
         }
