@@ -531,7 +531,7 @@ std::string ReadUtf16TextWithBom(const uint8_t *data, std::size_t size)
         }
     }
 
-    return ReadUtf16Text(data, size, false);
+    return {};
 }
 
 std::string ReadLocaleEncodedText(const uint8_t *data, std::size_t size, std::string_view encoding)

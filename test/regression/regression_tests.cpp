@@ -40,7 +40,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-007", true},
     {"TR-AUDIT-008", true},
     {"TR-AUDIT-009", true},
-    {"TR-AUDIT-010", false},
+    {"TR-AUDIT-010", true},
     {"TR-AUDIT-011", false},
     {"TR-AUDIT-012", false},
     {"TR-AUDIT-013", false},
@@ -477,6 +477,13 @@ std::vector<std::uint8_t> Id3Latin1TextPayload(std::string_view text)
 {
     std::vector<std::uint8_t> payload{0};
     AppendBytes(payload, text);
+    return payload;
+}
+
+std::vector<std::uint8_t> Id3Utf16TextPayload(std::initializer_list<std::uint8_t> bytes)
+{
+    std::vector<std::uint8_t> payload{1};
+    payload.insert(payload.end(), bytes.begin(), bytes.end());
     return payload;
 }
 
@@ -1707,6 +1714,87 @@ bool RunTrAudit009()
     return passed;
 }
 
+bool RunTrAudit010()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-010";
+    constexpr std::string_view kExpectedTitle = "\xE6\xA0\x87\xE9\xA2\x98";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path utf16LeBomPath = evidenceRoot / "utf16le-bom-title.mp3";
+    const std::filesystem::path utf16BeBomPath = evidenceRoot / "utf16be-bom-title.mp3";
+    const std::filesystem::path utf16BomlessPath = evidenceRoot / "utf16-bomless-title.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> utf16LeBomFrames = Id3v23Frame("TIT2", Id3Utf16TextPayload({0xFF, 0xFE, 0x07, 0x68, 0x98, 0x98}));
+    const std::vector<std::uint8_t> utf16BeBomFrames = Id3v23Frame("TIT2", Id3Utf16TextPayload({0xFE, 0xFF, 0x68, 0x07, 0x98, 0x98}));
+    const std::vector<std::uint8_t> utf16BomlessFrames = Id3v23Frame("TIT2", Id3Utf16TextPayload({0x07, 0x68, 0x98, 0x98}));
+
+    if (!PrependId3Tag(basePath, utf16LeBomPath, utf16LeBomFrames) ||
+        !PrependId3Tag(basePath, utf16BeBomPath, utf16BeBomFrames) ||
+        !PrependId3Tag(basePath, utf16BomlessPath, utf16BomlessFrames))
+    {
+        return false;
+    }
+
+    const MusicTag utf16LeBomTag = TagReader::Read(utf16LeBomPath);
+    const MusicTag utf16BeBomTag = TagReader::Read(utf16BeBomPath);
+    const MusicTag utf16BomlessTag = TagReader::Read(utf16BomlessPath);
+
+    const bool utf16LeBomOk = Expect(utf16LeBomTag.title() == kExpectedTitle, "ID3 encoding=1 UTF-16LE BOM title should decode to UTF-8");
+    const bool utf16BeBomOk = Expect(utf16BeBomTag.title() == kExpectedTitle, "ID3 encoding=1 UTF-16BE BOM title should decode to UTF-8");
+    const bool utf16BomlessRejected = Expect(utf16BomlessTag.title().empty(), "ID3 encoding=1 UTF-16 without BOM should not default to little-endian");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-010 utf16le-bom-ok title=标题\n"
+        "TR-AUDIT-010 utf16be-bom-ok title=标题\n"
+        "TR-AUDIT-010 bomless-rejected\n"
+        "TR-AUDIT-010 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-010\n"
+        "marker=utf16le-bom-ok\n"
+        "marker=utf16be-bom-ok\n"
+        "marker=bomless-rejected\n"
+        "utf16LeBomSample=" + utf16LeBomPath.string() + "\n" +
+        "utf16BeBomSample=" + utf16BeBomPath.string() + "\n" +
+        "utf16BomlessSample=" + utf16BomlessPath.string() + "\n" +
+        "utf16LeBomTitle=" + std::string(utf16LeBomTag.title()) + "\n" +
+        "utf16BeBomTitle=" + std::string(utf16BeBomTag.title()) + "\n" +
+        "utf16BomlessTitle=" + std::string(utf16BomlessTag.title()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "utf16le_bom_output.txt", DescribeTag(utf16LeBomTag)) &&
+                            WriteTextFile(evidenceRoot / "utf16be_bom_output.txt", DescribeTag(utf16BeBomTag)) &&
+                            WriteTextFile(evidenceRoot / "utf16_bomless_output.txt", DescribeTag(utf16BomlessTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = utf16LeBomOk && utf16BeBomOk && utf16BomlessRejected;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-010 utf16le-bom-ok title=标题\n";
+        std::cout << "TR-AUDIT-010 utf16be-bom-ok title=标题\n";
+        std::cout << "TR-AUDIT-010 bomless-rejected\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1808,6 +1896,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-009")
     {
         if (!RunTrAudit009())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-010")
+    {
+        if (!RunTrAudit010())
         {
             return 1;
         }
