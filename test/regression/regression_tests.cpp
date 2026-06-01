@@ -39,7 +39,7 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-006", true},
     {"TR-AUDIT-007", true},
     {"TR-AUDIT-008", true},
-    {"TR-AUDIT-009", false},
+    {"TR-AUDIT-009", true},
     {"TR-AUDIT-010", false},
     {"TR-AUDIT-011", false},
     {"TR-AUDIT-012", false},
@@ -858,6 +858,82 @@ bool PrependManySerialPages(const std::filesystem::path &basePath, const std::fi
     return WriteBinaryFile(outputPath, output);
 }
 
+bool PatchOggVorbisPacketPrefixOnly(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, std::uint8_t packetType)
+{
+    std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.empty())
+    {
+        std::cerr << "failed to read base Ogg sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::size_t cursor = 0;
+    while (cursor + 27 <= data.size())
+    {
+        if (std::string_view(reinterpret_cast<const char *>(data.data() + cursor), 4) != "OggS")
+        {
+            break;
+        }
+
+        const std::uint8_t segmentCount = data[cursor + 26];
+        if (cursor + 27 + segmentCount > data.size())
+        {
+            break;
+        }
+
+        std::size_t payloadSize = 0;
+        for (std::size_t i = 0; i < segmentCount; ++i)
+        {
+            payloadSize += data[cursor + 27 + i];
+        }
+        const std::size_t payloadOffset = cursor + 27 + segmentCount;
+        const std::size_t pageEnd = payloadOffset + payloadSize;
+        if (pageEnd > data.size())
+        {
+            break;
+        }
+
+        const bool matchesVorbisPacket = payloadSize >= 7 && data[payloadOffset] == packetType &&
+                                         std::string_view(reinterpret_cast<const char *>(data.data() + payloadOffset + 1), 6) == "vorbis";
+        if (matchesVorbisPacket)
+        {
+            const std::uint8_t headerType = data[cursor + 5];
+            const std::uint32_t serial = static_cast<std::uint32_t>(data[cursor + 14]) |
+                                         (static_cast<std::uint32_t>(data[cursor + 15]) << 8) |
+                                         (static_cast<std::uint32_t>(data[cursor + 16]) << 16) |
+                                         (static_cast<std::uint32_t>(data[cursor + 17]) << 24);
+            const std::uint32_t sequence = static_cast<std::uint32_t>(data[cursor + 18]) |
+                                           (static_cast<std::uint32_t>(data[cursor + 19]) << 8) |
+                                           (static_cast<std::uint32_t>(data[cursor + 20]) << 16) |
+                                           (static_cast<std::uint32_t>(data[cursor + 21]) << 24);
+            const std::vector<std::uint8_t> prefixOnly(data.begin() + static_cast<std::ptrdiff_t>(payloadOffset), data.begin() + static_cast<std::ptrdiff_t>(payloadOffset + 7));
+            const std::vector<std::uint8_t> patchedPage = OggPage(serial, sequence, headerType, prefixOnly);
+            std::vector<std::uint8_t> output;
+            output.insert(output.end(), data.begin(), data.begin() + static_cast<std::ptrdiff_t>(cursor));
+            output.insert(output.end(), patchedPage.begin(), patchedPage.end());
+            output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(pageEnd), data.end());
+            return WriteBinaryFile(outputPath, output);
+        }
+
+        cursor = pageEnd;
+    }
+
+    std::cerr << "base Ogg sample has no patchable Vorbis packet type " << static_cast<int>(packetType) << ": " << basePath.string() << '\n';
+    return false;
+}
+
+MusicTag TryReadTagOrEmpty(const std::filesystem::path &path)
+{
+    try
+    {
+        return TagReader::Read(path);
+    }
+    catch (const std::exception &)
+    {
+        return MusicTag{};
+    }
+}
+
 std::string DescribeTag(const MusicTag &tag)
 {
     std::string text;
@@ -1543,6 +1619,94 @@ bool RunTrAudit008()
     return passed;
 }
 
+bool RunTrAudit009()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-009";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path validPath = evidenceRoot / "valid-ident-comment.ogg";
+    const std::filesystem::path identBasePath = evidenceRoot / "ident-base.ogg";
+    const std::filesystem::path commentBasePath = evidenceRoot / "comment-base.ogg";
+    const std::filesystem::path invalidIdentPath = evidenceRoot / "invalid-ident-prefix-only.ogg";
+    const std::filesystem::path invalidCommentPath = evidenceRoot / "invalid-comment-prefix-only.ogg";
+
+    if (!GenerateOggVorbisSample(validPath, "ogg-valid-ident", "ogg-valid-artist") ||
+        !GenerateOggVorbisSample(identBasePath, "hidden-ident-title", "hidden-ident-artist") ||
+        !GenerateOggVorbisSample(commentBasePath, "hidden-comment-title", "hidden-comment-artist") ||
+        !PatchOggVorbisPacketPrefixOnly(identBasePath, invalidIdentPath, 0x01) ||
+        !PatchOggVorbisPacketPrefixOnly(commentBasePath, invalidCommentPath, 0x03))
+    {
+        return false;
+    }
+
+    const MusicTag validTag = TagReader::Read(validPath);
+    const MusicTag invalidIdentTag = TryReadTagOrEmpty(invalidIdentPath);
+    const MusicTag invalidCommentTag = TryReadTagOrEmpty(invalidCommentPath);
+
+    const bool validTitleOk = Expect(validTag.title() == "ogg-valid-ident", "legal Ogg Vorbis identification/comment sample should parse title");
+    const bool validArtistOk = Expect(validTag.artist() == "ogg-valid-artist", "legal Ogg Vorbis identification/comment sample should parse artist");
+    const bool invalidIdentTitleEmpty = Expect(invalidIdentTag.title().empty(), "identification prefix-only Ogg sample should not produce title metadata");
+    const bool invalidIdentArtistEmpty = Expect(invalidIdentTag.artist().empty(), "identification prefix-only Ogg sample should not produce artist metadata");
+    const bool invalidIdentAlbumEmpty = Expect(invalidIdentTag.album().empty(), "identification prefix-only Ogg sample should not produce album metadata");
+    const bool invalidIdentNoCover = Expect(invalidIdentTag.coverPath().empty(), "identification prefix-only Ogg sample should not produce cover side effects");
+    const bool invalidIdentNoLyrics = Expect(invalidIdentTag.lyrics().empty(), "identification prefix-only Ogg sample should not produce lyrics side effects");
+    const bool invalidCommentTitleEmpty = Expect(invalidCommentTag.title().empty(), "comment prefix-only Ogg sample should not produce title metadata");
+    const bool invalidCommentArtistEmpty = Expect(invalidCommentTag.artist().empty(), "comment prefix-only Ogg sample should not produce artist metadata");
+    const bool invalidCommentAlbumEmpty = Expect(invalidCommentTag.album().empty(), "comment prefix-only Ogg sample should not produce album metadata");
+    const bool invalidCommentNoCover = Expect(invalidCommentTag.coverPath().empty(), "comment prefix-only Ogg sample should not produce cover side effects");
+    const bool invalidCommentNoLyrics = Expect(invalidCommentTag.lyrics().empty(), "comment prefix-only Ogg sample should not produce lyrics side effects");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-009 valid-ident-parsed title=ogg-valid-ident\n"
+        "TR-AUDIT-009 invalid-ident-rejected\n"
+        "TR-AUDIT-009 invalid-comment-rejected\n"
+        "TR-AUDIT-009 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-009\n"
+        "marker=valid-ident-parsed\n"
+        "marker=invalid-ident-rejected\n"
+        "marker=invalid-comment-rejected\n"
+        "validSample=" + validPath.string() + "\n" +
+        "identBaseSample=" + identBasePath.string() + "\n" +
+        "commentBaseSample=" + commentBasePath.string() + "\n" +
+        "invalidIdentSample=" + invalidIdentPath.string() + "\n" +
+        "invalidCommentSample=" + invalidCommentPath.string() + "\n" +
+        "validTitle=" + std::string(validTag.title()) + "\n" +
+        "validArtist=" + std::string(validTag.artist()) + "\n" +
+        "invalidIdentTitle=" + std::string(invalidIdentTag.title()) + "\n" +
+        "invalidCommentTitle=" + std::string(invalidCommentTag.title()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "valid_output.txt", DescribeTag(validTag)) &&
+                            WriteTextFile(evidenceRoot / "invalid_ident_output.txt", DescribeTag(invalidIdentTag)) &&
+                            WriteTextFile(evidenceRoot / "invalid_comment_output.txt", DescribeTag(invalidCommentTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = validTitleOk && validArtistOk &&
+                        invalidIdentTitleEmpty && invalidIdentArtistEmpty && invalidIdentAlbumEmpty && invalidIdentNoCover && invalidIdentNoLyrics &&
+                        invalidCommentTitleEmpty && invalidCommentArtistEmpty && invalidCommentAlbumEmpty && invalidCommentNoCover && invalidCommentNoLyrics;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-009 valid-ident-parsed title=ogg-valid-ident\n";
+        std::cout << "TR-AUDIT-009 invalid-ident-rejected\n";
+        std::cout << "TR-AUDIT-009 invalid-comment-rejected\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -1633,6 +1797,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-008")
     {
         if (!RunTrAudit008())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-009")
+    {
+        if (!RunTrAudit009())
         {
             return 1;
         }

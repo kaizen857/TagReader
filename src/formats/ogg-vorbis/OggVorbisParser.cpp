@@ -97,6 +97,25 @@ bool HasVorbisPrefix(const std::vector<uint8_t> &bytes, uint8_t packetType)
     return bytes.size() >= 7 && bytes[0] == packetType && std::string_view(reinterpret_cast<const char *>(bytes.data() + 1), 6) == "vorbis";
 }
 
+bool IsValidVorbisIdentificationPacket(const std::vector<uint8_t> &bytes)
+{
+    if (bytes.size() < 30 || !HasVorbisPrefix(bytes, 0x01))
+    {
+        return false;
+    }
+
+    const std::uint32_t version = ReadLE32(bytes.data() + 7);
+    const uint8_t channels = bytes[11];
+    const std::uint32_t sampleRate = ReadLE32(bytes.data() + 12);
+    const bool hasFramingFlag = (bytes[29] & 0x01) != 0;
+    return version == 0 && channels > 0 && sampleRate > 0 && hasFramingFlag;
+}
+
+bool IsPlausibleVorbisCommentPacket(const std::vector<uint8_t> &bytes)
+{
+    return bytes.size() >= 11 && HasVorbisPrefix(bytes, 0x03);
+}
+
 bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(std::string_view)> &handler)
 {
     if (!context.input.is_open())
@@ -239,11 +258,11 @@ bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(
             if (segmentSize < 255)
             {
                 // Ogg packets can span pages; only classify Vorbis packets after lacing closes them.
-                if (state.stage == VorbisStreamStage::LookingForIdentification && HasVorbisPrefix(state.packet, 0x01))
+                if (state.stage == VorbisStreamStage::LookingForIdentification && IsValidVorbisIdentificationPacket(state.packet))
                 {
                     state.stage = VorbisStreamStage::LookingForComment;
                 }
-                else if (state.stage == VorbisStreamStage::LookingForComment && HasVorbisPrefix(state.packet, 0x03))
+                else if (state.stage == VorbisStreamStage::LookingForComment && IsPlausibleVorbisCommentPacket(state.packet))
                 {
                     const uint8_t *commentData = state.packet.data() + 7;
                     const std::size_t commentSize = state.packet.size() - 7;
