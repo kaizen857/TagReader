@@ -108,6 +108,17 @@ target_link_libraries(TagReaderSecuritySmoke
         TagReaderCore
 )
 
+add_executable(TagReaderRegressionTests
+    test/regression/regression_tests.cpp
+)
+
+tagreader_enable_sanitizers(TagReaderRegressionTests)
+
+target_link_libraries(TagReaderRegressionTests
+    PRIVATE
+        TagReaderCore
+)
+
 if(TAGREADER_ENABLE_FUZZING)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(WARNING "TAGREADER_ENABLE_FUZZING requires Clang libFuzzer support; TagReaderFuzz will not be built")
