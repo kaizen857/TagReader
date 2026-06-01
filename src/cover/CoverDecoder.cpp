@@ -270,7 +270,12 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
         return {};
     }
 
-    sws_scale(swsContext.get(), decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, rgbFrame->data, rgbFrame->linesize);
+    const int scaledRows = sws_scale(swsContext.get(), decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, rgbFrame->data, rgbFrame->linesize);
+    if (scaledRows != decodedFrame->height)
+    {
+        return {};
+    }
+
     std::vector<uint8_t> png = EncodeFrameAsPng(rgbFrame.get());
     if (png.size() > kCoverDecodeLimits.maxOutputBytes)
     {
