@@ -55,6 +55,9 @@ void RemoveUtf8Bom(std::string &value);
 
 bool LooksLikeUtf16WithoutBom(std::string_view raw, bool bigEndian)
 {
+    // KNOWN LIMITATION: The statistical heuristic (nulOnHighByte * 3 >= units * 2)
+    // may produce false positives on data with favorable ASCII distribution and
+    // low control-character ratios, misidentifying non-UTF-16 as UTF-16.
     if (raw.size() < 6 || (raw.size() % 2) != 0)
     {
         return false;
@@ -148,6 +151,9 @@ std::string DetectLegacyLocalEncoding(std::string_view raw)
     (void)raw;
 #endif
 
+    // WARNING: Without iconv, GB18030/GBK/SHIFT_JIS/BIG5 etc. encoding detection is skipped.
+    // All non-BOM, non-UTF-8, non-obvious-UTF-16 text falls back to Latin-1.
+    // CJK text may produce mojibake in this build. Enable iconv for production use.
     return "latin-1";
 }
 
@@ -460,6 +466,9 @@ std::string ReadLatin1Text(const uint8_t *data, std::size_t size)
     for (std::size_t i = 0; i < size; ++i)
     {
         const unsigned char ch = data[i];
+        // Latin-1 audio tag text fields rarely contain internal 0x00 bytes.
+        // Currently treated as C-string terminator. If binary-embedded text
+        // support is needed, 0x00 could be replaced with space instead.
         if (ch == 0)
         {
             break;
