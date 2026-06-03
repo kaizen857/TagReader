@@ -100,7 +100,8 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
     }
 
     RawMetadata metadata{};
-    auto ignoreMalformedMetadata = [](auto &&readMetadata)
+    context.input.clear();
+    auto ignoreMalformedMetadata = [&context](auto &&readMetadata)
     {
         try
         {
@@ -108,6 +109,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         }
         catch (const std::filesystem::filesystem_error &)
         {
+            context.input.clear();
         }
         catch (const std::runtime_error &ex)
         {
@@ -115,6 +117,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
             {
                 throw;
             }
+            context.input.clear();
         }
     };
 
@@ -137,6 +140,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         // ID3v2 is authoritative, but ID3v1 may still fill fields absent from the leading tag.
         ignoreMalformedMetadata([&]()
                                 { tagreader_id3::ReadID3v2Metadata(context, metadata); });
+        context.input.clear();
         ignoreMalformedMetadata([&]()
                                 { tagreader_id3::ReadID3v1Metadata(context, metadata); });
         break;
@@ -163,6 +167,8 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
     {
         return lyrics;
     }
+
+    context.input.clear();
 
     try
     {
