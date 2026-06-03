@@ -204,6 +204,9 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
     {
         return {};
     }
+    // data is an external read-only buffer owned by the caller.
+    // The AVPacket does NOT own this buffer (packet->buf remains nullptr),
+    // so av_packet_free() will NOT attempt to deallocate external memory.
     packet->data = const_cast<uint8_t *>(data);
     packet->size = static_cast<int>(size);
 
