@@ -121,6 +121,12 @@ bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timest
         return false;
     }
 
+    constexpr uint16_t kMaxLrcMinutes = 999;
+    if (minutes > kMaxLrcMinutes)
+    {
+        return false;
+    }
+
     const std::string secondsPart = timePart.substr(colon + 1);
     const auto dot = secondsPart.find('.');
     uint16_t seconds = 0;
@@ -161,10 +167,22 @@ bool ParseLrcTimestamp(std::string_view token, std::chrono::microseconds &timest
 
 void NormalizeMetadata(RawMetadata &metadata)
 {
-    auto normalize = [](std::string &text)
+    constexpr std::size_t kMaxFinalTextFieldBytes = 65536;
+
+    auto normalize = [kMaxFinalTextFieldBytes](std::string &text)
     {
         std::string normalized = std::move(text);
-        if (NormalizeAlreadyUtf8Field(normalized))
+        normalized = TrimText(std::move(normalized));
+        if (normalized.size() > kMaxFinalTextFieldBytes)
+        {
+            std::size_t cut = kMaxFinalTextFieldBytes;
+            while (cut > 0 && (static_cast<unsigned char>(normalized[cut]) & 0xC0) == 0x80)
+            {
+                --cut;
+            }
+            normalized.resize(cut);
+        }
+        if (IsValidUtf8(normalized))
         {
             AssignDecoded(text, std::move(normalized));
         }
