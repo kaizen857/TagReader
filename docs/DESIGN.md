@@ -4,7 +4,7 @@
 
 - TagReader 是一个 C++23 轻量音乐元数据读取库。
 - 对外 facade 保持单一读取入口：`TagReader::Read(path)` 和可选封面导出目录的 `TagReader::Read(path, coverExportDir)`。
-- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `DetectStream()` -> `DetectContainer()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
+- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `ValidateCoverExportDir()` -> `DetectStream()` -> `DetectTagFormat()` -> `ReadMediaInfo()` -> `ContainerFromTagFormat()` -> `DetectContainer()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
 - `MusicTag` 是最终返回对象；解析中间状态保存在内部的 `RawMediaInfo`、`RawMetadata`、`RawLyrics` 等结构中。
 - 写入 `MusicTag` 的文本字段必须是 UTF-8。
 
@@ -43,7 +43,7 @@
 ## 构建与测试资产
 
 - 普通构建命令是 `cmake -S . -B build` 和 `cmake --build build`。
-- 构建目标包括静态库 `TagReaderCore`、人工验收程序 `TagReaderTest`、安全 smoke 程序 `TagReaderSecuritySmoke`。
-- `TagReaderTest` 是字段打印程序，不是单元测试框架。
+- 构建目标包括静态库 `TagReaderCore`、人工验收程序 `TagReaderTest`、安全 smoke 程序 `TagReaderSecuritySmoke`、回归测试程序 `TagReaderRegressionTests`。
+- `TagReaderTest` 是字段打印程序，不是单元测试框架；`TagReaderRegressionTests` 对应各 TR-AUDIT 项的回归验证。
 - fuzz corpus 由 `python3 test/corpus/generate_corpus.py` 生成，默认输出 `/tmp/opencode/tagreader_fuzz_corpus`；仓库不提交二进制 seed。
 - 仓库当前没有配置 CI workflow、lint、formatter 或单元测试框架。
