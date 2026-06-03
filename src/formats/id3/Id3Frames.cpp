@@ -40,6 +40,7 @@ using tagreader_cover::WriteCoverAsPng;
 constexpr std::size_t kMaxId3TagBytes = 16z * 1024 * 1024;
 constexpr std::size_t kMaxLyricLines = 20000;
 constexpr std::size_t kMaxDecodedTextBytes = 2z * 1024 * 1024;
+constexpr std::size_t kId3ResyncScanBudget = 4096;
 
 uint16_t ParseUInt16(const std::string &value)
 {
@@ -961,7 +962,7 @@ void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::ve
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 3);
         if (!IsLikelyId3v22FrameId(frameId))
         {
-            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            if (TryResyncId3v22Frame(tagBytes, cursor, std::min(tagBytes.size(), cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
@@ -971,7 +972,7 @@ void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::ve
         const uint32_t frameSize = ReadBE24(frameHeader + 3);
         if (frameSize == 0)
         {
-            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            if (TryResyncId3v22Frame(tagBytes, cursor, std::min(tagBytes.size(), cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
@@ -979,7 +980,7 @@ void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::ve
         }
         if (cursor + 6 + frameSize > tagBytes.size())
         {
-            if (TryResyncId3v22Frame(tagBytes, cursor, tagBytes.size()))
+            if (TryResyncId3v22Frame(tagBytes, cursor, std::min(tagBytes.size(), cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
@@ -1002,7 +1003,7 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
         const std::string frameId(reinterpret_cast<const char *>(frameHeader), 4);
         if (!IsLikelyId3FrameId(frameId))
         {
-            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, std::min(limit, cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
@@ -1014,7 +1015,7 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
         {
             if (!IsValidSyncSafe32(frameHeader + 4))
             {
-                if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+                if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, std::min(limit, cursor + kId3ResyncScanBudget)))
                 {
                     continue;
                 }
@@ -1029,7 +1030,7 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
 
         if (frameSize == 0)
         {
-            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, std::min(limit, cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
@@ -1037,7 +1038,7 @@ void ReadID3v23Or24Frames(ReadContext &context, RawMetadata &metadata, const std
         }
         if (frameSize > limit - cursor - 10)
         {
-            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, limit))
+            if (TryResyncId3v23Or24Frame(tagBytes, versionMajor, cursor, std::min(limit, cursor + kId3ResyncScanBudget)))
             {
                 continue;
             }
