@@ -290,7 +290,8 @@ void ReadFlacLyrics(ReadContext &context, RawLyrics &lyrics)
         const uint32_t blockType = blockHeader[0] & 0x7F;
         const uint32_t blockSize = ReadBE24(blockHeader.data() + 1);
         cursor += 4;
-        if (blockSize > context.fileSize - cursor)
+        std::uintmax_t blockEnd = 0;
+        if (!TryAddUintmax(cursor, blockSize, blockEnd) || blockEnd > context.fileSize)
         {
             break;
         }
@@ -317,7 +318,7 @@ void ReadFlacLyrics(ReadContext &context, RawLyrics &lyrics)
                 } });
         }
 
-        cursor += blockSize;
+        cursor = blockEnd;
         if (lastBlock)
         {
             break;
