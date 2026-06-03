@@ -64,6 +64,11 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
         throw std::runtime_error("failed to open file input stream");
     }
 
+    if (std::filesystem::is_symlink(filePath))
+    {
+        throw std::runtime_error("Rejecting symbolic link path: " + filePath.string());
+    }
+
     AVFormatContext *formatContext = nullptr;
     const int openResult = avformat_open_input(&formatContext, filePath.string().c_str(), nullptr, nullptr);
     if (openResult < 0)
