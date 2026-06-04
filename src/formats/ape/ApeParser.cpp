@@ -288,10 +288,11 @@ void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
 
     const bool hasHeader = (flags & 0x80000000) != 0;
 
-    // In both cases (hasHeader/not), items start at fileSize - tagSize.
-    // When hasHeader, the header is at fileSize - tagSize - 32,
-    // items occupy tagSize - 32 bytes starting at fileSize - tagSize.
-    const uint64_t itemRegionOffset = context.fileSize - static_cast<uint64_t>(tagSize);
+    // With header: items start at fileSize - tagSize (tagSize includes both header and items).
+    // Without header: items are right before the 32-byte footer, so start at fileSize - 32 - tagSize.
+    const uint64_t itemRegionOffset = hasHeader
+        ? context.fileSize - static_cast<uint64_t>(tagSize)
+        : context.fileSize - 32 - static_cast<uint64_t>(tagSize);
 
     const std::vector<uint8_t> itemBytes =
         ReadRange(context.input, itemRegionOffset, tagSize, kMaxApeTagBytes);
@@ -394,7 +395,9 @@ void ReadApeLyrics(ReadContext &context, RawLyrics &lyrics)
     }
 
     const bool hasHeader = (flags & 0x80000000) != 0;
-    const uint64_t itemRegionOffset = context.fileSize - static_cast<uint64_t>(tagSize);
+    const uint64_t itemRegionOffset = hasHeader
+        ? context.fileSize - static_cast<uint64_t>(tagSize)
+        : context.fileSize - 32 - static_cast<uint64_t>(tagSize);
 
     const std::vector<uint8_t> itemBytes =
         ReadRange(context.input, itemRegionOffset, tagSize, kMaxApeTagBytes);

@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 15> kTestCases{{
+constexpr std::array<TestCase, 18> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -47,6 +47,9 @@ constexpr std::array<TestCase, 15> kTestCases{{
     {"TR-AUDIT-013", true},
     {"TR-AUDIT-014", true},
     {"TR-AUDIT-015", true},
+    {"TR-AUDIT-016", true},
+    {"TR-AUDIT-017", true},
+    {"TR-AUDIT-018", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -479,6 +482,148 @@ bool GenerateOneByOneJpeg(const std::filesystem::path &path)
     }
 
     return true;
+}
+
+// ── APE tag test helpers ───────────────────────────────────────────
+
+struct ApeItem
+{
+    std::string key;
+    std::vector<std::uint8_t> value;
+    bool isBinary = false; // false=UTF-8 text (encoding=0), true=Binary (encoding=1)
+};
+
+std::vector<std::uint8_t> ApeTextValue(std::string_view text)
+{
+    return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
+std::vector<std::uint8_t> BuildApeFooter(std::uint32_t tagSize, std::uint32_t itemCount, std::uint32_t flags)
+{
+    std::vector<std::uint8_t> footer;
+    footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+    AppendU32LE(footer, 2000);     // version
+    AppendU32LE(footer, tagSize);  // tagSize (excludes footer, includes header if present)
+    AppendU32LE(footer, itemCount);
+    AppendU32LE(footer, flags);    // bit31=hasHeader, others reserved
+    AppendU32LE(footer, 0);        // reserved (8 bytes total)
+    AppendU32LE(footer, 0);
+    return footer;
+}
+
+std::vector<std::uint8_t> BuildApeHeader(std::uint32_t tagSize, std::uint32_t itemCount)
+{
+    std::vector<std::uint8_t> header;
+    header.insert(header.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+    AppendU32LE(header, 2000);
+    AppendU32LE(header, tagSize);
+    AppendU32LE(header, itemCount);
+    AppendU32LE(header, 0x80000000); // hasHeader flag
+    AppendU32LE(header, 0);          // reserved (8 bytes total)
+    AppendU32LE(header, 0);
+    return header;
+}
+
+std::vector<std::uint8_t> BuildApeItems(const std::vector<ApeItem> &items)
+{
+    std::vector<std::uint8_t> all;
+    for (const auto &item : items)
+    {
+        AppendU32LE(all, static_cast<std::uint32_t>(item.value.size()));
+        std::uint32_t flags = 0;
+        if (item.isBinary)
+        {
+            flags = (1 << 1); // encoding = binary
+        }
+        AppendU32LE(all, flags);
+        all.insert(all.end(), item.key.begin(), item.key.end());
+        all.push_back(0); // NUL terminator
+        all.insert(all.end(), item.value.begin(), item.value.end());
+    }
+    return all;
+}
+
+std::filesystem::path GenerateApeFile(std::string_view caseId,
+                                       std::string_view filename,
+                                       const std::vector<ApeItem> &items,
+                                       bool withHeader = true)
+{
+    const std::filesystem::path tempDir = RegressionTempRoot(caseId);
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path filePath = tempDir / filename;
+
+    std::vector<std::uint8_t> fileBytes;
+
+    if (withHeader)
+    {
+        const std::vector<std::uint8_t> itemBytes = BuildApeItems(items);
+        const std::uint32_t totalTagSize = 32 + static_cast<std::uint32_t>(itemBytes.size());
+        const std::uint32_t itemCount = static_cast<std::uint32_t>(items.size());
+
+        const std::vector<std::uint8_t> header = BuildApeHeader(totalTagSize, itemCount);
+        const uint32_t footerFlags = 0x80000000; // hasHeader bit
+        const std::vector<std::uint8_t> footer = BuildApeFooter(totalTagSize, itemCount, footerFlags);
+
+        fileBytes = header;
+        fileBytes.insert(fileBytes.end(), itemBytes.begin(), itemBytes.end());
+        fileBytes.insert(fileBytes.end(), footer.begin(), footer.end());
+    }
+    else
+    {
+        const std::vector<std::uint8_t> itemBytes = BuildApeItems(items);
+        const std::uint32_t totalTagSize = static_cast<std::uint32_t>(itemBytes.size());
+        const std::uint32_t itemCount = static_cast<std::uint32_t>(items.size());
+
+        const std::vector<std::uint8_t> footer = BuildApeFooter(totalTagSize, itemCount, 0);
+
+        fileBytes = itemBytes;
+        fileBytes.insert(fileBytes.end(), footer.begin(), footer.end());
+    }
+
+    if (!WriteBinaryFile(filePath, fileBytes))
+    {
+        std::cerr << "failed to write APE file: " << filePath.string() << '\n';
+        return {};
+    }
+
+    return filePath;
+}
+
+bool AppendApeTag(const std::filesystem::path &audioPath,
+                   const std::filesystem::path &outputPath,
+                   const std::vector<ApeItem> &items,
+                   bool withHeader)
+{
+    std::vector<std::uint8_t> audioBytes = ReadBinaryFile(audioPath);
+    if (audioBytes.empty())
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> itemBytes = BuildApeItems(items);
+    const std::uint32_t itemCount = static_cast<std::uint32_t>(items.size());
+    std::uint32_t tagSize = static_cast<std::uint32_t>(itemBytes.size());
+
+    std::vector<std::uint8_t> tagBytes;
+    if (withHeader)
+    {
+        tagSize += 32;
+        tagBytes = BuildApeHeader(tagSize, itemCount);
+        tagBytes.insert(tagBytes.end(), itemBytes.begin(), itemBytes.end());
+        const uint32_t footerFlags = 0x80000000; // hasHeader bit
+        const std::vector<std::uint8_t> footer = BuildApeFooter(tagSize, itemCount, footerFlags);
+        tagBytes.insert(tagBytes.end(), footer.begin(), footer.end());
+    }
+    else
+    {
+        tagBytes = itemBytes;
+        const std::vector<std::uint8_t> footer = BuildApeFooter(tagSize, itemCount, 0);
+        tagBytes.insert(tagBytes.end(), footer.begin(), footer.end());
+    }
+
+    audioBytes.insert(audioBytes.end(), tagBytes.begin(), tagBytes.end());
+    return WriteBinaryFile(outputPath, audioBytes);
 }
 
 std::vector<std::uint8_t> Id3v23Frame(std::string_view frameId, const std::vector<std::uint8_t> &payload)
@@ -2405,6 +2550,267 @@ bool RunTrAudit015()
     return passed;
 }
 
+bool RunTrAudit016()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-016";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<ApeItem> items = {
+        {"Title", ApeTextValue("Test Title")},
+        {"Artist", ApeTextValue("Test Artist")},
+        {"Album", ApeTextValue("Test Album")},
+        {"Album Artist", ApeTextValue("Album Artist")},
+        {"Composer", ApeTextValue("Test Composer")},
+        {"Genre", ApeTextValue("Rock")},
+        {"Year", ApeTextValue("2024")},
+        {"Track", ApeTextValue("3/12")},
+        {"Disc", ApeTextValue("1/2")},
+    };
+
+    const std::filesystem::path filePath = evidenceRoot / "mp3_ape.mp3";
+    if (!AppendApeTag(basePath, filePath, items, true))
+    {
+        std::cerr << "TR-AUDIT-016 failed to append APE tag\n";
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(filePath);
+
+    bool passed = true;
+    passed = Expect(tag.title() == "Test Title", "title mismatch") && passed;
+    passed = Expect(tag.artist() == "Test Artist", "artist mismatch") && passed;
+    passed = Expect(tag.album() == "Test Album", "album mismatch") && passed;
+    passed = Expect(tag.albumArtist() == "Album Artist", "album artist mismatch") && passed;
+    passed = Expect(tag.composer() == "Test Composer", "composer mismatch") && passed;
+    passed = Expect(tag.genre() == "Rock", "genre mismatch") && passed;
+    passed = Expect(tag.year() == 2024, "year mismatch") && passed;
+    passed = Expect(tag.trackNumber() == 3, "track number mismatch") && passed;
+    passed = Expect(tag.discNumber() == 1, "disc number mismatch") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-016 valid-ape-fields title=Test Title artist=Test Artist album=Test Album year=2024 track=3\n"
+        "TR-AUDIT-016 PASS\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + filePath.string() + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-016 valid-ape-fields title=Test Title artist=Test Artist album=Test Album year=2024 track=3\n";
+    }
+
+    return passed;
+}
+
+bool RunTrAudit017()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-017";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> baseBytes = ReadBinaryFile(basePath);
+    if (baseBytes.empty())
+    {
+        return false;
+    }
+
+    bool passed = true;
+    std::string scenarioOutput;
+
+    // Scenario 1: APEv1 (version=1000) — skip silently
+    {
+        std::vector<std::uint8_t> bytes = baseBytes;
+        // APEv1 28-byte footer padded to 32 with trailing zeros
+        std::vector<std::uint8_t> footer;
+        footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+        AppendU32LE(footer, 1000);  // version=1000 (APEv1)
+        AppendU32LE(footer, 0);     // tagSize=0 (no items)
+        AppendU32LE(footer, 0);     // itemCount=0
+        AppendU32LE(footer, 0);     // flags
+        AppendU32LE(footer, 0);     // reserved (v1: 4 bytes)
+        AppendU32LE(footer, 0);     // padding to reach 32 bytes
+
+        bytes.insert(bytes.end(), footer.begin(), footer.end());
+        const std::filesystem::path path = evidenceRoot / "apev1.mp3";
+        if (!WriteBinaryFile(path, bytes))
+        {
+            passed = false;
+            scenarioOutput += "apev1-write-fail ";
+        }
+        else
+        {
+            const MusicTag tag = TagReader::Read(path);
+            passed = Expect(tag.title().empty(), "APEv1 should be skipped, title should be empty") && passed;
+            scenarioOutput += "apev1-skipped ";
+        }
+    }
+
+    // Scenario 2: oversized tagSize exceeding 16 MiB
+    {
+        std::vector<std::uint8_t> bytes = baseBytes;
+        std::vector<std::uint8_t> footer;
+        footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+        AppendU32LE(footer, 2000);       // version=2000
+        AppendU32LE(footer, 0xFFFFFFFF);  // tagSize=4GB (way over 16 MiB)
+        AppendU32LE(footer, 1);          // itemCount
+        AppendU32LE(footer, 0);          // flags
+        AppendU32LE(footer, 0);          // reserved (8 bytes)
+        AppendU32LE(footer, 0);
+
+        bytes.insert(bytes.end(), footer.begin(), footer.end());
+        const std::filesystem::path path = evidenceRoot / "oversized.mp3";
+        if (!WriteBinaryFile(path, bytes))
+        {
+            passed = false;
+            scenarioOutput += "oversized-write-fail ";
+        }
+        else
+        {
+            const MusicTag tag = TagReader::Read(path);
+            passed = Expect(tag.title().empty(), "oversized APE tag should be rejected") && passed;
+            scenarioOutput += "oversized-rejected ";
+        }
+    }
+
+    // Scenario 3: excessive itemCount exceeding 4096
+    {
+        std::vector<std::uint8_t> bytes = baseBytes;
+        std::vector<std::uint8_t> footer;
+        footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+        AppendU32LE(footer, 2000);        // version=2000
+        AppendU32LE(footer, 32);          // tagSize=32 (reasonable)
+        AppendU32LE(footer, 0xFFFFFFFF);   // itemCount=4B (way over 4096)
+        AppendU32LE(footer, 0);           // flags
+        AppendU32LE(footer, 0);           // reserved (8 bytes)
+        AppendU32LE(footer, 0);
+
+        bytes.insert(bytes.end(), footer.begin(), footer.end());
+        const std::filesystem::path path = evidenceRoot / "excess_items.mp3";
+        if (!WriteBinaryFile(path, bytes))
+        {
+            passed = false;
+            scenarioOutput += "excessitems-write-fail ";
+        }
+        else
+        {
+            const MusicTag tag = TagReader::Read(path);
+            passed = Expect(tag.title().empty(), "excessive itemCount should be rejected") && passed;
+            scenarioOutput += "excessitems-rejected ";
+        }
+    }
+
+    const std::string stdoutLike =
+        "TR-AUDIT-017 apev1-skipped oversized-rejected excessitems-rejected\n"
+        "TR-AUDIT-017 PASS\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "scenarios=" + scenarioOutput + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-017 apev1-skipped oversized-rejected excessitems-rejected\n";
+    }
+
+    return passed;
+}
+
+bool RunTrAudit018()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-018";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-018 base MP3 generation failed\n";
+        return false;
+    }
+
+    // Prepend an ID3v2 tag with Album (ID3 fallback for fields APE doesn't provide)
+    const std::filesystem::path mp3WithId3Path = evidenceRoot / "mp3_with_id3.mp3";
+    {
+        const std::vector<std::uint8_t> frames = {
+            Id3v23Frame("TALB", Id3Latin1TextPayload("ID3 Album")),
+        };
+        if (!PrependId3Tag(basePath, mp3WithId3Path, frames))
+        {
+            std::cerr << "TR-AUDIT-018 failed to prepend ID3 tag\n";
+            return false;
+        }
+    }
+
+    const std::vector<ApeItem> apeItems = {
+        {"Title", ApeTextValue("APE Title")},
+        {"Artist", ApeTextValue("APE Artist")},
+    };
+
+    const std::filesystem::path apaPath = evidenceRoot / "mp3_ape.mp3";
+    if (!AppendApeTag(mp3WithId3Path, apaPath, apeItems, true))
+    {
+        std::cerr << "TR-AUDIT-018 failed to write MP3+APE file\n";
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(apaPath);
+
+    bool passed = true;
+    passed = Expect(tag.title() == "APE Title",
+        "APE title should be used, got: " + tag.title()) && passed;
+    passed = Expect(tag.artist() == "APE Artist",
+        "APE artist should be used, got: " + tag.artist()) && passed;
+    passed = Expect(tag.album() == "ID3 Album",
+        "ID3 album fallback should work, got: " + tag.album()) && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-018 ape-priority title=APE Title artist=APE Artist album=ID3 Album\n"
+        "TR-AUDIT-018 PASS\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + apaPath.string() + "\n"
+        "title=" + tag.title() + "\n"
+        "artist=" + tag.artist() + "\n"
+        "album=" + tag.album() + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-018 ape-priority title=APE Title artist=APE Artist album=ID3 Album\n";
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -2572,6 +2978,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-015")
     {
         if (!RunTrAudit015())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-016")
+    {
+        if (!RunTrAudit016())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-017")
+    {
+        if (!RunTrAudit017())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-018")
+    {
+        if (!RunTrAudit018())
         {
             return 1;
         }
