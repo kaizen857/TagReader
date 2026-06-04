@@ -116,6 +116,7 @@ std::string NormalizeContainerFormatName(const tagreader_core::ReadContext &cont
         }
         return extension == "mp4" ? "mp4" : "m4a";
     }
+    case DetectedContainer::Ape:
     case DetectedContainer::Unknown:
         break;
     }
