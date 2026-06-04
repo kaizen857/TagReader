@@ -18,6 +18,7 @@ enum class DetectedContainer
     Flac,
     OggVorbis,
     Mp4,
+    Ape,
 };
 
 struct ReadContext

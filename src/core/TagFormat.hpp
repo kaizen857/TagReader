@@ -12,6 +12,7 @@ enum class TagFormat
     Flac,
     OggVorbis,
     Mp4,
+    Ape,
 };
 }
 
