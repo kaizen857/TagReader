@@ -41,6 +41,32 @@ bool HasId3v1Footer(tagreader_core::ReadContext &context)
     const std::vector<uint8_t> footer = tagreader_io::ReadRange(context.input, context.fileSize - 128, 3);
     return footer.size() == 3 && std::memcmp(footer.data(), "TAG", 3) == 0;
 }
+
+bool HasApeFooter(tagreader_core::ReadContext &context, uint32_t &tagSize, uint32_t &itemCount, uint32_t &flags)
+{
+    if (context.fileSize < 32)
+    {
+        return false;
+    }
+
+    const std::vector<uint8_t> footer = tagreader_io::ReadRange(context.input, context.fileSize - 32, 32);
+    if (footer.size() != 32 || std::memcmp(footer.data(), "APETAGEX", 8) != 0)
+    {
+        return false;
+    }
+
+    const uint32_t version = tagreader_io::ReadLE32(footer.data() + 8);
+    if (version < 2000)  // APEv1 — skip
+    {
+        return false;
+    }
+
+    tagSize = tagreader_io::ReadLE32(footer.data() + 12);
+    itemCount = tagreader_io::ReadLE32(footer.data() + 16);
+    flags = tagreader_io::ReadLE32(footer.data() + 20);
+
+    return true;
+}
 }
 
 tagreader_core::DetectedContainer ContainerFromTagFormat(tagreader_core::TagFormat tagFormat)
@@ -60,6 +86,8 @@ tagreader_core::DetectedContainer ContainerFromTagFormat(tagreader_core::TagForm
         return DetectedContainer::OggVorbis;
     case TagFormat::Mp4:
         return DetectedContainer::Mp4;
+    case TagFormat::Ape:
+        return DetectedContainer::Ape;
     case TagFormat::Unknown:
         return DetectedContainer::Unknown;
     }
@@ -74,6 +102,18 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     if (!context.input.is_open())
     {
         return TagFormat::Unknown;
+    }
+
+    // APE footer takes priority over ID3 — ensures MP3+APE files use APE metadata.
+    if (context.fileSize >= 32)
+    {
+        uint32_t apeTagSize = 0;
+        uint32_t apeItemCount = 0;
+        uint32_t apeFlags = 0;
+        if (HasApeFooter(context, apeTagSize, apeItemCount, apeFlags))
+        {
+            return TagFormat::Ape;
+        }
     }
 
     const std::vector<uint8_t> header = tagreader_io::ReadRange(context.input, 0, static_cast<std::size_t>(std::min<std::uintmax_t>(context.fileSize, 12)));
@@ -114,6 +154,10 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     if (ContainsAny(container, {"mp3", "mpeg"}))
     {
         return TagFormat::Id3v2;
+    }
+    if (ContainsAny(container, {"ape", "mpc", "mpc8", "wv", "tak", "tta"}))
+    {
+        return TagFormat::Ape;
     }
 
     return TagFormat::Unknown;
