@@ -4,6 +4,7 @@
 #include "formats/id3/Id3Parser.hpp"
 #include "formats/mp4/Mp4Parser.hpp"
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
+#include "formats/ape/ApeParser.hpp"
 #include "media/ContainerDetector.hpp"
 #include "media/FfmpegSession.hpp"
 #include "media/MediaInfoReader.hpp"
@@ -14,6 +15,8 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <algorithm>
+#include <cctype>
 
 namespace tagreader_core
 {
@@ -136,6 +139,26 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         ignoreMalformedMetadata([&]()
                                 { tagreader_ogg_vorbis::ReadOggVorbisMetadata(context, metadata); });
         break;
+    case TagFormat::Ape:
+        ignoreMalformedMetadata([&]()
+                                { tagreader_ape::ReadApeMetadata(context, metadata); });
+        context.input.clear();
+        // MP3+APE: try ID3v2 then ID3v1 for fields APE did not provide.
+        {
+            std::string containerLower = context.containerName;
+            std::transform(containerLower.begin(), containerLower.end(), containerLower.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            if (containerLower.find("mp3") != std::string::npos ||
+                containerLower.find("mpeg") != std::string::npos)
+            {
+                ignoreMalformedMetadata([&]()
+                                        { tagreader_id3::ReadID3v2Metadata(context, metadata); });
+                context.input.clear();
+                ignoreMalformedMetadata([&]()
+                                        { tagreader_id3::ReadID3v1Metadata(context, metadata); });
+            }
+        }
+        break;
     case TagFormat::Id3v2:
         // ID3v2 is authoritative, but ID3v1 may still fill fields absent from the leading tag.
         ignoreMalformedMetadata([&]()
@@ -187,6 +210,9 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
             break;
         case TagFormat::Mp4:
             tagreader_mp4::ReadMp4Lyrics(context, lyrics);
+            break;
+        case TagFormat::Ape:
+            tagreader_ape::ReadApeLyrics(context, lyrics);
             break;
         case TagFormat::Unknown:
             break;
