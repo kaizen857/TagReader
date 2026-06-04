@@ -60,6 +60,7 @@ add_library(TagReaderCore STATIC
     src/formats/ogg-vorbis/OggVorbisParser.cpp
     src/formats/mp4/Mp4AtomReader.cpp
     src/formats/mp4/Mp4Parser.cpp
+    src/formats/ape/ApeParser.cpp
 )
 
 tagreader_enable_sanitizers(TagReaderCore)
