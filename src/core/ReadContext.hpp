@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iosfwd>
 #include <memory>
 #include <string>
 
@@ -37,6 +38,9 @@ struct ReadContext
     int audioStreamIndex{-1};
     DetectedContainer detectedContainer{DetectedContainer::Unknown};
     std::string containerName;
+    // Optional debug output channel for parser errors.
+    // nullptr means no diagnostics are written.
+    std::ostream *diagnostics = nullptr;
 };
 }
 

@@ -122,11 +122,19 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
             StreamStateGuard guard(context.input);
             readMetadata();
         }
-        catch (const std::filesystem::filesystem_error &)
+        catch (const std::filesystem::filesystem_error &ex)
         {
+            if (context.diagnostics != nullptr)
+            {
+                *context.diagnostics << "parser metadata error: " << ex.what() << '\n';
+            }
         }
         catch (const std::runtime_error &ex)
         {
+            if (context.diagnostics != nullptr)
+            {
+                *context.diagnostics << "parser metadata error: " << ex.what() << '\n';
+            }
             if (IsCoverExportOrCacheError(ex.what()))
             {
                 throw;
@@ -230,12 +238,20 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
 
         NormalizeLyrics(lyrics);
     }
-    catch (const std::filesystem::filesystem_error &)
+    catch (const std::filesystem::filesystem_error &ex)
     {
+        if (context.diagnostics != nullptr)
+        {
+            *context.diagnostics << "parser lyrics error: " << ex.what() << '\n';
+        }
         lyrics = {};
     }
-    catch (const std::runtime_error &)
+    catch (const std::runtime_error &ex)
     {
+        if (context.diagnostics != nullptr)
+        {
+            *context.diagnostics << "parser lyrics error: " << ex.what() << '\n';
+        }
         lyrics = {};
     }
 
