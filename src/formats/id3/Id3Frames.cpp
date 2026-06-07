@@ -40,7 +40,10 @@ using tagreader_cover::WriteCoverAsPng;
 constexpr std::size_t kMaxId3TagBytes = 16z * 1024 * 1024;
 constexpr std::size_t kMaxLyricLines = 20000;
 constexpr std::size_t kMaxDecodedTextBytes = 2z * 1024 * 1024;
-constexpr std::size_t kId3ResyncScanBudget = 4096;
+// Scan budget for resyncing after a malformed frame: 16384 covers common
+// padding/scattered garbage scenarios. The overhead is only incurred on
+// error paths (TryResyncId3v22Frame / TryResyncId3v23Or24Frame).
+constexpr std::size_t kId3ResyncScanBudget = 16384;
 
 uint16_t ParseUInt16(const std::string &value)
 {

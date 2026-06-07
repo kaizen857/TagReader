@@ -3023,17 +3023,24 @@ bool RunTrAudit021()
 
     // Build ID3v2.3 tag frames:
     //   [valid TIT2 frame: "TestTitle"]
-    //   [~5000 bytes of zero padding/garbage — no valid frame IDs]
+    //   [invalid frame ID "!!!!" to trigger resync]
+    //   [~5000 bytes of 0xFF filler (non-zero, no valid frame IDs inside)]
     //   [valid TALB frame: "RecoveredAlbum"]
     // The 5000-byte gap exceeds the old resync budget (4096) but fits within the new budget (16384).
+    // NOTE: Zero-padding triggers IsId3PaddingStartAtOriginalCursor which aborts resync.
+    //       Non-zero garbage + invalid frame ID ensures resync actually scans the gap.
     const std::vector<std::uint8_t> titleFrame = Id3v23Frame("TIT2", Id3Latin1TextPayload("TestTitle"));
     const std::vector<std::uint8_t> albumFrame = Id3v23Frame("TALB", Id3Latin1TextPayload("RecoveredAlbum"));
 
     constexpr std::size_t kGapBytes = 5000;
-    std::vector<std::uint8_t> gapBytes(kGapBytes, 0);
+    std::vector<std::uint8_t> gapBytes(kGapBytes, 0xFF); // non-zero to avoid padding fast-path
+
+    // "!!!!" is not a valid frame ID ('!' is not alnum) → triggers resync
+    const std::vector<std::uint8_t> invalidFrameId = {'!', '!', '!', '!'};
 
     std::vector<std::uint8_t> frames;
     frames.insert(frames.end(), titleFrame.begin(), titleFrame.end());
+    frames.insert(frames.end(), invalidFrameId.begin(), invalidFrameId.end());
     frames.insert(frames.end(), gapBytes.begin(), gapBytes.end());
     frames.insert(frames.end(), albumFrame.begin(), albumFrame.end());
 
