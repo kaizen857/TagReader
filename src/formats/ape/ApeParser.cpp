@@ -288,6 +288,15 @@ void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
 
     const bool hasHeader = (flags & 0x80000000) != 0;
 
+    // Guard against unsigned subtraction wrap when tagSize > fileSize.
+    // The 32-byte footer is always at EOF; without header items sit before it,
+    // so tagSize must not exceed fileSize - 32 in either path.
+    // Without this check, fileSize - tagSize wraps to a huge uint64_t value.
+    if (tagSize > context.fileSize - 32)
+    {
+        return;
+    }
+
     // With header: items start at fileSize - tagSize (tagSize includes both header and items).
     // Without header: items are right before the 32-byte footer, so start at fileSize - 32 - tagSize.
     const uint64_t itemRegionOffset = hasHeader
@@ -327,7 +336,9 @@ void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
         const size_t keyLen = cursor - keyStart;
         ++cursor; // skip NUL terminator
 
-        if (cursor + valueSize > itemBytes.size())
+        // Convert to size_t once to prevent unsigned wraparound in bounds check.
+        const std::size_t valueSizeSz = static_cast<std::size_t>(valueSize);
+        if (valueSizeSz > itemBytes.size() - cursor)
         {
             break;
         }
@@ -362,7 +373,7 @@ void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
             break;
         }
 
-        cursor += valueSize;
+        cursor += valueSizeSz;
     }
 }
 
@@ -431,7 +442,9 @@ void ReadApeLyrics(ReadContext &context, RawLyrics &lyrics)
         const size_t keyLen = cursor - keyStart;
         ++cursor; // skip NUL terminator
 
-        if (cursor + valueSize > itemBytes.size())
+        // Convert to size_t once to prevent unsigned wraparound in bounds check.
+        const std::size_t valueSizeSz = static_cast<std::size_t>(valueSize);
+        if (valueSizeSz > itemBytes.size() - cursor)
         {
             break;
         }
@@ -447,7 +460,7 @@ void ReadApeLyrics(ReadContext &context, RawLyrics &lyrics)
         {
             if (valueSize > kMaxApeItemValueBytes)
             {
-                cursor += valueSize;
+                cursor += valueSizeSz;
                 continue;
             }
 
@@ -459,7 +472,7 @@ void ReadApeLyrics(ReadContext &context, RawLyrics &lyrics)
             }
         }
 
-        cursor += valueSize;
+        cursor += valueSizeSz;
     }
 }
 

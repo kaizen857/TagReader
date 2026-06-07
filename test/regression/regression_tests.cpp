@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 19> kTestCases{{
+constexpr std::array<TestCase, 21> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -51,6 +51,8 @@ constexpr std::array<TestCase, 19> kTestCases{{
     {"TR-AUDIT-017", true},
     {"TR-AUDIT-018", true},
     {"TR-AUDIT-019", true},
+    {"TR-AUDIT-020", true},
+    {"TR-AUDIT-021", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -2914,6 +2916,164 @@ bool RunTrAudit019()
     return passed;
 }
 
+bool RunTrAudit020()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-020";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-020 base MP3 generation failed\n";
+        return false;
+    }
+
+    // Build a malformed APE footer where tagSize = 0xFFFFFFFF exceeds fileSize,
+    // triggering unsigned subtraction wrap in the itemRegionOffset calculation.
+    // Structure: magic(8) + version(4LE) + tagSize(4LE) + itemCount(4LE) + flags(4LE) + reserved(8)
+    std::vector<std::uint8_t> footer;
+    footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
+    AppendU32LE(footer, 2000);          // version = 2000
+    AppendU32LE(footer, 0xFFFFFFFFu);   // tagSize = max uint32 (malformed)
+    AppendU32LE(footer, 1);             // itemCount = 1
+    AppendU32LE(footer, 0);             // flags = 0 (no header)
+    AppendU32LE(footer, 0);             // reserved (8 bytes)
+    AppendU32LE(footer, 0);
+
+    // Append the 32-byte malformed footer to the base MP3.
+    std::vector<std::uint8_t> audioBytes = ReadBinaryFile(basePath);
+    if (audioBytes.empty())
+    {
+        std::cerr << "TR-AUDIT-020 failed to read base MP3\n";
+        return false;
+    }
+    audioBytes.insert(audioBytes.end(), footer.begin(), footer.end());
+
+    const std::filesystem::path samplePath = evidenceRoot / "mp3_ape_wrap.mp3";
+    if (!WriteBinaryFile(samplePath, audioBytes))
+    {
+        std::cerr << "TR-AUDIT-020 failed to write test file\n";
+        return false;
+    }
+
+    bool passed = true;
+
+    // Verify no crash/exception and all text fields are empty.
+    try
+    {
+        const MusicTag tag = TagReader::Read(samplePath);
+
+        passed = Expect(tag.title().empty(),
+            "TR-AUDIT-020 title should be empty (malformed APE footer rejected), got: " + tag.title()) && passed;
+        passed = Expect(tag.artist().empty(),
+            "TR-AUDIT-020 artist should be empty") && passed;
+        passed = Expect(tag.album().empty(),
+            "TR-AUDIT-020 album should be empty") && passed;
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "TR-AUDIT-020 unexpected exception: " << ex.what() << '\n';
+        passed = false;
+    }
+
+    const std::string stdoutLike =
+        "TR-AUDIT-020 ape-wrap-guard\n"
+        "TR-AUDIT-020 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + samplePath.string() + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-020 ape-wrap-guard\n";
+    }
+
+    return passed;
+}
+
+bool RunTrAudit021()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-021";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path samplePath = evidenceRoot / "resync-5000-gap.mp3";
+
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-021 base MP3 generation failed\n";
+        return false;
+    }
+
+    // Build ID3v2.3 tag frames:
+    //   [valid TIT2 frame: "TestTitle"]
+    //   [~5000 bytes of zero padding/garbage — no valid frame IDs]
+    //   [valid TALB frame: "RecoveredAlbum"]
+    // The 5000-byte gap exceeds the old resync budget (4096) but fits within the new budget (16384).
+    const std::vector<std::uint8_t> titleFrame = Id3v23Frame("TIT2", Id3Latin1TextPayload("TestTitle"));
+    const std::vector<std::uint8_t> albumFrame = Id3v23Frame("TALB", Id3Latin1TextPayload("RecoveredAlbum"));
+
+    constexpr std::size_t kGapBytes = 5000;
+    std::vector<std::uint8_t> gapBytes(kGapBytes, 0);
+
+    std::vector<std::uint8_t> frames;
+    frames.insert(frames.end(), titleFrame.begin(), titleFrame.end());
+    frames.insert(frames.end(), gapBytes.begin(), gapBytes.end());
+    frames.insert(frames.end(), albumFrame.begin(), albumFrame.end());
+
+    if (!PrependId3Tag(basePath, samplePath, frames))
+    {
+        std::cerr << "TR-AUDIT-021 failed to prepend ID3 tag\n";
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(samplePath);
+    const bool titleOk = Expect(tag.title() == "TestTitle",
+        "TR-AUDIT-021 title should be 'TestTitle', got: " + std::string(tag.title()));
+    const bool albumOk = Expect(!tag.album().empty(),
+        "TR-AUDIT-021 album should be non-empty (resync recovered TALB at 16384 budget), got empty album");
+    const bool albumValueOk = Expect(tag.album() == "RecoveredAlbum",
+        "TR-AUDIT-021 album should be 'RecoveredAlbum', got: " + std::string(tag.album()));
+    const bool passed = titleOk && albumOk && albumValueOk;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-021 title=" + std::string(tag.title()) + "\n"
+        "TR-AUDIT-021 album=" + std::string(tag.album()) + "\n"
+        "TR-AUDIT-021 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + samplePath.string() + "\n"
+        "title=" + std::string(tag.title()) + "\n"
+        "album=" + std::string(tag.album()) + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-021 title=" << tag.title() << '\n';
+        std::cout << "TR-AUDIT-021 album=" << tag.album() << '\n';
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3125,6 +3285,28 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-019")
     {
         if (!RunTrAudit019())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-020")
+    {
+        if (!RunTrAudit020())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-021")
+    {
+        if (!RunTrAudit021())
         {
             return 1;
         }
