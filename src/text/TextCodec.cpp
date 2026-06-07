@@ -55,9 +55,10 @@ void RemoveUtf8Bom(std::string &value);
 
 bool LooksLikeUtf16WithoutBom(std::string_view raw, bool bigEndian)
 {
-    // KNOWN LIMITATION: The statistical heuristic (nulOnHighByte * 3 >= units * 2)
-    // may produce false positives on data with favorable ASCII distribution and
-    // low control-character ratios, misidentifying non-UTF-16 as UTF-16.
+    // Heuristic: data is likely UTF-16 without BOM when the expected NUL-byte
+    // ratio is high. The current threshold (4:3 ≈ 75%) is tighter than the
+    // original 3:2 (≈67%) to reduce false positives on ASCII-heavy data that
+    // coincidentally exhibits paired low/high byte patterns.
     if (raw.size() < 6 || (raw.size() % 2) != 0)
     {
         return false;
@@ -109,7 +110,8 @@ bool LooksLikeUtf16WithoutBom(std::string_view raw, bool bigEndian)
 
     const std::size_t expectedNuls = bigEndian ? nulOnHighByte : nulOnLowByte;
     const std::size_t unexpectedNuls = bigEndian ? nulOnLowByte : nulOnHighByte;
-    if (expectedNuls * 3 < units * 2)
+    // Threshold tightened from 3:2 to 4:3 to reduce false positives on ASCII-heavy data
+    if (expectedNuls * 4 < units * 3)
     {
         return false;
     }

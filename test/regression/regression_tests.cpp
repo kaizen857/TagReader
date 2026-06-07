@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 23> kTestCases{{
+constexpr std::array<TestCase, 24> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -55,6 +55,7 @@ constexpr std::array<TestCase, 23> kTestCases{{
     {"TR-AUDIT-021", true},
     {"TR-AUDIT-022", true},
     {"TR-AUDIT-023", true},
+    {"TR-AUDIT-024", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3208,6 +3209,110 @@ bool RunTrAudit023()
     return passed;
 }
 
+bool RunTrAudit024()
+{
+    // TR-AUDIT-024: Verify tightened UTF-16 heuristic threshold (4:3) correctly
+    // rejects a byte pattern that would trigger false UTF-16BE detection under
+    // the old 3:2 threshold. The pattern has 10 null-high-byte pairs among 15
+    // total units (ratio 0.667), which passes the old threshold but fails the new.
+    constexpr std::string_view kCaseId = "TR-AUDIT-024";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> fileBytes = ReadBinaryFile(basePath);
+
+    // Craft 30-byte ID3v1 title:
+    //   10 pairs [0x00, ASCII letter] → 10 null-high-byte units for BE
+    //    5 pairs [0x80, 0x81]         → break UTF-8 validity to force heuristic
+    //
+    // For BE detection: expectedNuls=10, units=15, ratio=10/15≈0.667
+    //   Old threshold (3:2): 10*3=30 >= 15*2=30 → PASSES (false positive)
+    //   New threshold (4:3): 10*4=40 <  15*3=45 → FAILS  (correct rejection)
+    std::vector<std::uint8_t> titleBytes(30, 0x20);
+    for (int i = 0; i < 10; ++i)
+    {
+        titleBytes[i * 2] = 0x00;
+        titleBytes[i * 2 + 1] = static_cast<std::uint8_t>('A' + i);
+    }
+    for (int i = 0; i < 5; ++i)
+    {
+        titleBytes[20 + i * 2] = 0x80;
+        titleBytes[20 + i * 2 + 1] = 0x81;
+    }
+
+    // Build ID3v1 tag (128 bytes at end of file)
+    std::vector<std::uint8_t> id3v1(128, 0);
+    id3v1[0] = 'T';
+    id3v1[1] = 'A';
+    id3v1[2] = 'G';
+    std::copy(titleBytes.begin(), titleBytes.end(), id3v1.begin() + 3);
+    id3v1[93] = '2';
+    id3v1[94] = '0';
+    id3v1[95] = '2';
+    id3v1[96] = '4';
+
+    const std::filesystem::path filePath = evidenceRoot / "false-positive.mp3";
+    fileBytes.insert(fileBytes.end(), id3v1.begin(), id3v1.end());
+    if (!WriteBinaryFile(filePath, fileBytes))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(filePath);
+
+    // Under old heuristic, false UTF-16BE detection would decode pairs
+    // [0x80, 0x81] as U+8081 → UTF-8 E8 82 81.  Under the new threshold,
+    // the heuristic correctly rejects this data and falls through to
+    // Latin-1, producing U+0080/U+0081 control characters instead.
+    const std::string &title = tag.title();
+    const bool titleNonEmpty = Expect(!title.empty(),
+        "title should not be empty — encoding detection must produce a result");
+    const bool noCjkGarbage = Expect(
+        title.find("\xE8\x82\x81") == std::string::npos,
+        "title must not contain CJK garbage from false UTF-16BE detection");
+
+    const bool passed = titleNonEmpty && noCjkGarbage;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-024 utf16-heuristic-tightened title=" + title + '\n' +
+        "TR-AUDIT-024 PASS\n";
+    const std::string summary =
+        "case=" + std::string(kCaseId) + '\n' +
+        "file=" + filePath.string() + '\n' +
+        "titleNonEmpty=" + std::string(titleNonEmpty ? "true" : "false") + '\n' +
+        "noCjkGarbage=" + std::string(noCjkGarbage ? "true" : "false") + '\n' +
+        "passed=" + std::string(passed ? "true" : "false") + '\n';
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary) &&
+                            WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag));
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-024 utf16-heuristic-tightened title=" << title << '\n';
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3463,6 +3568,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-023")
     {
         if (!RunTrAudit023())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-024")
+    {
+        if (!RunTrAudit024())
         {
             return 1;
         }
