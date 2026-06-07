@@ -211,6 +211,13 @@ void ProcessApeCoverItem(ReadContext &context, RawMetadata &metadata,
     {
         return;
     }
+
+    constexpr std::size_t kMaxApeCoverItemBytes = 8z * 1024 * 1024; // 8 MiB
+    if (valueSize > kMaxApeCoverItemBytes)
+    {
+        return;  // silently skip oversized cover item
+    }
+
     if (!metadata.coverPath.empty())
     {
         return;

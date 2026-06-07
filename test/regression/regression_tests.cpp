@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 22> kTestCases{{
+constexpr std::array<TestCase, 23> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -54,6 +54,7 @@ constexpr std::array<TestCase, 22> kTestCases{{
     {"TR-AUDIT-020", true},
     {"TR-AUDIT-021", true},
     {"TR-AUDIT-022", true},
+    {"TR-AUDIT-023", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3143,6 +3144,70 @@ bool RunTrAudit022()
     return passed;
 }
 
+bool RunTrAudit023()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-023";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-023 base MP3 generation failed\n";
+        return false;
+    }
+
+    constexpr std::size_t kHugeSize = 8z * 1024 * 1024 + 1;
+    std::vector<std::uint8_t> hugeCoverValue(kHugeSize, 0x00);
+
+    const std::vector<ApeItem> items = {
+        {"Cover Art (Front)", hugeCoverValue, true},
+        {"TITLE", ApeTextValue("Hello")},
+    };
+
+    const std::filesystem::path filePath = evidenceRoot / "huge_cover.mp3";
+    if (!AppendApeTag(basePath, filePath, items, true))
+    {
+        std::cerr << "TR-AUDIT-023 failed to append APE tag\n";
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(filePath);
+
+    bool passed = true;
+    passed = Expect(tag.coverPath().empty(),
+        "TR-AUDIT-023 oversized cover should be skipped (cover empty)") && passed;
+    passed = Expect(tag.title() == "Hello",
+        "TR-AUDIT-023 title should be 'Hello' after skipped cover") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-023 huge-cover-skipped title=" + std::string(tag.title())
+        + " cover=" + tag.coverPath().string()
+        + "\nTR-AUDIT-023 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + filePath.string() + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-023 huge-cover-skipped title=" << tag.title()
+                  << " cover=" << tag.coverPath().string() << '\n';
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3387,6 +3452,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-022")
     {
         if (!RunTrAudit022())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-023")
+    {
+        if (!RunTrAudit023())
         {
             return 1;
         }
