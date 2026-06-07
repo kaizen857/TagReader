@@ -1,5 +1,7 @@
 #include "media/MediaInfoReader.hpp"
 
+#include "common/ParseHelpers.hpp"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -22,14 +24,8 @@ namespace tagreader_media
 {
 namespace
 {
+using tagreader_common::ToLower;
 using tagreader_core::DetectedContainer;
-
-std::string ToLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                   { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
 
 uint32_t ClampToUint32(std::int64_t value)
 {

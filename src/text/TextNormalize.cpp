@@ -1,5 +1,6 @@
 #include "text/TextNormalize.hpp"
 
+#include "common/ParseHelpers.hpp"
 #include "text/TextCodec.hpp"
 
 #include <algorithm>
@@ -14,6 +15,8 @@ using tagreader_core::RawMetadata;
 
 namespace
 {
+using tagreader_common::ToLower;
+
 constexpr std::size_t kMaxLyricLines = 20000;
 constexpr std::size_t kMaxLrcTimestampsPerLine = 32;
 constexpr std::size_t kMaxPlainLyricsBytes = 1z * 1024 * 1024;
@@ -27,13 +30,6 @@ bool NormalizeAlreadyUtf8Field(std::string &value)
 {
     value = TrimText(std::move(value));
     return IsValidUtf8(value);
-}
-
-std::string ToLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                   { return static_cast<char>(std::tolower(ch)); });
-    return value;
 }
 
 bool ParseDecimalU16Strict(std::string_view text, uint16_t &value)

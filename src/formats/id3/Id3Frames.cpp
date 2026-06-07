@@ -1,5 +1,6 @@
 #include "Id3Frames.hpp"
 
+#include "common/ParseHelpers.hpp"
 #include "cover/CoverCache.hpp"
 #include "io/ByteReader.hpp"
 #include "text/TextCodec.hpp"
@@ -34,6 +35,10 @@ using tagreader_io::TryAddUintmax;
 using tagreader_text::ReadId3ByteString;
 using tagreader_text::ReadLatin1Text;
 using tagreader_text::ReadLyricsFromPlainText;
+using tagreader_common::ParseSlashNumber;
+using tagreader_common::ParseUInt16;
+using tagreader_common::ParseYearOnly;
+using tagreader_common::ToLower;
 using tagreader_text::TrimText;
 using tagreader_cover::WriteCoverAsPng;
 
@@ -44,108 +49,6 @@ constexpr std::size_t kMaxDecodedTextBytes = 2z * 1024 * 1024;
 // padding/scattered garbage scenarios. The overhead is only incurred on
 // error paths (TryResyncId3v22Frame / TryResyncId3v23Or24Frame).
 constexpr std::size_t kId3ResyncScanBudget = 16384;
-
-uint16_t ParseUInt16(const std::string &value)
-{
-    const std::string trimmed = TrimText(value);
-    if (trimmed.empty())
-    {
-        return 0;
-    }
-
-    try
-    {
-        std::size_t consumed = 0;
-        const unsigned long parsed = std::stoul(trimmed, &consumed, 10);
-        if (consumed != trimmed.size())
-        {
-            return 0;
-        }
-        if (parsed > std::numeric_limits<uint16_t>::max())
-        {
-            return 0;
-        }
-        return static_cast<uint16_t>(parsed);
-    }
-    catch (...)
-    {
-        return 0;
-    }
-}
-
-uint16_t ParseYearOnly(std::string_view text)
-{
-    while (!text.empty())
-    {
-        const unsigned char ch = static_cast<unsigned char>(text.front());
-        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\0')
-        {
-            text.remove_prefix(1);
-            continue;
-        }
-        break;
-    }
-
-    if (text.size() < 4)
-    {
-        return 0;
-    }
-
-    if (!std::isdigit(static_cast<unsigned char>(text[0])) || !std::isdigit(static_cast<unsigned char>(text[1])) || !std::isdigit(static_cast<unsigned char>(text[2])) || !std::isdigit(static_cast<unsigned char>(text[3])))
-    {
-        return 0;
-    }
-
-    if (text.size() > 4)
-    {
-        const unsigned char next = static_cast<unsigned char>(text[4]);
-        if (std::isdigit(next))
-        {
-            return 0;
-        }
-
-        const bool allowedSeparator = next == '-' || next == '/' || next == '.' || next == ' ' || next == 'T' || next == '\0';
-        if (!allowedSeparator)
-        {
-            return 0;
-        }
-    }
-
-    const uint16_t year = static_cast<uint16_t>((text[0] - '0') * 1000 + (text[1] - '0') * 100 + (text[2] - '0') * 10 + (text[3] - '0'));
-    return (year >= 1000 && year <= 9999) ? year : 0;
-}
-
-std::pair<uint16_t, uint16_t> ParseSlashNumber(const std::string &value)
-{
-    const auto slash = value.find('/');
-    if (slash == std::string::npos)
-    {
-        return {ParseUInt16(value), 0};
-    }
-
-    const std::string left = TrimText(value.substr(0, slash));
-    const std::string right = TrimText(value.substr(slash + 1));
-    if (left.empty() || right.empty())
-    {
-        return {0, 0};
-    }
-
-    const uint16_t current = ParseUInt16(left);
-    const uint16_t total = ParseUInt16(right);
-    if (current == 0 || total == 0)
-    {
-        return {0, 0};
-    }
-
-    return {current, total};
-}
-
-std::string ToLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                   { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
 
 bool IsLikelyId3FrameId(std::string_view frameId)
 {

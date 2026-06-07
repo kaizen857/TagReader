@@ -1,5 +1,6 @@
 #include "cover/CoverCache.hpp"
 
+#include "common/ParseHelpers.hpp"
 #include "cover/CoverDecoder.hpp"
 #include "TagReaderInternal.hpp"
 
@@ -36,15 +37,10 @@ namespace tagreader_cover
 {
 namespace
 {
+using tagreader_common::ToLower;
+
 constexpr tagreader_internal::CoverDecodeLimits kCoverDecodeLimits{};
 constexpr std::size_t kMaxCoverInputBytes = 64z * 1024 * 1024;
-
-std::string ToLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                   { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
 
 std::string HexEncode(const std::array<uint8_t, 32> &digest)
 {

@@ -1,5 +1,6 @@
 #include "media/ContainerDetector.hpp"
 
+#include "common/ParseHelpers.hpp"
 #include "io/ByteReader.hpp"
 
 #include <algorithm>
@@ -12,12 +13,7 @@ namespace tagreader_media
 {
 namespace
 {
-std::string ToLower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                   { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
+using tagreader_common::ToLower;
 
 bool ContainsAny(std::string_view value, std::initializer_list<std::string_view> needles)
 {

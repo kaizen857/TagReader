@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 24> kTestCases{{
+constexpr std::array<TestCase, 25> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -56,6 +56,7 @@ constexpr std::array<TestCase, 24> kTestCases{{
     {"TR-AUDIT-022", true},
     {"TR-AUDIT-023", true},
     {"TR-AUDIT-024", true},
+    {"TR-AUDIT-025", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3313,6 +3314,142 @@ bool RunTrAudit024()
     return passed;
 }
 
+bool RunTrAudit025()
+{
+    // TR-AUDIT-025: Verify ParseUInt16 strict behaviour (TrimText + consumed == trimmed.size())
+    // is consistently applied across all format parsers (APE, Vorbis, ID3).
+    //
+    // Sub-scenario A: Track="5 abc" → trackNumber=0 (non-numeric suffix rejected)
+    // Sub-scenario B: Track="5/10"  → trackNumber=5 (slash parsing unaffected)
+    // Sub-scenario C: Track="5"     → trackNumber=5 (plain number)
+    // Sub-scenario D: Track="5 "    → trackNumber=5 (trailing space trimmed)
+    constexpr std::string_view kCaseId = "TR-AUDIT-025";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    bool allPassed = true;
+
+    auto check = [&](std::string_view label, const std::string &trackValue,
+                     std::size_t expectedTrack)
+    {
+        // ── 1. MP3 + APE tag ──────────────────────────────────────
+        {
+            const std::filesystem::path apePath =
+                evidenceRoot / (std::string("strict-u16-ape-") + std::string(label) + ".mp3");
+            if (AppendApeTag(basePath, apePath,
+                             {ApeItem{"Track", ApeTextValue(trackValue)}},
+                             true))
+            {
+                const MusicTag tag = TagReader::Read(apePath);
+                const bool ok = Expect(tag.trackNumber() == expectedTrack,
+                    std::string("APE track=\"") + trackValue + "\": expected trackNumber=" +
+                    std::to_string(expectedTrack) + " got " + std::to_string(tag.trackNumber()));
+                if (!ok)
+                {
+                    allPassed = false;
+                }
+            }
+            else
+            {
+                allPassed = false;
+            }
+        }
+
+        // ── 2. FLAC + Vorbis Comment ──────────────────────────────
+        {
+            if (CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+            {
+                const std::filesystem::path flacPath =
+                    evidenceRoot / (std::string("strict-u16-flac-") + std::string(label) + ".flac");
+                const std::string cmd =
+                    "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 "
+                    "-codec:a flac -metadata track=\"" + trackValue + "\" \"" + flacPath.string() + "\"";
+                if (CommandSucceeds(cmd))
+                {
+                    const MusicTag tag = TagReader::Read(flacPath);
+                    const bool ok = Expect(tag.trackNumber() == expectedTrack,
+                        std::string("FLAC track=\"") + trackValue + "\": expected trackNumber=" +
+                        std::to_string(expectedTrack) + " got " + std::to_string(tag.trackNumber()));
+                    if (!ok)
+                    {
+                        allPassed = false;
+                    }
+                }
+                else
+                {
+                    allPassed = false;
+                }
+            }
+        }
+
+        // ── 3. MP3 + ID3v2.3 TRCK frame ───────────────────────────
+        {
+            const std::filesystem::path mp3Path =
+                evidenceRoot / (std::string("strict-u16-id3-") + std::string(label) + ".mp3");
+            const std::vector<std::uint8_t> trckFrame =
+                Id3v23Frame("TRCK", Id3Latin1TextPayload(trackValue));
+            if (PrependId3Tag(basePath, mp3Path, {trckFrame}))
+            {
+                const MusicTag tag = TagReader::Read(mp3Path);
+                const bool ok = Expect(tag.trackNumber() == expectedTrack,
+                    std::string("ID3 TRCK=\"") + trackValue + "\": expected trackNumber=" +
+                    std::to_string(expectedTrack) + " got " + std::to_string(tag.trackNumber()));
+                if (!ok)
+                {
+                    allPassed = false;
+                }
+            }
+            else
+            {
+                allPassed = false;
+            }
+        }
+    };
+
+    // Sub-scenario A: Track="5 abc" → non-numeric suffix → strict ParseUInt16 returns 0
+    check("A-junk-suffix", "5 abc", 0);
+
+    // Sub-scenario B: Track="5/10" → valid slash parsing
+    check("B-slash-valid", "5/10", 5);
+
+    // Sub-scenario C: Track="5" → plain number
+    check("C-plain-num", "5", 5);
+
+    // Sub-scenario D: Track="5 " → trailing space trimmed → 5
+    check("D-trailing-space", "5 ", 5);
+
+    const std::string summary =
+        "case=" + std::string(kCaseId) + '\n' +
+        "allPassed=" + std::string(allPassed ? "true" : "false") + '\n';
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (allPassed)
+    {
+        std::cout << "TR-AUDIT-025 strict-parse-uint16 unified across APE/Vorbis/ID3\n";
+    }
+
+    return allPassed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3579,6 +3716,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-024")
     {
         if (!RunTrAudit024())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-025")
+    {
+        if (!RunTrAudit025())
         {
             return 1;
         }

@@ -1,6 +1,7 @@
 #include "Id3Parser.hpp"
 
 #include "Id3Frames.hpp"
+#include "common/ParseHelpers.hpp"
 #include "text/TextCodec.hpp"
 
 #include <array>
@@ -13,54 +14,13 @@
 
 namespace
 {
+using tagreader_common::ParseYearOnly;
 using tagreader_core::DecodedField;
 using tagreader_core::Id3TagView;
 using tagreader_core::RawLyrics;
 using tagreader_core::RawMetadata;
 using tagreader_core::ReadContext;
 using tagreader_text::DecodeRawText;
-
-uint16_t ParseYearOnly(std::string_view text)
-{
-    while (!text.empty())
-    {
-        const unsigned char ch = static_cast<unsigned char>(text.front());
-        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\0')
-        {
-            text.remove_prefix(1);
-            continue;
-        }
-        break;
-    }
-
-    if (text.size() < 4)
-    {
-        return 0;
-    }
-
-    if (!std::isdigit(static_cast<unsigned char>(text[0])) || !std::isdigit(static_cast<unsigned char>(text[1])) || !std::isdigit(static_cast<unsigned char>(text[2])) || !std::isdigit(static_cast<unsigned char>(text[3])))
-    {
-        return 0;
-    }
-
-    if (text.size() > 4)
-    {
-        const unsigned char next = static_cast<unsigned char>(text[4]);
-        if (std::isdigit(next))
-        {
-            return 0;
-        }
-
-        const bool allowedSeparator = next == '-' || next == '/' || next == '.' || next == ' ' || next == 'T' || next == '\0';
-        if (!allowedSeparator)
-        {
-            return 0;
-        }
-    }
-
-    const uint16_t year = static_cast<uint16_t>((text[0] - '0') * 1000 + (text[1] - '0') * 100 + (text[2] - '0') * 10 + (text[3] - '0'));
-    return (year >= 1000 && year <= 9999) ? year : 0;
-}
 
 } // namespace
 
