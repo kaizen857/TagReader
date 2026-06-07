@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 21> kTestCases{{
+constexpr std::array<TestCase, 22> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -53,6 +53,7 @@ constexpr std::array<TestCase, 21> kTestCases{{
     {"TR-AUDIT-019", true},
     {"TR-AUDIT-020", true},
     {"TR-AUDIT-021", true},
+    {"TR-AUDIT-022", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3081,6 +3082,67 @@ bool RunTrAudit021()
     return passed;
 }
 
+bool RunTrAudit022()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-022";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-022 base MP3 generation failed\n";
+        return false;
+    }
+
+    const std::vector<std::uint8_t> valueWithNull = {'H','e','l','l','o', 0x00, 'W','o','r','l','d'};
+    const std::vector<ApeItem> items = {
+        {"TITLE", valueWithNull, false},
+    };
+
+    const std::filesystem::path filePath = evidenceRoot / "latin1_null.mp3";
+    if (!AppendApeTag(basePath, filePath, items, true))
+    {
+        std::cerr << "TR-AUDIT-022 failed to append APE tag\n";
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(filePath);
+    const std::string expected = "Hello World";
+    const bool titleOk = Expect(tag.title() == expected,
+        "TR-AUDIT-022 title should be 'Hello World' (embedded 0x00 → space, length 11), got: '" + std::string(tag.title()) + "'");
+    const bool lengthOk = Expect(tag.title().size() == 11,
+        "TR-AUDIT-022 title length should be 11, got: " + std::to_string(tag.title().size()));
+    const bool passed = titleOk && lengthOk;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-022 title=" + std::string(tag.title()) + "\n"
+        "TR-AUDIT-022 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "file=" + filePath.string() + "\n"
+        "title=" + std::string(tag.title()) + "\n"
+        "expected=" + expected + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-022 title=" << tag.title() << '\n';
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3314,6 +3376,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-021")
     {
         if (!RunTrAudit021())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-022")
+    {
+        if (!RunTrAudit022())
         {
             return 1;
         }

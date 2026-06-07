@@ -473,12 +473,13 @@ std::string ReadLatin1Text(const uint8_t *data, std::size_t size)
     for (std::size_t i = 0; i < size; ++i)
     {
         const unsigned char ch = data[i];
-        // Latin-1 audio tag text fields rarely contain internal 0x00 bytes.
-        // Currently treated as C-string terminator. If binary-embedded text
-        // support is needed, 0x00 could be replaced with space instead.
+        // Latin-1 0x00 bytes are replaced with spaces to preserve
+        // surrounding text. Structural delimiters are handled by
+        // FindEncodedTerminator() before reaching this function.
         if (ch == 0)
         {
-            break;
+            value.push_back(' ');
+            continue;
         }
 
         if (ch < 0x80)
@@ -509,11 +510,21 @@ std::string ReadUtf8Text(const uint8_t *data, std::size_t size)
         return {};
     }
 
-    std::string value(reinterpret_cast<const char *>(data), size);
-    const auto nul = value.find('\0');
-    if (nul != std::string::npos)
+    std::string value;
+    value.reserve(std::min(kMaxDecodedTextBytes, size));
+    for (std::size_t i = 0; i < size; ++i)
     {
-        value.resize(nul);
+        const unsigned char ch = data[i];
+        if (ch == 0)
+        {
+            value.push_back(' ');
+            continue;
+        }
+        if (value.size() >= kMaxDecodedTextBytes)
+        {
+            return {};
+        }
+        value.push_back(static_cast<char>(ch));
     }
     return TrimText(std::move(value));
 }
