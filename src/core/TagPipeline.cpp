@@ -31,6 +31,17 @@ bool IsCoverExportOrCacheError(std::string_view message)
     return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
 }
 
+class StreamStateGuard
+{
+public:
+    explicit StreamStateGuard(std::ifstream &stream) noexcept : stream_(stream) {}
+    ~StreamStateGuard() { stream_.clear(); }
+    StreamStateGuard(const StreamStateGuard &) = delete;
+    StreamStateGuard &operator=(const StreamStateGuard &) = delete;
+private:
+    std::ifstream &stream_;
+};
+
 void ValidatePath(const std::filesystem::path &filePath)
 {
     if (filePath.empty())
@@ -108,11 +119,11 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
     {
         try
         {
+            StreamStateGuard guard(context.input);
             readMetadata();
         }
         catch (const std::filesystem::filesystem_error &)
         {
-            context.input.clear();
         }
         catch (const std::runtime_error &ex)
         {
@@ -120,7 +131,6 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
             {
                 throw;
             }
-            context.input.clear();
         }
     };
 
