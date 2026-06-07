@@ -149,11 +149,18 @@ std::string DetectLegacyLocalEncoding(std::string_view raw)
     }
 #else
     (void)raw;
+#warning "CRITICAL LIMITATION: Building without iconv — encoding detection disabled. "
+         "Affected encodings: GB18030, GBK, SHIFT_JIS, BIG5, CP932, WINDOWS-1252, "
+         "WINDOWS-1251, WINDOWS-1250. All non-BOM, non-UTF-8, non-obvious-UTF-16 "
+         "text falls back to Latin-1. CJK text will produce mojibake. "
+         "Enable iconv for production use."
 #endif
 
-    // WARNING: Without iconv, GB18030/GBK/SHIFT_JIS/BIG5 etc. encoding detection is skipped.
-    // All non-BOM, non-UTF-8, non-obvious-UTF-16 text falls back to Latin-1.
-    // CJK text may produce mojibake in this build. Enable iconv for production use.
+    // CRITICAL LIMITATION: Without iconv, GB18030/GBK/SHIFT_JIS/BIG5/CP932/WINDOWS-1252
+    // encoding detection is skipped entirely.
+    // Impact: All non-BOM, non-UTF-8, non-obvious-UTF-16 text falls back to Latin-1.
+    // CJK (Chinese/Japanese/Korean) and Cyrillic/Central European text may produce
+    // mojibake in this build configuration. Enable iconv for production use.
     return "latin-1";
 }
 
