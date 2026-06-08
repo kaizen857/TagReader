@@ -12,6 +12,7 @@ extern "C"
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cstdlib>
 #include <cstdint>
 #include <exception>
@@ -31,7 +32,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 27> kTestCases{{
+constexpr std::array<TestCase, 28> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -59,6 +60,7 @@ constexpr std::array<TestCase, 27> kTestCases{{
     {"TR-AUDIT-025", true},
     {"TR-AUDIT-026", true},
     {"TR-AUDIT-027", true},
+    {"TR-AUDIT-029", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3671,6 +3673,119 @@ bool RunTrAudit027()
     return passed;
 }
 
+bool RunTrAudit029()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-029";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-029 base MP3 generation failed\n";
+        return false;
+    }
+
+    bool passed = true;
+    std::string scenarioOutput;
+    try
+    {
+        const MusicTag tag = TagReader::Read(basePath);
+        scenarioOutput += "regular-ok format=" + tag.format() + "\n";
+        passed = Expect(!tag.format().empty(), "TR-AUDIT-029 regular MP3 should report a media format") && passed;
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "TR-AUDIT-029 regular MP3 read failed: " << ex.what() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path symlinkPath = evidenceRoot / "base-link.mp3";
+    std::filesystem::create_symlink(basePath, symlinkPath, ec);
+    if (ec)
+    {
+#ifdef __linux__
+        std::cerr << "TR-AUDIT-029 failed to create Linux symlink sample: " << ec.message() << '\n';
+        return false;
+#else
+        const std::string stdoutLike =
+            "TR-AUDIT-029 regular-file-ok\n"
+            "TR-AUDIT-029 symlink-unavailable-skip\n"
+            "TR-AUDIT-029 PASS\n";
+        const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                                WriteTextFile(evidenceRoot / "summary.txt",
+                                    "case=" + std::string(kCaseId) + "\n" +
+                                    scenarioOutput +
+                                    "symlinkCreateError=" + ec.message() + "\n" +
+                                    "passed=true\n");
+        if (!evidenceOk)
+        {
+            return false;
+        }
+
+        std::cout << "TR-AUDIT-029 regular-file-ok\n";
+        std::cout << "TR-AUDIT-029 symlink-unavailable-skip\n";
+        return true;
+#endif
+    }
+
+    bool symlinkRejected = false;
+    std::string symlinkError;
+    try
+    {
+        (void)TagReader::Read(symlinkPath);
+        symlinkError = "read unexpectedly succeeded";
+    }
+    catch (const std::exception &ex)
+    {
+        symlinkError = ex.what();
+        std::string lowerError = symlinkError;
+        std::transform(lowerError.begin(), lowerError.end(), lowerError.begin(), [](unsigned char ch)
+        {
+            return static_cast<char>(std::tolower(ch));
+        });
+        symlinkRejected = lowerError.find("symbolic link") != std::string::npos ||
+                          lowerError.find("symlink") != std::string::npos;
+    }
+
+    passed = Expect(symlinkRejected,
+        "TR-AUDIT-029 symlink input should reject with symbolic link/symlink error, got: " + symlinkError) && passed;
+    scenarioOutput += "symlinkError=" + symlinkError + "\n";
+    scenarioOutput += "symlinkRejected=" + std::string(symlinkRejected ? "true" : "false") + "\n";
+
+    const std::string stdoutLike =
+        "TR-AUDIT-029 regular-file-ok\n"
+        "TR-AUDIT-029 symlink-rejected-before-open\n"
+        "TR-AUDIT-029 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt",
+                                "case=" + std::string(kCaseId) + "\n" +
+                                "basePath=" + basePath.string() + "\n" +
+                                "symlinkPath=" + symlinkPath.string() + "\n" +
+                                scenarioOutput +
+                                "passed=" + std::string(passed ? "true" : "false") + "\n");
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-029 regular-file-ok\n";
+        std::cout << "TR-AUDIT-029 symlink-rejected-before-open\n";
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3970,6 +4085,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-027")
     {
         if (!RunTrAudit027())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-029")
+    {
+        if (!RunTrAudit029())
         {
             return 1;
         }

@@ -46,6 +46,16 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     context.filePath = filePath;
 
     std::error_code ec;
+    const bool symbolicLink = std::filesystem::is_symlink(filePath, ec);
+    if (ec)
+    {
+        throw std::runtime_error("failed to query symbolic link status: " + ec.message());
+    }
+    if (symbolicLink)
+    {
+        throw std::runtime_error("Rejecting symbolic link path: " + filePath.string());
+    }
+
     context.fileSize = std::filesystem::file_size(filePath, ec);
     if (ec)
     {
@@ -62,11 +72,6 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     if (!context.input.is_open())
     {
         throw std::runtime_error("failed to open file input stream");
-    }
-
-    if (std::filesystem::is_symlink(filePath))
-    {
-        throw std::runtime_error("Rejecting symbolic link path: " + filePath.string());
     }
 
     AVFormatContext *formatContext = nullptr;
