@@ -2,9 +2,12 @@
 
 ## 当前定位
 
-- TagReader 是一个 C++23 轻量音乐元数据读取库。
+- TagReader 是一个 C++23 轻量音乐元数据读取库，支持 ID3v1/v2、Vorbis Comment（FLAC/Ogg Vorbis）、MP4 atom（ilst）和 APEv2 标签格式。
 - 对外 facade 保持单一读取入口：`TagReader::Read(path)` 和可选封面导出目录的 `TagReader::Read(path, coverExportDir)`。
-- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `ValidateCoverExportDir()` -> `DetectStream()` -> `DetectTagFormat()` -> `ReadMediaInfo()` -> `ContainerFromTagFormat()` -> `DetectContainer()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
+- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `ValidateCoverExportDir()` -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
+- `ContainerFromTagFormat()` 直接将 `TagFormat` 映射为 `DetectedContainer` 并写入 `context.detectedContainer`，不再有独立的 `DetectContainer()` 步骤。
+- `ReadMetadata()` 入口处和每个 catch 分支均调用 `context.input.clear()` 恢复流状态；`ReadLyrics()` 入口处也执行 `clear()`。
+- ID3v2→ID3v1 回退路径和 Ape→ID3 回退路径中，各 parser 调用之间插入 `context.input.clear()` 防止流状态级联污染。
 - `MusicTag` 是最终返回对象；解析中间状态保存在内部的 `RawMediaInfo`、`RawMetadata`、`RawLyrics` 等结构中。
 - 写入 `MusicTag` 的文本字段必须是 UTF-8。
 
@@ -12,8 +15,8 @@
 
 - FFmpeg 用于输入 probe、容器识别、主音频流定位、基础媒体信息读取，以及封面图像解码和 PNG 编码。
 - 标题、歌手、专辑、歌词、封面块等标签字段不使用 `AVDictionary` 作为元数据来源。
-- 元数据和歌词解析优先通过 `ReadContext::input` 直接读取文件原始字节，再按 ID3、Vorbis/FLAC、Ogg Vorbis、MP4 atom 等格式规则解释。
-- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr` 等格式分支；只有调用方传入 `coverExportDir` 时才导出。
+- 元数据和歌词解析优先通过 `ReadContext::input` 直接读取文件原始字节，再按 ID3、Vorbis/FLAC、Ogg Vorbis、MP4 atom、APE tag 等格式规则解释。
+- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)` 等格式分支；只有调用方传入 `coverExportDir` 时才导出。
 
 ## 输入与失败策略
 
@@ -30,6 +33,10 @@
 - Ogg Vorbis 分支按 page 和 packet 边界扫描 comment packet，并对截断、continuation、payload 大小设置本地失败。
 - MP4 分支通过 atom walker 定位 `moov/udta/meta/ilst`，读取已支持 metadata item、`©lyr` 和 iTunes freeform lyrics。
 - MP4 walker 内部使用本地解析状态区分 `Ok`、`NotFound`、`Malformed`、`ResourceLimit`，但这些状态不进入 public API。
+- APE 分支通过文件尾 32 字节 footer（魔数 `APETAGEX`）检测 APEv2 tag，解析 item 列表（key-NUL-value 格式）。Tag 级上限为 16 MiB/4096 items；单个文本项上限为 1 MiB。
+- APE 格式检测优先于 ID3（`DetectTagFormat()` 中 APE footer 检查在 ID3 header 之前），确保 MP3+APE 文件使用 APE 元数据。
+- MP3+APE 路径中，APE 解析为主，ID3v2→ID3v1 回退补充 APE 未提供的字段。
+- APEv1（version < 2000）静默跳过；非封面二进制 item 和外部引用 item 静默跳过。
 - FLAC `PICTURE` 当前使用 cpp 内部 bounded `ByteCursor` 解析字段长度和图片字节；其它 parser 游标尚未迁移到该 helper。
 
 ## 封面导出与缓存
