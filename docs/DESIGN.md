@@ -16,7 +16,7 @@
 - FFmpeg 用于输入 probe、容器识别、主音频流定位、基础媒体信息读取，以及封面图像解码和 PNG 编码。
 - 标题、歌手、专辑、歌词、封面块等标签字段不使用 `AVDictionary` 作为元数据来源。
 - 元数据和歌词解析优先通过 `ReadContext::input` 直接读取文件原始字节，再按 ID3、Vorbis/FLAC、Ogg Vorbis、MP4 atom、APE tag 等格式规则解释。
-- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)` 等格式分支；只有调用方传入 `coverExportDir` 时才导出。
+- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)` 等格式分支；未传入 `coverExportDir` 时导出到系统临时目录下 TagReader 自有子目录，传入时导出到调用方目录。
 
 ## 输入与失败策略
 
@@ -41,7 +41,8 @@
 
 ## 封面导出与缓存
 
-- 封面导出目录由调用方通过 `Read(path, coverExportDir)` 提供；未提供时不写封面文件。
+- `Read(path)` 默认使用 `std::filesystem::temp_directory_path() / "tagreader-covers"` 作为封面导出目录；`Read(path, coverExportDir)` 使用调用方显式提供的目录。
+- 实际导出目录会按需创建，必须存在且为目录，并通过写入、读取、删除探针文件的权限验证；显式提供的目录 symlink 按调用方信任目录处理，只要探针通过即可接受。
 - 封面缓存是 content-addressed PNG storage，缓存键基于音频文件内嵌图片原始字节计算。
 - 缓存路径格式为 `coverExportDir / first2hex / rest.png`，其中 `first2hex` 是 hash 前两个十六进制字符，`rest.png` 是剩余 hash 加 `.png` 后缀。
 - 已存在的缓存路径直接返回，不再重复解码或转码。

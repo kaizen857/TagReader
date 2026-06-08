@@ -73,8 +73,8 @@ ValidatePath()
 ### ℹ️ Policy-001：封面导出目录默认受信，目录 symlink 不作为漏洞保留
 
 - **策略结论**：此前将 `coverExportDir` 或 shard 父目录 symlink 视为 `High` 风险，是基于“导出目录可能来自不受信租户输入”的假设。用户已明确产品策略：未提供导出目录时默认写入系统临时目录；提供导出目录时默认信任用户选择的位置，推荐只做读写权限检验。因此，目录 symlink 跟随属于可接受的导出目录语义，不再作为安全漏洞或 P0 修复项保留。
-- **当前行为证据**：`ValidateCoverExportDir()` 使用 `create_directories()`、`exists()`、`is_directory()`，这些 `std::filesystem` API 会按平台语义解析目录组件；`BuildCoverCachePath()` 继续使用 content-addressed 路径 `coverExportDir / first2hex / rest.png`。这与“用户给出的目录即为导出目标”的策略一致。
-- **仍需保留的校验**：应确认最终可写目录具备创建 shard 目录、写临时文件、发布 PNG、读取/复用已有缓存文件的权限；权限不可用时返回明确的 `cover cache`/`cover export` 类错误。最终缓存文件仍应保持当前的内容校验和污染拒绝逻辑。
+- **当前行为证据**：`Read(path)` 会把空导出目录解析为 `std::filesystem::temp_directory_path() / "tagreader-covers"`；`Read(path, coverExportDir)` 保留调用方目录。`ValidateCoverExportDir()` 使用 `create_directories()`、`exists()`、`is_directory()` 并执行写入/读取/删除探针，这些 `std::filesystem` API 会按平台语义解析目录组件；`BuildCoverCachePath()` 继续使用 content-addressed 路径 `coverExportDir / first2hex / rest.png`。这与“用户给出的目录即为导出目标”的策略一致。
+- **仍需保留的校验**：最终可写目录必须具备创建目录、写临时文件、读取探针、删除探针、发布 PNG、读取/复用已有缓存文件的权限；权限不可用时返回明确的 `cover cache`/`cover export` 类错误。最终缓存文件仍应保持当前的内容校验和污染拒绝逻辑。
 - **可选部署加固**：如果未来某个服务端场景把导出目录从不受信用户输入直接透传，可在该上层应用或平台适配层额外禁用 symlink、使用私有临时子目录、或采用 POSIX `openat()`/Windows reparse point 检查。但这属于特定部署策略，不是 TagReader 默认 API 的强制安全要求。
 
 ### 🟡 Medium-001：APEv2 footer-only tagSize 语义错误导致规范标签无法解析

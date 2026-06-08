@@ -16,7 +16,10 @@
 #include <system_error>
 #include <utility>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
+#include <fstream>
 
 namespace tagreader_core
 {
@@ -29,6 +32,25 @@ using tagreader_text::TrimText;
 bool IsCoverExportOrCacheError(std::string_view message)
 {
     return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
+}
+
+std::filesystem::path DefaultCoverExportDir()
+{
+    std::error_code ec;
+    std::filesystem::path tempRoot = std::filesystem::temp_directory_path(ec);
+    if (ec)
+    {
+        throw std::runtime_error("failed to query default cover export directory: " + ec.message());
+    }
+    return tempRoot / "tagreader-covers";
+}
+
+std::filesystem::path MakeCoverExportProbePath(const std::filesystem::path &coverExportDir)
+{
+    static std::atomic_uint64_t probeCounter{0};
+    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto seq = probeCounter.fetch_add(1, std::memory_order_relaxed);
+    return coverExportDir / (".tagreader-cover-export-probe." + std::to_string(now) + "." + std::to_string(seq));
 }
 
 class StreamStateGuard
@@ -73,11 +95,6 @@ void ValidatePath(const std::filesystem::path &filePath)
 
 void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
 {
-    if (coverExportDir.empty())
-    {
-        return;
-    }
-
     std::error_code ec;
     std::filesystem::create_directories(coverExportDir, ec);
     if (ec)
@@ -103,6 +120,46 @@ void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
     if (!directory)
     {
         throw std::runtime_error("cover export path is not a directory: " + coverExportDir.string());
+    }
+
+    const std::filesystem::path probePath = MakeCoverExportProbePath(coverExportDir);
+    auto removeProbe = [&probePath]() noexcept
+    {
+        std::error_code removeEc;
+        std::filesystem::remove(probePath, removeEc);
+    };
+
+    removeProbe();
+    {
+        std::ofstream output(probePath, std::ios::binary | std::ios::trunc);
+        if (!output)
+        {
+            removeProbe();
+            throw std::runtime_error("cover export directory is not writable: " + coverExportDir.string());
+        }
+        output << "tagreader-cover-export-probe\n";
+        if (!output.good())
+        {
+            removeProbe();
+            throw std::runtime_error("cover export probe write failed: " + coverExportDir.string());
+        }
+    }
+
+    {
+        std::ifstream input(probePath, std::ios::binary);
+        std::string probe;
+        if (!input || !std::getline(input, probe) || probe != "tagreader-cover-export-probe")
+        {
+            removeProbe();
+            throw std::runtime_error("cover export probe read failed: " + coverExportDir.string());
+        }
+    }
+
+    std::filesystem::remove(probePath, ec);
+    if (ec)
+    {
+        removeProbe();
+        throw std::runtime_error("cover export probe delete failed: " + coverExportDir.string() + ": " + ec.message());
     }
 }
 
@@ -325,7 +382,7 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     ValidatePath(filePath);
 
     ReadContext context = tagreader_media::OpenContext(filePath);
-    context.coverExportDir = coverExportDir;
+    context.coverExportDir = coverExportDir.empty() ? DefaultCoverExportDir() : coverExportDir;
     ValidateCoverExportDir(context.coverExportDir);
     tagreader_media::DetectStream(context);
 

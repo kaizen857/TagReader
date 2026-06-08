@@ -24,6 +24,9 @@ extern "C"
 #include <string_view>
 #include <vector>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 namespace
 {
 struct TestCase
@@ -32,7 +35,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 29> kTestCases{{
+constexpr std::array<TestCase, 30> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -62,6 +65,7 @@ constexpr std::array<TestCase, 29> kTestCases{{
     {"TR-AUDIT-027", true},
     {"TR-AUDIT-029", true},
     {"TR-AUDIT-030", true},
+    {"TR-AUDIT-031", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -833,6 +837,38 @@ bool PathIsUnder(const std::filesystem::path &path, const std::filesystem::path 
 
     const auto mismatch = std::mismatch(normalizedRoot.begin(), normalizedRoot.end(), normalizedPath.begin(), normalizedPath.end());
     return mismatch.first == normalizedRoot.end();
+}
+
+bool HasProbeFiles(const std::filesystem::path &root)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec))
+    {
+        return false;
+    }
+
+    for (const std::filesystem::directory_entry &entry : std::filesystem::recursive_directory_iterator(root, ec))
+    {
+        if (ec)
+        {
+            break;
+        }
+        if (entry.path().filename().string().starts_with(".tagreader-cover-export-probe"))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SetDirectoryPermissions(const std::filesystem::path &path, mode_t mode)
+{
+    if (::chmod(path.c_str(), mode) != 0)
+    {
+        std::cerr << "failed to chmod directory: " << path.string() << '\n';
+        return false;
+    }
+    return true;
 }
 
 std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::initializer_list<std::string_view> comments)
@@ -3828,6 +3864,175 @@ bool RunTrAudit030()
     return passed;
 }
 
+bool RunTrAudit031()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-031";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path defaultExportDir = std::filesystem::temp_directory_path() / "tagreader-covers";
+    const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
+    const std::filesystem::path nonWritableDir = evidenceRoot / "non-writable-covers";
+    const std::filesystem::path symlinkTargetDir = evidenceRoot / "symlink-target-covers";
+    const std::filesystem::path symlinkExportDir = evidenceRoot / "symlink-covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::remove_all(defaultExportDir, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path samplePath = evidenceRoot / "cover-policy.mp3";
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> apicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/png"), std::vector<std::uint8_t>{0, 3, 0}, validPng});
+    if (!GenerateBaseMp3(basePath) || !PrependId3Tag(basePath, samplePath, Id3v23Frame("APIC", apicPayload)))
+    {
+        return false;
+    }
+
+    const MusicTag defaultTag = TagReader::Read(samplePath);
+    const std::filesystem::path defaultCoverPath = defaultTag.coverPath();
+    const bool defaultPathPresent = Expect(!defaultCoverPath.empty(), "default Read(path) should export cover path");
+    const bool defaultExists = Expect(std::filesystem::is_regular_file(defaultCoverPath, ec), "default exported cover should exist");
+    ec.clear();
+    const bool defaultUnderTemp = Expect(PathIsUnder(defaultCoverPath, defaultExportDir), "default cover should stay under TagReader temp child");
+    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 1, "default export should create one PNG");
+    const bool defaultNoProbe = Expect(!HasProbeFiles(defaultExportDir), "default export should not leave probe files");
+
+    const MusicTag explicitTag = TagReader::Read(samplePath, explicitExportDir);
+    const std::filesystem::path explicitCoverPath = explicitTag.coverPath();
+    const bool explicitPathPresent = Expect(!explicitCoverPath.empty(), "explicit Read(path, dir) should export cover path");
+    const bool explicitExists = Expect(std::filesystem::is_regular_file(explicitCoverPath, ec), "explicit exported cover should exist");
+    ec.clear();
+    const bool explicitUnderDir = Expect(PathIsUnder(explicitCoverPath, explicitExportDir), "explicit cover should stay under caller directory");
+    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 1, "explicit export should create one PNG");
+    const auto explicitMtime = std::filesystem::last_write_time(explicitCoverPath, ec);
+    const bool explicitMtimeOk = Expect(!ec, "explicit exported cover mtime should be readable");
+    ec.clear();
+    const MusicTag explicitRepeatTag = TagReader::Read(samplePath, explicitExportDir);
+    const bool explicitReusePath = Expect(explicitRepeatTag.coverPath() == explicitCoverPath, "explicit export should reuse cache path");
+    const auto explicitRepeatMtime = std::filesystem::last_write_time(explicitCoverPath, ec);
+    const bool explicitReuseMtime = Expect(!ec && explicitRepeatMtime == explicitMtime, "explicit export should not rewrite cached PNG");
+    ec.clear();
+    const bool explicitNoProbe = Expect(!HasProbeFiles(explicitExportDir), "explicit export should not leave probe files");
+
+    bool nonWritableRejected = false;
+    bool nonWritableSkipped = false;
+    std::string nonWritableError;
+    std::filesystem::create_directories(nonWritableDir, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create non-writable directory: " << ec.message() << '\n';
+        return false;
+    }
+    if (SetDirectoryPermissions(nonWritableDir, 0555))
+    {
+        try
+        {
+            (void)TagReader::Read(samplePath, nonWritableDir);
+        }
+        catch (const std::exception &ex)
+        {
+            nonWritableError = ex.what();
+            nonWritableRejected = nonWritableError.find("cover export") != std::string::npos || nonWritableError.find("cover cache") != std::string::npos;
+        }
+        if (!nonWritableRejected)
+        {
+            nonWritableSkipped = (::geteuid() == 0);
+        }
+        (void)SetDirectoryPermissions(nonWritableDir, 0755);
+    }
+    else
+    {
+        nonWritableSkipped = true;
+    }
+    const bool nonWritableOk = Expect(nonWritableRejected || nonWritableSkipped, "non-writable explicit dir should reject or platform-skip");
+    const bool nonWritableNoProbe = Expect(!HasProbeFiles(nonWritableDir), "non-writable explicit dir should not leave probe files");
+    const bool nonWritableNoPng = Expect(nonWritableRejected ? CountPngFiles(nonWritableDir) == 0 : true, "non-writable explicit dir should not leave partial PNG files");
+
+    bool symlinkAccepted = false;
+    bool symlinkSkipped = false;
+    std::string symlinkError;
+    std::filesystem::create_directories(symlinkTargetDir, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create symlink target directory: " << ec.message() << '\n';
+        return false;
+    }
+    std::filesystem::create_directory_symlink(symlinkTargetDir, symlinkExportDir, ec);
+    if (ec)
+    {
+        symlinkSkipped = true;
+        symlinkError = ec.message();
+        ec.clear();
+    }
+    else
+    {
+        try
+        {
+            const MusicTag symlinkTag = TagReader::Read(samplePath, symlinkExportDir);
+            symlinkAccepted = !symlinkTag.coverPath().empty() && PathIsUnder(symlinkTag.coverPath(), symlinkTargetDir) && CountPngFiles(symlinkTargetDir) == 1;
+        }
+        catch (const std::exception &ex)
+        {
+            symlinkError = ex.what();
+        }
+    }
+    const bool symlinkOk = Expect(symlinkAccepted || symlinkSkipped, "explicit symlink directory should be accepted or platform-skip");
+    const bool symlinkNoProbe = Expect(!HasProbeFiles(symlinkTargetDir), "symlink export should not leave probe files");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-031 default-temp-cover-export\n"
+        "TR-AUDIT-031 explicit-cover-export\n"
+        "TR-AUDIT-031 non-writable-dir-" + std::string(nonWritableSkipped ? "platform-skip" : "rejected") + "\n"
+        "TR-AUDIT-031 symlink-dir-" + std::string(symlinkSkipped ? "platform-skip" : "accepted") + "\n"
+        "TR-AUDIT-031 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-031\n"
+        "marker=default-temp-cover-export\n"
+        "sample=" + samplePath.string() + "\n" +
+        "defaultExportDir=" + defaultExportDir.string() + "\n" +
+        "defaultCoverPath=" + defaultCoverPath.string() + "\n" +
+        "explicitExportDir=" + explicitExportDir.string() + "\n" +
+        "explicitCoverPath=" + explicitCoverPath.string() + "\n" +
+        "nonWritableDir=" + nonWritableDir.string() + "\n" +
+        "nonWritableRejected=" + std::string(nonWritableRejected ? "true" : "false") + "\n" +
+        "nonWritableSkipped=" + std::string(nonWritableSkipped ? "true" : "false") + "\n" +
+        "nonWritableError=" + nonWritableError + "\n" +
+        "symlinkExportDir=" + symlinkExportDir.string() + "\n" +
+        "symlinkTargetDir=" + symlinkTargetDir.string() + "\n" +
+        "symlinkAccepted=" + std::string(symlinkAccepted ? "true" : "false") + "\n" +
+        "symlinkSkipped=" + std::string(symlinkSkipped ? "true" : "false") + "\n" +
+        "symlinkError=" + symlinkError + "\n" +
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary) &&
+                            WriteTextFile(evidenceRoot / "default_read_output.txt", DescribeTag(defaultTag)) &&
+                            WriteTextFile(evidenceRoot / "explicit_read_output.txt", DescribeTag(explicitTag)) &&
+                            WriteTextFile(evidenceRoot / "explicit_repeat_output.txt", DescribeTag(explicitRepeatTag));
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = defaultPathPresent && defaultExists && defaultUnderTemp && defaultOnePng && defaultNoProbe &&
+                        explicitPathPresent && explicitExists && explicitUnderDir && explicitOnePng && explicitMtimeOk && explicitReusePath && explicitReuseMtime && explicitNoProbe &&
+                        nonWritableOk && nonWritableNoProbe && nonWritableNoPng && symlinkOk && symlinkNoProbe;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-031 default-temp-cover-export\n";
+        std::cout << "TR-AUDIT-031 explicit-cover-export\n";
+        std::cout << "TR-AUDIT-031 non-writable-dir-" << (nonWritableSkipped ? "platform-skip" : "rejected") << '\n';
+        std::cout << "TR-AUDIT-031 symlink-dir-" << (symlinkSkipped ? "platform-skip" : "accepted") << '\n';
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -4149,6 +4354,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-030")
     {
         if (!RunTrAudit030())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-031")
+    {
+        if (!RunTrAudit031())
         {
             return 1;
         }

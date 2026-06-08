@@ -322,6 +322,14 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
     {
         throw std::runtime_error("cover cache failed to create directory " + finalPath.parent_path().string() + ": " + ec.message());
     }
+    if (!std::filesystem::is_directory(finalPath.parent_path(), ec))
+    {
+        if (ec)
+        {
+            throw std::runtime_error("cover cache failed to query directory " + finalPath.parent_path().string() + ": " + ec.message());
+        }
+        throw std::runtime_error("cover cache path parent is not a directory: " + finalPath.parent_path().string());
+    }
 
     if (std::filesystem::exists(finalPath, ec))
     {
@@ -393,6 +401,14 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     if (ec)
     {
         throw std::runtime_error("cover cache failed to create shard directory " + coverPath.parent_path().string() + ": " + ec.message());
+    }
+    if (!std::filesystem::is_directory(coverPath.parent_path(), ec))
+    {
+        if (ec)
+        {
+            throw std::runtime_error("cover cache failed to query shard directory " + coverPath.parent_path().string() + ": " + ec.message());
+        }
+        throw std::runtime_error("cover cache shard path is not a directory: " + coverPath.parent_path().string());
     }
     if (ToLower(coverPath.extension().string()) != ".png")
     {
