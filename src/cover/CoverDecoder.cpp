@@ -14,6 +14,7 @@ extern "C"
 #endif
 
 #include <array>
+#include <cstring>
 #include <limits>
 #include <memory>
 
@@ -204,11 +205,11 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
     {
         return {};
     }
-    // data is an external read-only buffer owned by the caller.
-    // The AVPacket does NOT own this buffer (packet->buf remains nullptr),
-    // so av_packet_free() will NOT attempt to deallocate external memory.
-    packet->data = const_cast<uint8_t *>(data);
-    packet->size = static_cast<int>(size);
+    if (av_new_packet(packet.get(), static_cast<int>(size)) < 0)
+    {
+        return {};
+    }
+    std::memcpy(packet->data, data, size);
 
     if (avcodec_send_packet(decoderContext.get(), packet.get()) < 0 || avcodec_receive_frame(decoderContext.get(), decodedFrame.get()) < 0)
     {

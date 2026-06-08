@@ -40,7 +40,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 30> kTestCases{{
+constexpr std::array<TestCase, 31> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -68,6 +68,7 @@ constexpr std::array<TestCase, 30> kTestCases{{
     {"TR-AUDIT-025", true},
     {"TR-AUDIT-026", true},
     {"TR-AUDIT-027", true},
+    {"TR-AUDIT-028", true},
     {"TR-AUDIT-029", true},
     {"TR-AUDIT-030", true},
     {"TR-AUDIT-031", true},
@@ -2149,6 +2150,119 @@ bool RunTrAudit011()
     {
         std::cout << "TR-AUDIT-011 valid-image-exported coverPath=" << normalCoverPath.string() << '\n';
         std::cout << "TR-AUDIT-011 malformed-image-skipped coverPath=\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit028()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-028";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path defaultExportDir = std::filesystem::temp_directory_path() / "tagreader-covers";
+    const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::remove_all(defaultExportDir, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path jpegImagePath = evidenceRoot / "one_by_one.jpg";
+    const std::filesystem::path defaultSamplePath = evidenceRoot / "default-png-cover.mp3";
+    const std::filesystem::path explicitSamplePath = evidenceRoot / "explicit-jpeg-cover.mp3";
+    const std::filesystem::path truncatedSamplePath = evidenceRoot / "truncated-png-cover.mp3";
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    std::vector<std::uint8_t> truncatedPng = validPng;
+    truncatedPng.resize(validPng.size() - 1);
+    if (!GenerateBaseMp3(basePath) || !GenerateOneByOneJpeg(jpegImagePath))
+    {
+        return false;
+    }
+    const std::vector<std::uint8_t> validJpeg = ReadBinaryFile(jpegImagePath);
+    if (validJpeg.empty())
+    {
+        std::cerr << "failed to read generated JPEG cover sample: " << jpegImagePath.string() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> pngApicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/png"), std::vector<std::uint8_t>{0, 3, 0}, validPng});
+    const std::vector<std::uint8_t> jpegApicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/jpeg"), std::vector<std::uint8_t>{0, 3, 0}, validJpeg});
+    const std::vector<std::uint8_t> truncatedApicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/png"), std::vector<std::uint8_t>{0, 3, 0}, truncatedPng});
+    if (!PrependId3Tag(basePath, defaultSamplePath, Id3v23Frame("APIC", pngApicPayload)) ||
+        !PrependId3Tag(basePath, explicitSamplePath, Id3v23Frame("APIC", jpegApicPayload)) ||
+        !PrependId3Tag(basePath, truncatedSamplePath, Id3v23Frame("APIC", truncatedApicPayload)))
+    {
+        return false;
+    }
+
+    const MusicTag defaultTag = TagReader::Read(defaultSamplePath);
+    const std::filesystem::path defaultCoverPath = defaultTag.coverPath();
+    const bool defaultPathPresent = Expect(!defaultCoverPath.empty(), "default Read(path) should export valid PNG APIC cover");
+    const bool defaultExists = Expect(std::filesystem::is_regular_file(defaultCoverPath, ec), "default exported PNG cover should exist");
+    ec.clear();
+    const bool defaultUnderTemp = Expect(PathIsUnder(defaultCoverPath, defaultExportDir), "default exported cover should stay under TagReader temp child");
+    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 1, "default export should create exactly one PNG");
+
+    const MusicTag explicitTag = TagReader::Read(explicitSamplePath, explicitExportDir);
+    const std::filesystem::path explicitCoverPath = explicitTag.coverPath();
+    const bool explicitPathPresent = Expect(!explicitCoverPath.empty(), "explicit Read(path, dir) should export valid JPEG APIC cover as PNG");
+    const bool explicitExists = Expect(std::filesystem::is_regular_file(explicitCoverPath, ec), "explicit exported JPEG cover should exist as PNG cache");
+    ec.clear();
+    const bool explicitUnderDir = Expect(PathIsUnder(explicitCoverPath, explicitExportDir), "explicit exported cover should stay under caller directory");
+    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 1, "explicit export should create exactly one PNG");
+
+    const MusicTag truncatedTag = TagReader::Read(truncatedSamplePath, explicitExportDir);
+    const std::size_t explicitPngCountAfterTruncated = CountPngFiles(explicitExportDir);
+    const bool truncatedCoverEmpty = Expect(truncatedTag.coverPath().empty(), "truncated APIC PNG should be skipped without coverPath");
+    const bool truncatedNoNewPng = Expect(explicitPngCountAfterTruncated == 1, "truncated APIC PNG should not add a cache file");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-028 default-temp-safe\n"
+        "TR-AUDIT-028 explicit-dir-safe\n"
+        "TR-AUDIT-028 truncated-cover-skipped\n"
+        "TR-AUDIT-028 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-028\n"
+        "marker=default-temp-safe\n"
+        "marker=explicit-dir-safe\n"
+        "marker=truncated-cover-skipped\n"
+        "defaultSample=" + defaultSamplePath.string() + "\n" +
+        "explicitSample=" + explicitSamplePath.string() + "\n" +
+        "truncatedSample=" + truncatedSamplePath.string() + "\n" +
+        "defaultExportDir=" + defaultExportDir.string() + "\n" +
+        "explicitExportDir=" + explicitExportDir.string() + "\n" +
+        "defaultCoverPath=" + defaultCoverPath.string() + "\n" +
+        "explicitCoverPath=" + explicitCoverPath.string() + "\n" +
+        "truncatedCoverPath=" + truncatedTag.coverPath().string() + "\n" +
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "validJpegBytes=" + std::to_string(validJpeg.size()) + "\n" +
+        "truncatedPngBytes=" + std::to_string(truncatedPng.size()) + "\n" +
+        "explicitPngCountAfterTruncated=" + std::to_string(explicitPngCountAfterTruncated) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "default_output.txt", DescribeTag(defaultTag)) &&
+                            WriteTextFile(evidenceRoot / "explicit_output.txt", DescribeTag(explicitTag)) &&
+                            WriteTextFile(evidenceRoot / "truncated_output.txt", DescribeTag(truncatedTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = defaultPathPresent && defaultExists && defaultUnderTemp && defaultOnePng &&
+                        explicitPathPresent && explicitExists && explicitUnderDir && explicitOnePng &&
+                        truncatedCoverEmpty && truncatedNoNewPng;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-028 default-temp-safe\n";
+        std::cout << "TR-AUDIT-028 explicit-dir-safe\n";
+        std::cout << "TR-AUDIT-028 truncated-cover-skipped\n";
     }
     return passed;
 }
@@ -4349,6 +4463,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-027")
     {
         if (!RunTrAudit027())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-028")
+    {
+        if (!RunTrAudit028())
         {
             return 1;
         }
