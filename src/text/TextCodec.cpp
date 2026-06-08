@@ -149,13 +149,11 @@ std::string DetectLegacyLocalEncoding(std::string_view raw)
             return std::string(candidate);
         }
     }
-#else
+#elif defined(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
     (void)raw;
-#warning "CRITICAL LIMITATION: Building without iconv — encoding detection disabled. "
-         "Affected encodings: GB18030, GBK, SHIFT_JIS, BIG5, CP932, WINDOWS-1252, "
-         "WINDOWS-1251, WINDOWS-1250. All non-BOM, non-UTF-8, non-obvious-UTF-16 "
-         "text falls back to Latin-1. CJK text will produce mojibake. "
-         "Enable iconv for production use."
+#warning "CRITICAL LIMITATION: Building without iconv; legacy local encoding detection is disabled and non-BOM/non-UTF-8 text falls back to Latin-1 only because TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV is explicit."
+#else
+#error "TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV must be defined for no-iconv Latin-1 fallback builds"
 #endif
 
     // CRITICAL LIMITATION: Without iconv, GB18030/GBK/SHIFT_JIS/BIG5/CP932/WINDOWS-1252

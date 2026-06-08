@@ -32,7 +32,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 28> kTestCases{{
+constexpr std::array<TestCase, 29> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -61,6 +61,7 @@ constexpr std::array<TestCase, 28> kTestCases{{
     {"TR-AUDIT-026", true},
     {"TR-AUDIT-027", true},
     {"TR-AUDIT-029", true},
+    {"TR-AUDIT-030", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3786,6 +3787,47 @@ bool RunTrAudit029()
     return passed;
 }
 
+bool RunTrAudit030()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-030";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+
+#if defined(TAGREADER_HAS_ICONV)
+    constexpr std::string_view policy = "iconv-enabled";
+#elif defined(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
+    constexpr std::string_view policy = "no-iconv-explicit-fallback";
+#else
+    constexpr std::string_view policy = "no-iconv-implicit-fallback";
+#endif
+
+    bool passed = true;
+#if !defined(TAGREADER_HAS_ICONV) && !defined(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
+    passed = false;
+#endif
+
+    const std::string marker = std::string(kCaseId) + " " + std::string(policy);
+    const std::string stdoutLike =
+        marker + "\n" +
+        std::string(kCaseId) + " " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike);
+    WriteTextFile(evidenceRoot / "summary.txt",
+        "case=" + std::string(kCaseId) + "\n"
+        "policy=" + std::string(policy) + "\n"
+        "passed=" + std::string(passed ? "true" : "false") + "\n");
+
+    if (passed)
+    {
+        std::cout << marker << '\n';
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -4096,6 +4138,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-029")
     {
         if (!RunTrAudit029())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-030")
+    {
+        if (!RunTrAudit030())
         {
             return 1;
         }

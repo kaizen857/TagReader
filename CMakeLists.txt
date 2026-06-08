@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(TAGREADER_ENABLE_SANITIZERS "Enable ASAN/UBSAN" OFF)
 option(TAGREADER_ENABLE_FUZZING "Enable fuzz targets" OFF)
+option(TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS "Force-disable Iconv for explicit no-iconv policy tests" OFF)
+option(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV "Allow Latin-1 fallback when building without Iconv" OFF)
 
 set(TAGREADER_SANITIZER_COMPILE_OPTIONS
     -O1
@@ -39,7 +41,13 @@ endfunction()
 # 2. 依赖
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
-find_package(Iconv)
+if(NOT TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS)
+    find_package(Iconv)
+endif()
+
+if(NOT Iconv_FOUND AND NOT TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
+    message(FATAL_ERROR "Iconv is required unless TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON is set explicitly")
+endif()
 
 # 3. 库目标
 add_library(TagReaderCore STATIC
@@ -79,7 +87,9 @@ target_link_libraries(TagReaderCore
 
 if(Iconv_FOUND)
     target_link_libraries(TagReaderCore PUBLIC Iconv::Iconv)
-    target_compile_definitions(TagReaderCore PRIVATE TAGREADER_HAS_ICONV=1)
+    target_compile_definitions(TagReaderCore PUBLIC TAGREADER_HAS_ICONV=1)
+else()
+    target_compile_definitions(TagReaderCore PUBLIC TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=1)
 endif()
 
 # 4. 轻量级测试程序
