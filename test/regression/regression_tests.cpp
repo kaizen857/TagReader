@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 25> kTestCases{{
+constexpr std::array<TestCase, 26> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -57,6 +57,7 @@ constexpr std::array<TestCase, 25> kTestCases{{
     {"TR-AUDIT-023", true},
     {"TR-AUDIT-024", true},
     {"TR-AUDIT-025", true},
+    {"TR-AUDIT-026", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -510,7 +511,7 @@ std::vector<std::uint8_t> BuildApeFooter(std::uint32_t tagSize, std::uint32_t it
     std::vector<std::uint8_t> footer;
     footer.insert(footer.end(), {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'});
     AppendU32LE(footer, 2000);     // version
-    AppendU32LE(footer, tagSize);  // tagSize (excludes footer, includes header if present)
+    AppendU32LE(footer, tagSize);  // tagSize includes item bytes plus footer, excludes optional header
     AppendU32LE(footer, itemCount);
     AppendU32LE(footer, flags);    // bit31=hasHeader, others reserved
     AppendU32LE(footer, 0);        // reserved (8 bytes total)
@@ -579,7 +580,7 @@ std::filesystem::path GenerateApeFile(std::string_view caseId,
     else
     {
         const std::vector<std::uint8_t> itemBytes = BuildApeItems(items);
-        const std::uint32_t totalTagSize = static_cast<std::uint32_t>(itemBytes.size());
+        const std::uint32_t totalTagSize = 32 + static_cast<std::uint32_t>(itemBytes.size());
         const std::uint32_t itemCount = static_cast<std::uint32_t>(items.size());
 
         const std::vector<std::uint8_t> footer = BuildApeFooter(totalTagSize, itemCount, 0);
@@ -610,12 +611,11 @@ bool AppendApeTag(const std::filesystem::path &audioPath,
 
     const std::vector<std::uint8_t> itemBytes = BuildApeItems(items);
     const std::uint32_t itemCount = static_cast<std::uint32_t>(items.size());
-    std::uint32_t tagSize = static_cast<std::uint32_t>(itemBytes.size());
+    const std::uint32_t tagSize = 32 + static_cast<std::uint32_t>(itemBytes.size());
 
     std::vector<std::uint8_t> tagBytes;
     if (withHeader)
     {
-        tagSize += 32;
         tagBytes = BuildApeHeader(tagSize, itemCount);
         tagBytes.insert(tagBytes.end(), itemBytes.begin(), itemBytes.end());
         const uint32_t footerFlags = 0x80000000; // hasHeader bit
@@ -630,6 +630,21 @@ bool AppendApeTag(const std::filesystem::path &audioPath,
     }
 
     audioBytes.insert(audioBytes.end(), tagBytes.begin(), tagBytes.end());
+    return WriteBinaryFile(outputPath, audioBytes);
+}
+
+bool AppendApeFooterWithSize(const std::filesystem::path &audioPath,
+                             const std::filesystem::path &outputPath,
+                             std::uint32_t tagSize)
+{
+    std::vector<std::uint8_t> audioBytes = ReadBinaryFile(audioPath);
+    if (audioBytes.empty())
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> footer = BuildApeFooter(tagSize, 1, 0);
+    audioBytes.insert(audioBytes.end(), footer.begin(), footer.end());
     return WriteBinaryFile(outputPath, audioBytes);
 }
 
@@ -3450,6 +3465,124 @@ bool RunTrAudit025()
     return allPassed;
 }
 
+bool RunTrAudit026()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-026";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-026 base MP3 generation failed\n";
+        return false;
+    }
+
+    const std::vector<ApeItem> specItems = {
+        {"Title", ApeTextValue("SpecTitle")},
+        {"LYRICS", ApeTextValue("SpecLyrics")},
+        {"Track", ApeTextValue("7")},
+    };
+
+    bool passed = true;
+    std::string scenarioOutput;
+
+    const auto checkSpecTag = [&](std::string_view label, bool withHeader)
+    {
+        const std::filesystem::path path = evidenceRoot / (std::string(label) + ".mp3");
+        if (!AppendApeTag(basePath, path, specItems, withHeader))
+        {
+            passed = false;
+            scenarioOutput += std::string(label) + "=write-fail\n";
+            return;
+        }
+
+        const MusicTag tag = TagReader::Read(path);
+        const std::string lyricText = tag.lyrics().empty() ? std::string() : std::string(tag.lyrics().lyrics().front().text());
+        const bool titleOk = Expect(tag.title() == "SpecTitle",
+            std::string(label) + " title should be SpecTitle, got: " + tag.title());
+        const bool lyricsOk = Expect(lyricText == "SpecLyrics",
+            std::string(label) + " lyrics should be SpecLyrics, got: " + lyricText);
+        const bool trackOk = Expect(tag.trackNumber() == 7,
+            std::string(label) + " track should be 7, got: " + std::to_string(tag.trackNumber()));
+        passed = titleOk && lyricsOk && trackOk && passed;
+        scenarioOutput += std::string(label) + " title=" + tag.title() +
+            " lyrics=" + lyricText +
+            " track=" + std::to_string(tag.trackNumber()) + "\n";
+    };
+
+    checkSpecTag("footer-only", false);
+    checkSpecTag("header-present", true);
+
+    const auto checkMalformedSize = [&](std::string_view label, std::uint32_t tagSize)
+    {
+        const std::filesystem::path path = evidenceRoot / (std::string(label) + ".mp3");
+        if (!AppendApeFooterWithSize(basePath, path, tagSize))
+        {
+            passed = false;
+            scenarioOutput += std::string(label) + "=write-fail\n";
+            return;
+        }
+
+        try
+        {
+            const MusicTag tag = TagReader::Read(path);
+            const bool titleOk = Expect(tag.title().empty(), std::string(label) + " title should be empty");
+            const bool lyricsOk = Expect(tag.lyrics().empty(), std::string(label) + " lyrics should be empty");
+            const bool trackOk = Expect(tag.trackNumber() == 0, std::string(label) + " track should be empty");
+            passed = titleOk && lyricsOk && trackOk && passed;
+            scenarioOutput += std::string(label) + " rejected=true\n";
+        }
+        catch (const std::exception &ex)
+        {
+            std::cerr << "TR-AUDIT-026 unexpected exception for " << label << ": " << ex.what() << '\n';
+            passed = false;
+        }
+    };
+
+    const std::vector<std::uint8_t> baseBytes = ReadBinaryFile(basePath);
+    if (baseBytes.empty())
+    {
+        return false;
+    }
+
+    checkMalformedSize("tag-size-too-small", 31);
+    checkMalformedSize("tag-size-beyond-file", static_cast<std::uint32_t>(baseBytes.size() + 64));
+
+    const std::string stdoutLike =
+        "TR-AUDIT-026 footer-only title=SpecTitle lyrics=SpecLyrics track=7\n"
+        "TR-AUDIT-026 header-present title=SpecTitle lyrics=SpecLyrics track=7\n"
+        "TR-AUDIT-026 malformed-sizes rejected=true\n"
+        "TR-AUDIT-026 " + std::string(passed ? "PASS" : "FAIL") + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt",
+                                "case=" + std::string(kCaseId) + "\n" +
+                                scenarioOutput +
+                                "passed=" + std::string(passed ? "true" : "false") + "\n");
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-026 footer-only title=SpecTitle lyrics=SpecLyrics track=7\n";
+        std::cout << "TR-AUDIT-026 header-present title=SpecTitle lyrics=SpecLyrics track=7\n";
+        std::cout << "TR-AUDIT-026 malformed-sizes rejected=true\n";
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3727,6 +3860,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-025")
     {
         if (!RunTrAudit025())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-026")
+    {
+        if (!RunTrAudit026())
         {
             return 1;
         }

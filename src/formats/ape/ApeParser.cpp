@@ -59,6 +59,42 @@ bool FindApeFooter(ReadContext &context, uint32_t &version, uint32_t &tagSize,
     return true;
 }
 
+bool ResolveApeItemRegion(ReadContext &context, uint32_t tagSize, uint32_t flags,
+                          uint64_t &itemRegionOffset, uint32_t &itemRegionSize)
+{
+    if (tagSize < 32 || tagSize > context.fileSize)
+    {
+        return false;
+    }
+
+    const uint64_t tagStart = context.fileSize - static_cast<uint64_t>(tagSize);
+    const bool hasHeader = (flags & 0x80000000) != 0;
+    if (hasHeader)
+    {
+        if (tagStart < 32)
+        {
+            return false;
+        }
+
+        const std::vector<uint8_t> headerBytes = ReadRange(context.input, tagStart - 32, 32);
+        if (headerBytes.size() != 32 || std::memcmp(headerBytes.data(), "APETAGEX", 8) != 0)
+        {
+            return false;
+        }
+
+        const uint8_t *header = headerBytes.data();
+        if (ReadLE32(header + 8) < 2000 || ReadLE32(header + 12) != tagSize ||
+            ReadLE32(header + 20) != flags)
+        {
+            return false;
+        }
+    }
+
+    itemRegionOffset = tagStart;
+    itemRegionSize = tagSize - 32;
+    return true;
+}
+
 void ProcessApeTextItem(RawMetadata &metadata, std::string_view key, const uint8_t *valueData,
                         uint32_t valueSize)
 {
@@ -206,26 +242,16 @@ void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
         throw std::runtime_error("APE tag exceeds resource limits (itemCount)");
     }
 
-    const bool hasHeader = (flags & 0x80000000) != 0;
-
-    // Guard against unsigned subtraction wrap when tagSize > fileSize.
-    // The 32-byte footer is always at EOF; without header items sit before it,
-    // so tagSize must not exceed fileSize - 32 in either path.
-    // Without this check, fileSize - tagSize wraps to a huge uint64_t value.
-    if (tagSize > context.fileSize - 32)
+    uint64_t itemRegionOffset = 0;
+    uint32_t itemRegionSize = 0;
+    if (!ResolveApeItemRegion(context, tagSize, flags, itemRegionOffset, itemRegionSize))
     {
         return;
     }
 
-    // With header: items start at fileSize - tagSize (tagSize includes both header and items).
-    // Without header: items are right before the 32-byte footer, so start at fileSize - 32 - tagSize.
-    const uint64_t itemRegionOffset = hasHeader
-        ? context.fileSize - static_cast<uint64_t>(tagSize)
-        : context.fileSize - 32 - static_cast<uint64_t>(tagSize);
-
     const std::vector<uint8_t> itemBytes =
-        ReadRange(context.input, itemRegionOffset, tagSize, kMaxApeTagBytes);
-    if (itemBytes.size() < tagSize)
+        ReadRange(context.input, itemRegionOffset, itemRegionSize, kMaxApeTagBytes);
+    if (itemBytes.size() < itemRegionSize)
     {
         return;
     }
@@ -325,14 +351,16 @@ void ReadApeLyrics(ReadContext &context, RawLyrics &lyrics)
         return;
     }
 
-    const bool hasHeader = (flags & 0x80000000) != 0;
-    const uint64_t itemRegionOffset = hasHeader
-        ? context.fileSize - static_cast<uint64_t>(tagSize)
-        : context.fileSize - 32 - static_cast<uint64_t>(tagSize);
+    uint64_t itemRegionOffset = 0;
+    uint32_t itemRegionSize = 0;
+    if (!ResolveApeItemRegion(context, tagSize, flags, itemRegionOffset, itemRegionSize))
+    {
+        return;
+    }
 
     const std::vector<uint8_t> itemBytes =
-        ReadRange(context.input, itemRegionOffset, tagSize, kMaxApeTagBytes);
-    if (itemBytes.size() < tagSize)
+        ReadRange(context.input, itemRegionOffset, itemRegionSize, kMaxApeTagBytes);
+    if (itemBytes.size() < itemRegionSize)
     {
         return;
     }
