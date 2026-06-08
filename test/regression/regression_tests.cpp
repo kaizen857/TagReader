@@ -31,7 +31,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 26> kTestCases{{
+constexpr std::array<TestCase, 27> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -58,6 +58,7 @@ constexpr std::array<TestCase, 26> kTestCases{{
     {"TR-AUDIT-024", true},
     {"TR-AUDIT-025", true},
     {"TR-AUDIT-026", true},
+    {"TR-AUDIT-027", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -3583,6 +3584,93 @@ bool RunTrAudit026()
     return passed;
 }
 
+bool RunTrAudit027()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-027";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        std::cerr << "TR-AUDIT-027 base MP3 generation failed\n";
+        return false;
+    }
+
+    const std::vector<std::uint8_t> legalFrames = Concat({
+        Id3v22Frame("TT2", Id3Latin1TextPayload("LegalTitle")),
+    });
+    const std::vector<std::uint8_t> unsupportedFrames = Concat({
+        Id3v22Frame("TT2", Id3Latin1TextPayload("FlagTitle")),
+    });
+
+    const std::filesystem::path legalPath = evidenceRoot / "v22-legal.mp3";
+    const std::filesystem::path unsupportedPath = evidenceRoot / "v22-unsupported.mp3";
+    std::vector<std::uint8_t> unsupportedBytes = Id3v22Tag(unsupportedFrames);
+    unsupportedBytes[5] = 0x40;
+
+    if (!PrependId3v22Tag(basePath, legalPath, legalFrames) || !WriteBinaryFile(unsupportedPath, [&]
+        {
+            std::vector<std::uint8_t> output = ReadBinaryFile(basePath);
+            if (output.empty())
+            {
+                return output;
+            }
+
+            output.insert(output.begin(), unsupportedBytes.begin(), unsupportedBytes.end());
+            return output;
+        }()))
+    {
+        std::cerr << "TR-AUDIT-027 failed to write test files\n";
+        return false;
+    }
+
+    const MusicTag legalTag = TagReader::Read(legalPath);
+    const MusicTag unsupportedTag = TagReader::Read(unsupportedPath);
+
+    bool passed = true;
+    passed = Expect(legalTag.title() == "LegalTitle",
+        "TR-AUDIT-027 legal v2.2 title should be LegalTitle, got: " + legalTag.title()) && passed;
+    passed = Expect(unsupportedTag.title().empty(),
+        "TR-AUDIT-027 unsupported v2.2 flags should keep title empty, got: " + unsupportedTag.title()) && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-027 legal flags=0x00 title=" + legalTag.title() + "\n"
+        "TR-AUDIT-027 unsupported flags=0x40 title=" + unsupportedTag.title() + "\n"
+        "TR-AUDIT-027 unsupported-v22-flags-skipped\n"
+        "TR-AUDIT-027 PASS\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt",
+                                "case=" + std::string(kCaseId) + "\n" +
+                                "legalSample=" + legalPath.string() + "\n" +
+                                "unsupportedSample=" + unsupportedPath.string() + "\n" +
+                                "legalTitle=" + legalTag.title() + "\n" +
+                                "unsupportedTitle=" + unsupportedTag.title() + "\n" +
+                                "passed=" + std::string(passed ? "true" : "false") + "\n");
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-027 legal flags=0x00 title=" << legalTag.title() << '\n';
+        std::cout << "TR-AUDIT-027 unsupported flags=0x40 title=" << unsupportedTag.title() << '\n';
+        std::cout << "TR-AUDIT-027 unsupported-v22-flags-skipped\n";
+    }
+
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -3871,6 +3959,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-026")
     {
         if (!RunTrAudit026())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-027")
+    {
+        if (!RunTrAudit027())
         {
             return 1;
         }

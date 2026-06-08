@@ -102,6 +102,11 @@ void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
 
     if (tagView.versionMajor == 2)
     {
+        if (!Id3v22TagFlagsAreSupported(tagView.flags))
+        {
+            return;
+        }
+
         ReadID3v22Frames(context, metadata, tagView.bytes, tagView.cursor);
         return;
     }
