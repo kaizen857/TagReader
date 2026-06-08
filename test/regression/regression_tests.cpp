@@ -24,8 +24,13 @@ extern "C"
 #include <string_view>
 #include <vector>
 
+#if defined(__unix__) || defined(__APPLE__)
+#define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 1
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 0
+#endif
 
 namespace
 {
@@ -861,6 +866,7 @@ bool HasProbeFiles(const std::filesystem::path &root)
     return false;
 }
 
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
 bool SetDirectoryPermissions(const std::filesystem::path &path, mode_t mode)
 {
     if (::chmod(path.c_str(), mode) != 0)
@@ -870,6 +876,12 @@ bool SetDirectoryPermissions(const std::filesystem::path &path, mode_t mode)
     }
     return true;
 }
+
+bool RunningAsRoot()
+{
+    return ::geteuid() == 0;
+}
+#endif
 
 std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::initializer_list<std::string_view> comments)
 {
@@ -3929,6 +3941,7 @@ bool RunTrAudit031()
         std::cerr << "failed to create non-writable directory: " << ec.message() << '\n';
         return false;
     }
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
     if (SetDirectoryPermissions(nonWritableDir, 0555))
     {
         try
@@ -3942,7 +3955,7 @@ bool RunTrAudit031()
         }
         if (!nonWritableRejected)
         {
-            nonWritableSkipped = (::geteuid() == 0);
+            nonWritableSkipped = RunningAsRoot();
         }
         (void)SetDirectoryPermissions(nonWritableDir, 0755);
     }
@@ -3950,6 +3963,10 @@ bool RunTrAudit031()
     {
         nonWritableSkipped = true;
     }
+#else
+    nonWritableSkipped = true;
+    nonWritableError = "chmod/geteuid unavailable on this platform";
+#endif
     const bool nonWritableOk = Expect(nonWritableRejected || nonWritableSkipped, "non-writable explicit dir should reject or platform-skip");
     const bool nonWritableNoProbe = Expect(!HasProbeFiles(nonWritableDir), "non-writable explicit dir should not leave probe files");
     const bool nonWritableNoPng = Expect(nonWritableRejected ? CountPngFiles(nonWritableDir) == 0 : true, "non-writable explicit dir should not leave partial PNG files");
