@@ -221,29 +221,17 @@ void NormalizeLyrics(RawLyrics &lyrics)
     {
         lyrics.timedLines.resize(kMaxLyricLines);
     }
-    std::stable_sort(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &lhs, const auto &rhs)
-                     { return lhs.first < rhs.first; });
-    for (auto groupBegin = lyrics.timedLines.begin(); groupBegin != lyrics.timedLines.end();)
-    {
-        const auto timestamp = groupBegin->first;
-        auto groupEnd = std::find_if(groupBegin, lyrics.timedLines.end(), [timestamp](const auto &line)
-                                     { return line.first != timestamp; });
-        auto write = groupBegin;
-        for (auto read = groupBegin; read != groupEnd; ++read)
-        {
-            const bool duplicate = std::any_of(groupBegin, write, [&read](const auto &line)
-                                               { return line.second == read->second; });
-            if (!duplicate)
-            {
-                if (write != read)
-                {
-                    *write = std::move(*read);
-                }
-                ++write;
-            }
-        }
-        groupBegin = lyrics.timedLines.erase(write, groupEnd);
-    }
+    std::sort(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &lhs, const auto &rhs)
+              {
+                  if (lhs.first != rhs.first)
+                  {
+                      return lhs.first < rhs.first;
+                  }
+                  return lhs.second < rhs.second;
+              });
+    lyrics.timedLines.erase(std::unique(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &lhs, const auto &rhs)
+                                        { return lhs.first == rhs.first && lhs.second == rhs.second; }),
+                            lyrics.timedLines.end());
 }
 
 void ReadLyricsFromPlainText(RawLyrics &lyrics, std::string_view text)

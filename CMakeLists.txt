@@ -141,6 +141,22 @@ target_link_libraries(TagReaderFlacMalformedMetadataTests
         TagReaderCore
 )
 
+add_executable(TagReaderLyricsNormalizeComplexityTests
+    test/regression/lyrics_normalize_complexity_tests.cpp
+)
+
+tagreader_enable_sanitizers(TagReaderLyricsNormalizeComplexityTests)
+
+target_include_directories(TagReaderLyricsNormalizeComplexityTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(TagReaderLyricsNormalizeComplexityTests
+    PRIVATE
+        TagReaderCore
+)
+
 if(TAGREADER_ENABLE_FUZZING)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(WARNING "TAGREADER_ENABLE_FUZZING requires Clang libFuzzer support; TagReaderFuzz will not be built")
