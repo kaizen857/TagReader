@@ -141,6 +141,17 @@ target_link_libraries(TagReaderFlacMalformedMetadataTests
         TagReaderCore
 )
 
+add_executable(TagReaderDefaultCoverExportDirectoryTests
+    test/regression/default_cover_export_directory_tests.cpp
+)
+
+tagreader_enable_sanitizers(TagReaderDefaultCoverExportDirectoryTests)
+
+target_link_libraries(TagReaderDefaultCoverExportDirectoryTests
+    PRIVATE
+        TagReaderCore
+)
+
 add_executable(TagReaderLyricsNormalizeComplexityTests
     test/regression/lyrics_normalize_complexity_tests.cpp
 )

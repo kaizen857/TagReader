@@ -19,7 +19,19 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
+
+#if defined(__unix__) || defined(__APPLE__)
+#define TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR 1
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#else
+#define TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR 0
+#endif
 
 namespace tagreader_core
 {
@@ -34,15 +46,55 @@ bool IsCoverExportOrCacheError(std::string_view message)
     return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
 }
 
+#if TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR
+class FileDescriptor
+{
+public:
+    explicit FileDescriptor(int value) noexcept : fd_(value) {}
+    ~FileDescriptor()
+    {
+        if (fd_ >= 0)
+        {
+            ::close(fd_);
+        }
+    }
+    FileDescriptor(const FileDescriptor &) = delete;
+    FileDescriptor &operator=(const FileDescriptor &) = delete;
+
+    int get() const noexcept
+    {
+        return fd_;
+    }
+
+private:
+    int fd_{-1};
+};
+#endif
+
+[[noreturn]] void ThrowDefaultCoverExportDirError(const std::filesystem::path &coverExportDir, const std::string &reason)
+{
+    throw std::runtime_error("cover export default directory is not private: " + coverExportDir.string() + ": " + reason);
+}
+
 std::filesystem::path DefaultCoverExportDir()
 {
+    const char *runtimeDir = std::getenv("XDG_RUNTIME_DIR");
+    if (runtimeDir != nullptr && runtimeDir[0] != '\0')
+    {
+        return std::filesystem::path(runtimeDir) / "tagreader-covers";
+    }
+
     std::error_code ec;
     std::filesystem::path tempRoot = std::filesystem::temp_directory_path(ec);
     if (ec)
     {
         throw std::runtime_error("failed to query default cover export directory: " + ec.message());
     }
-    return tempRoot / "tagreader-covers";
+#if TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR
+    return tempRoot / ("tagreader-covers-" + std::to_string(static_cast<unsigned long long>(::geteuid())));
+#else
+    return tempRoot / "tagreader-covers-private";
+#endif
 }
 
 std::filesystem::path MakeCoverExportProbePath(const std::filesystem::path &coverExportDir)
@@ -161,6 +213,102 @@ void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
         removeProbe();
         throw std::runtime_error("cover export probe delete failed: " + coverExportDir.string() + ": " + ec.message());
     }
+}
+
+void RejectDefaultCoverExportDirSymlink(const std::filesystem::path &coverExportDir)
+{
+    std::error_code ec;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(coverExportDir, ec);
+    if (ec)
+    {
+        if (ec == std::make_error_code(std::errc::no_such_file_or_directory))
+        {
+            return;
+        }
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to query path: " + ec.message());
+    }
+    if (std::filesystem::is_symlink(status))
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "symlink root is not allowed");
+    }
+}
+
+void HardenDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
+{
+    RejectDefaultCoverExportDirSymlink(coverExportDir);
+
+    std::error_code ec;
+    std::filesystem::create_directories(coverExportDir, ec);
+    if (ec)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to create directory: " + ec.message());
+    }
+
+    RejectDefaultCoverExportDirSymlink(coverExportDir);
+    const std::filesystem::file_status status = std::filesystem::symlink_status(coverExportDir, ec);
+    if (ec)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to query directory: " + ec.message());
+    }
+    if (!std::filesystem::is_directory(status))
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "path is not a directory");
+    }
+
+#if TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR
+    int flags = O_RDONLY | O_CLOEXEC;
+#if defined(O_DIRECTORY)
+    flags |= O_DIRECTORY;
+#endif
+#if defined(O_NOFOLLOW)
+    flags |= O_NOFOLLOW;
+#endif
+    FileDescriptor fd(::open(coverExportDir.c_str(), flags));
+    if (fd.get() < 0)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to open directory without following symlinks: " + std::string(std::strerror(errno)));
+    }
+
+    struct stat statBuffer
+    {
+    };
+    if (::fstat(fd.get(), &statBuffer) != 0)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to stat directory: " + std::string(std::strerror(errno)));
+    }
+    if (!S_ISDIR(statBuffer.st_mode))
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "opened path is not a directory");
+    }
+    if (statBuffer.st_uid != ::geteuid())
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "directory owner is not the current user");
+    }
+    if (::fchmod(fd.get(), S_IRWXU) != 0)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to set private permissions: " + std::string(std::strerror(errno)));
+    }
+    if (::fstat(fd.get(), &statBuffer) != 0)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to restat directory: " + std::string(std::strerror(errno)));
+    }
+    if ((statBuffer.st_mode & (S_IRWXG | S_IRWXO)) != 0)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "directory is group/other accessible after hardening");
+    }
+#else
+    std::filesystem::permissions(coverExportDir, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace, ec);
+    if (ec)
+    {
+        ThrowDefaultCoverExportDirError(coverExportDir, "failed to set private permissions: " + ec.message());
+    }
+#endif
+}
+
+void ValidateDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
+{
+    HardenDefaultCoverExportDir(coverExportDir);
+    ValidateCoverExportDir(coverExportDir);
 }
 
 RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
@@ -382,8 +530,16 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     ValidatePath(filePath);
 
     ReadContext context = tagreader_media::OpenContext(filePath);
-    context.coverExportDir = coverExportDir.empty() ? DefaultCoverExportDir() : coverExportDir;
-    ValidateCoverExportDir(context.coverExportDir);
+    const bool useDefaultCoverExportDir = coverExportDir.empty();
+    context.coverExportDir = useDefaultCoverExportDir ? DefaultCoverExportDir() : coverExportDir;
+    if (useDefaultCoverExportDir)
+    {
+        ValidateDefaultCoverExportDir(context.coverExportDir);
+    }
+    else
+    {
+        ValidateCoverExportDir(context.coverExportDir);
+    }
     tagreader_media::DetectStream(context);
 
     const TagFormat tagFormat = tagreader_media::DetectTagFormat(context);

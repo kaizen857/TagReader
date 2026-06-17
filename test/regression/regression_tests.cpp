@@ -845,6 +845,21 @@ bool PathIsUnder(const std::filesystem::path &path, const std::filesystem::path 
     return mismatch.first == normalizedRoot.end();
 }
 
+std::filesystem::path ExpectedDefaultCoverExportDir()
+{
+    const char *runtimeDir = std::getenv("XDG_RUNTIME_DIR");
+    if (runtimeDir != nullptr && runtimeDir[0] != '\0')
+    {
+        return std::filesystem::path(runtimeDir) / "tagreader-covers";
+    }
+
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    return std::filesystem::temp_directory_path() / ("tagreader-covers-" + std::to_string(static_cast<unsigned long long>(::geteuid())));
+#else
+    return std::filesystem::temp_directory_path() / "tagreader-covers-private";
+#endif
+}
+
 bool HasProbeFiles(const std::filesystem::path &root)
 {
     std::error_code ec;
@@ -3994,7 +4009,7 @@ bool RunTrAudit031()
 {
     constexpr std::string_view kCaseId = "TR-AUDIT-031";
     const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
-    const std::filesystem::path defaultExportDir = std::filesystem::temp_directory_path() / "tagreader-covers";
+    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
     const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
     const std::filesystem::path nonWritableDir = evidenceRoot / "non-writable-covers";
     const std::filesystem::path symlinkTargetDir = evidenceRoot / "symlink-target-covers";
