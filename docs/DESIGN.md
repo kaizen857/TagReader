@@ -41,7 +41,7 @@
 
 ## 封面导出与缓存
 
-- `Read(path)` 默认使用 `std::filesystem::temp_directory_path() / "tagreader-covers"` 作为封面导出目录；`Read(path, coverExportDir)` 使用调用方显式提供的目录。
+- `Read(path)` 默认优先使用 `XDG_RUNTIME_DIR/tagreader-covers` 作为封面导出目录；不可用时回退到 UID 私有的临时目录，例如 POSIX 上的 `std::filesystem::temp_directory_path() / "tagreader-covers-$UID"`；`Read(path, coverExportDir)` 使用调用方显式提供的目录。
 - 实际导出目录会按需创建，必须存在且为目录，并通过写入、读取、删除探针文件的权限验证；显式提供的目录如果是 symlink 会在探针和缓存写入前被拒绝。
 - 封面缓存是 content-addressed PNG storage，缓存键基于音频文件内嵌图片原始字节计算。
 - 缓存路径格式为 `coverExportDir / first2hex / rest.png`，其中 `first2hex` 是 hash 前两个十六进制字符，`rest.png` 是剩余 hash 加 `.png` 后缀。
