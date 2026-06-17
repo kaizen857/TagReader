@@ -148,6 +148,17 @@ void ValidatePath(const std::filesystem::path &filePath)
 void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
 {
     std::error_code ec;
+    const std::filesystem::file_status rootStatus = std::filesystem::symlink_status(coverExportDir, ec);
+    if (ec && ec != std::make_error_code(std::errc::no_such_file_or_directory))
+    {
+        throw std::runtime_error("failed to query cover export directory: " + ec.message());
+    }
+    if (!ec && std::filesystem::is_symlink(rootStatus))
+    {
+        throw std::runtime_error("cover export directory symlink is not allowed: " + coverExportDir.string());
+    }
+    ec.clear();
+
     std::filesystem::create_directories(coverExportDir, ec);
     if (ec)
     {

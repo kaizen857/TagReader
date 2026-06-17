@@ -4100,7 +4100,7 @@ bool RunTrAudit031()
     const bool nonWritableNoProbe = Expect(!HasProbeFiles(nonWritableDir), "non-writable explicit dir should not leave probe files");
     const bool nonWritableNoPng = Expect(nonWritableRejected ? CountPngFiles(nonWritableDir) == 0 : true, "non-writable explicit dir should not leave partial PNG files");
 
-    bool symlinkAccepted = false;
+    bool symlinkRejected = false;
     bool symlinkSkipped = false;
     std::string symlinkError;
     std::filesystem::create_directories(symlinkTargetDir, ec);
@@ -4120,22 +4120,24 @@ bool RunTrAudit031()
     {
         try
         {
-            const MusicTag symlinkTag = TagReader::Read(samplePath, symlinkExportDir);
-            symlinkAccepted = !symlinkTag.coverPath().empty() && PathIsUnder(symlinkTag.coverPath(), symlinkTargetDir) && CountPngFiles(symlinkTargetDir) == 1;
+            (void)TagReader::Read(samplePath, symlinkExportDir);
         }
         catch (const std::exception &ex)
         {
             symlinkError = ex.what();
+            symlinkRejected = symlinkError.find("cover export") != std::string::npos &&
+                              (symlinkError.find("symlink") != std::string::npos || symlinkError.find("symbolic link") != std::string::npos);
         }
     }
-    const bool symlinkOk = Expect(symlinkAccepted || symlinkSkipped, "explicit symlink directory should be accepted or platform-skip");
-    const bool symlinkNoProbe = Expect(!HasProbeFiles(symlinkTargetDir), "symlink export should not leave probe files");
+    const bool symlinkOk = Expect(symlinkRejected || symlinkSkipped, "explicit symlink directory should be rejected or platform-skip");
+    const bool symlinkNoProbe = Expect(!HasProbeFiles(symlinkTargetDir), "rejected symlink export should not leave probe files");
+    const bool symlinkNoPng = Expect(CountPngFiles(symlinkTargetDir) == 0, "rejected symlink export should not write PNG files into target");
 
     const std::string stdoutLike =
         "TR-AUDIT-031 default-temp-cover-export\n"
         "TR-AUDIT-031 explicit-cover-export\n"
         "TR-AUDIT-031 non-writable-dir-" + std::string(nonWritableSkipped ? "platform-skip" : "rejected") + "\n"
-        "TR-AUDIT-031 symlink-dir-" + std::string(symlinkSkipped ? "platform-skip" : "accepted") + "\n"
+        "TR-AUDIT-031 symlink-dir-" + std::string(symlinkSkipped ? "platform-skip" : "rejected") + "\n"
         "TR-AUDIT-031 PASS\n";
     const std::string summary =
         "case=TR-AUDIT-031\n"
@@ -4151,7 +4153,7 @@ bool RunTrAudit031()
         "nonWritableError=" + nonWritableError + "\n" +
         "symlinkExportDir=" + symlinkExportDir.string() + "\n" +
         "symlinkTargetDir=" + symlinkTargetDir.string() + "\n" +
-        "symlinkAccepted=" + std::string(symlinkAccepted ? "true" : "false") + "\n" +
+        "symlinkRejected=" + std::string(symlinkRejected ? "true" : "false") + "\n" +
         "symlinkSkipped=" + std::string(symlinkSkipped ? "true" : "false") + "\n" +
         "symlinkError=" + symlinkError + "\n" +
         "validPngBytes=" + std::to_string(validPng.size()) + "\n";
@@ -4168,13 +4170,13 @@ bool RunTrAudit031()
 
     const bool passed = defaultPathPresent && defaultExists && defaultUnderTemp && defaultOnePng && defaultNoProbe &&
                         explicitPathPresent && explicitExists && explicitUnderDir && explicitOnePng && explicitMtimeOk && explicitReusePath && explicitReuseMtime && explicitNoProbe &&
-                        nonWritableOk && nonWritableNoProbe && nonWritableNoPng && symlinkOk && symlinkNoProbe;
+                        nonWritableOk && nonWritableNoProbe && nonWritableNoPng && symlinkOk && symlinkNoProbe && symlinkNoPng;
     if (passed)
     {
         std::cout << "TR-AUDIT-031 default-temp-cover-export\n";
         std::cout << "TR-AUDIT-031 explicit-cover-export\n";
         std::cout << "TR-AUDIT-031 non-writable-dir-" << (nonWritableSkipped ? "platform-skip" : "rejected") << '\n';
-        std::cout << "TR-AUDIT-031 symlink-dir-" << (symlinkSkipped ? "platform-skip" : "accepted") << '\n';
+        std::cout << "TR-AUDIT-031 symlink-dir-" << (symlinkSkipped ? "platform-skip" : "rejected") << '\n';
     }
     return passed;
 }

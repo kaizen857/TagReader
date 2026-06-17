@@ -391,32 +391,33 @@ bool DefaultRootSymlinkIsRejected(const std::filesystem::path &samplePath)
     return passed;
 }
 
-bool ExplicitSymlinkDirectoryStillAccepted(const std::filesystem::path &samplePath)
+bool ExplicitSymlinkDirectoryIsRejected(const std::filesystem::path &samplePath)
 {
-    const std::filesystem::path explicitTarget = "/tmp/tagreader-s1-explicit-target";
-    const std::filesystem::path explicitLink = "/tmp/tagreader-s1-explicit-link";
+    const std::filesystem::path explicitTarget = "/tmp/tagreader-s2-explicit-target";
+    const std::filesystem::path explicitLink = "/tmp/tagreader-s2-explicit-link";
 
     if (!PrepareCleanDirectory(explicitTarget) || !PrepareSymlink(explicitTarget, explicitLink))
     {
         return false;
     }
 
-    bool passed = true;
+    bool rejected = false;
+    std::string error;
     try
     {
-        const MusicTag tag = TagReader::Read(samplePath, explicitLink);
-        const std::filesystem::path coverPath = tag.coverPath();
-        passed = Expect(!coverPath.empty(), "explicit symlink directory should still export a cover") && passed;
-        passed = Expect(PathIsUnder(coverPath, explicitTarget), "explicit symlink directory should still resolve to target") && passed;
-        passed = Expect(CountPngFiles(explicitTarget) == 1, "explicit symlink target should contain one PNG") && passed;
-        std::cout << "S1 explicit-symlink-cover-path=" << coverPath.string() << '\n';
+        (void)TagReader::Read(samplePath, explicitLink);
     }
     catch (const std::exception &ex)
     {
-        std::cerr << "explicit symlink read failed: " << ex.what() << '\n';
-        passed = false;
+        error = ex.what();
+        rejected = error.find("cover export") != std::string::npos &&
+                   (error.find("symlink") != std::string::npos || error.find("symbolic link") != std::string::npos);
     }
 
+    bool passed = true;
+    passed = Expect(rejected, "explicit symlink directory should be rejected before cover export") && passed;
+    passed = Expect(CountPngFiles(explicitTarget) == 0, "rejected explicit symlink target should stay empty") && passed;
+    std::cout << "S2 explicit-symlink-error=" << error << '\n';
     return passed;
 }
 }
@@ -450,7 +451,7 @@ int main()
     passed = DefaultFallbackIgnoresLegacyRootSymlink(samplePath) && passed;
     passed = XdgRuntimeDefaultIsPreferred(samplePath) && passed;
     passed = DefaultRootSymlinkIsRejected(samplePath) && passed;
-    passed = ExplicitSymlinkDirectoryStillAccepted(samplePath) && passed;
+    passed = ExplicitSymlinkDirectoryIsRejected(samplePath) && passed;
 
     if (passed)
     {
