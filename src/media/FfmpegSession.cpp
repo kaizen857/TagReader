@@ -276,12 +276,46 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     {
         throw std::bad_alloc();
     }
+    struct FormatContextGuard
+    {
+        AVFormatContext *context{};
+
+        explicit FormatContextGuard(AVFormatContext *initialContext) noexcept
+            : context(initialContext)
+        {
+        }
+
+        ~FormatContextGuard()
+        {
+            if (context != nullptr)
+            {
+                avformat_free_context(context);
+            }
+        }
+
+        FormatContextGuard(const FormatContextGuard &) = delete;
+        FormatContextGuard &operator=(const FormatContextGuard &) = delete;
+
+        void Reset(AVFormatContext *newContext) noexcept
+        {
+            context = newContext;
+        }
+
+        void Release() noexcept
+        {
+            context = nullptr;
+        }
+    };
+    FormatContextGuard formatContextGuard{formatContext};
+
     AVIOContext *avioContext = CreateAvioContext(context.input.get(), context.fileSize);
     formatContext->pb = avioContext;
 
     const int openResult = avformat_open_input(&formatContext, nullptr, nullptr, nullptr);
+    formatContextGuard.Reset(formatContext);
     if (openResult < 0)
     {
+        formatContextGuard.Release();
         FreeAvioContext(avioContext);
         if (formatContext != nullptr)
         {
@@ -294,6 +328,7 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     const int infoResult = avformat_find_stream_info(formatContext, nullptr);
     if (infoResult < 0)
     {
+        formatContextGuard.Release();
         AVIOContext *failedAvioContext = formatContext->pb;
         avformat_close_input(&formatContext);
         FreeAvioContext(failedAvioContext);
@@ -301,6 +336,7 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     }
 
     context.formatContext.reset(formatContext);
+    formatContextGuard.Release();
     return context;
 }
 }
