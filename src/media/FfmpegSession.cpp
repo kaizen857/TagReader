@@ -294,7 +294,9 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     const int infoResult = avformat_find_stream_info(formatContext, nullptr);
     if (infoResult < 0)
     {
+        AVIOContext *failedAvioContext = formatContext->pb;
         avformat_close_input(&formatContext);
+        FreeAvioContext(failedAvioContext);
         throw std::runtime_error("avformat_find_stream_info failed: " + MakeFFmpegError(infoResult));
     }
 
