@@ -130,6 +130,17 @@ target_link_libraries(TagReaderRegressionTests
         TagReaderCore
 )
 
+add_executable(TagReaderFlacMalformedMetadataTests
+    test/regression/flac_malformed_metadata_tests.cpp
+)
+
+tagreader_enable_sanitizers(TagReaderFlacMalformedMetadataTests)
+
+target_link_libraries(TagReaderFlacMalformedMetadataTests
+    PRIVATE
+        TagReaderCore
+)
+
 if(TAGREADER_ENABLE_FUZZING)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(WARNING "TAGREADER_ENABLE_FUZZING requires Clang libFuzzer support; TagReaderFuzz will not be built")

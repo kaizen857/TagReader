@@ -209,14 +209,24 @@ void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata)
             const std::vector<uint8_t> block = ReadRange(context.input, cursor, static_cast<std::size_t>(blockSize), kMaxTextFieldBytes);
             if (block.size() != blockSize)
             {
-                throw std::runtime_error("failed to read FLAC Vorbis comment block");
+                cursor = blockEnd;
+                if (lastBlock)
+                {
+                    break;
+                }
+                continue;
             }
 
             const bool ok = ForEachFlacVorbisCommentEntry(block.data(), block.size(), [&](std::string_view entry)
                                                           { tagreader_vorbis::ReadVorbisCommentEntry(metadata, entry); });
             if (!ok)
             {
-                throw std::runtime_error("invalid FLAC Vorbis comment block");
+                cursor = blockEnd;
+                if (lastBlock)
+                {
+                    break;
+                }
+                continue;
             }
         }
         else if (blockType == 6)
