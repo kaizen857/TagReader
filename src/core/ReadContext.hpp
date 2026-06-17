@@ -1,9 +1,10 @@
 #ifndef TAGREADER_CORE_READCONTEXT_HPP
 #define TAGREADER_CORE_READCONTEXT_HPP
 
+#include "io/ByteReader.hpp"
+
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -31,7 +32,7 @@ struct ReadContext
 
     std::filesystem::path filePath;
     std::filesystem::path coverExportDir;
-    std::ifstream input;
+    tagreader_io::FileInput input;
     std::uintmax_t fileSize{};
     std::filesystem::file_time_type lastModified{};
     std::unique_ptr<AVFormatContext, FormatContextDeleter> formatContext;

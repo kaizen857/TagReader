@@ -3,13 +3,34 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <optional>
 #include <span>
 #include <vector>
 
 namespace tagreader_io
 {
+class FileInput
+{
+public:
+    FileInput() noexcept = default;
+    explicit FileInput(int fd) noexcept;
+    ~FileInput();
+
+    FileInput(const FileInput &) = delete;
+    FileInput &operator=(const FileInput &) = delete;
+    FileInput(FileInput &&other) noexcept;
+    FileInput &operator=(FileInput &&other) noexcept;
+
+    int get() const noexcept;
+    int release() noexcept;
+    void reset(int fd = -1) noexcept;
+    bool is_open() const noexcept;
+    void clear() noexcept;
+
+private:
+    int fd_{-1};
+};
+
 class ByteCursor
 {
 public:
@@ -34,8 +55,8 @@ uint32_t ReadSyncSafe32(const uint8_t *data);
 bool IsValidSyncSafe32(const uint8_t *data);
 bool TryAddUintmax(std::uintmax_t base, std::uintmax_t delta, std::uintmax_t &result);
 bool TryAddSize(std::size_t base, std::size_t delta, std::size_t &result);
-std::vector<uint8_t> ReadRange(std::ifstream &input, std::uintmax_t offset, std::size_t size, std::size_t maxSize);
-std::vector<uint8_t> ReadRange(std::ifstream &input, std::uintmax_t offset, std::size_t size);
+std::vector<uint8_t> ReadRange(FileInput &input, std::uintmax_t offset, std::size_t size, std::size_t maxSize);
+std::vector<uint8_t> ReadRange(FileInput &input, std::uintmax_t offset, std::size_t size);
 }
 
 #endif

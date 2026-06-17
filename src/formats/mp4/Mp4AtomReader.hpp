@@ -1,9 +1,10 @@
 #ifndef TAGREADER_FORMATS_MP4_MP4ATOMREADER_HPP
 #define TAGREADER_FORMATS_MP4_MP4ATOMREADER_HPP
 
+#include "io/ByteReader.hpp"
+
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <functional>
 #include <optional>
 #include <string>
@@ -63,14 +64,14 @@ constexpr std::size_t kMaxMp4AtomPayloadBytes = 64z * 1024 * 1024;
 constexpr std::size_t kMaxMp4Atoms = 100000;
 
 bool AtomTypeIs(std::string_view atomType, std::string_view expected);
-bool ReadMp4AtomHeader(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, Mp4AtomHeader &atom);
-std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit);
-std::optional<Mp4AtomRange> ReadMp4MetaChildRange(std::ifstream &input, const Mp4AtomHeader &atom);
-ParseStatus WalkMp4IlstItems(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms, const Mp4ItemCallbacks &callbacks);
-std::vector<uint8_t> ReadMp4AtomPayload(std::ifstream &input, const Mp4AtomHeader &atom, std::size_t maxPayloadSize);
+bool ReadMp4AtomHeader(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, Mp4AtomHeader &atom);
+std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit);
+std::optional<Mp4AtomRange> ReadMp4MetaChildRange(tagreader_io::FileInput &input, const Mp4AtomHeader &atom);
+ParseStatus WalkMp4IlstItems(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms, const Mp4ItemCallbacks &callbacks);
+std::vector<uint8_t> ReadMp4AtomPayload(tagreader_io::FileInput &input, const Mp4AtomHeader &atom, std::size_t maxPayloadSize);
 
 template <typename Handler>
-ParseStatus ForEachMp4ChildAtom(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, std::size_t &visitedAtoms, Handler &&handler)
+ParseStatus ForEachMp4ChildAtom(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, std::size_t &visitedAtoms, Handler &&handler)
 {
     if (limit <= offset)
     {

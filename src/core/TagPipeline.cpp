@@ -108,12 +108,12 @@ std::filesystem::path MakeCoverExportProbePath(const std::filesystem::path &cove
 class StreamStateGuard
 {
 public:
-    explicit StreamStateGuard(std::ifstream &stream) noexcept : stream_(stream) {}
+    explicit StreamStateGuard(tagreader_io::FileInput &stream) noexcept : stream_(stream) {}
     ~StreamStateGuard() { stream_.clear(); }
     StreamStateGuard(const StreamStateGuard &) = delete;
     StreamStateGuard &operator=(const StreamStateGuard &) = delete;
 private:
-    std::ifstream &stream_;
+    tagreader_io::FileInput &stream_;
 };
 
 void ValidatePath(const std::filesystem::path &filePath)

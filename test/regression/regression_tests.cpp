@@ -899,6 +899,39 @@ bool RunningAsRoot()
 }
 #endif
 
+std::filesystem::path g_afterInitialOpenReplacementPath;
+std::filesystem::path g_afterInitialOpenTargetPath;
+bool g_replaceInputPathAfterInitialOpenEnabled = false;
+
+void ReplaceInputPathAfterInitialOpenForTests()
+{
+    if (!g_replaceInputPathAfterInitialOpenEnabled)
+    {
+        return;
+    }
+    g_replaceInputPathAfterInitialOpenEnabled = false;
+
+    std::error_code ec;
+    std::filesystem::rename(g_afterInitialOpenTargetPath, g_afterInitialOpenTargetPath.parent_path() / "opened-original.mp3", ec);
+    if (ec)
+    {
+        std::cerr << "TR-AUDIT-029 failed to move opened original: " << ec.message() << '\n';
+        return;
+    }
+
+    ec.clear();
+    std::filesystem::rename(g_afterInitialOpenReplacementPath, g_afterInitialOpenTargetPath, ec);
+    if (ec)
+    {
+        std::cerr << "TR-AUDIT-029 failed to install replacement path: " << ec.message() << '\n';
+    }
+}
+
+extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests()
+{
+    ReplaceInputPathAfterInitialOpenForTests();
+}
+
 std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::initializer_list<std::string_view> comments)
 {
     std::vector<std::uint8_t> payload;
@@ -3939,9 +3972,45 @@ bool RunTrAudit029()
     scenarioOutput += "symlinkError=" + symlinkError + "\n";
     scenarioOutput += "symlinkRejected=" + std::string(symlinkRejected ? "true" : "false") + "\n";
 
+    const std::filesystem::path replacementTargetPath = evidenceRoot / "replacement-window.mp3";
+    const std::filesystem::path replacementBadPath = evidenceRoot / "replacement-invalid.mp3";
+    const std::filesystem::path replacementBasePath = evidenceRoot / "replacement-base.mp3";
+    const bool replacementPrepared = GenerateBaseMp3(replacementBasePath) &&
+                                     PrependId3Tag(replacementBasePath, replacementTargetPath,
+                                                   Id3v23Frame("TIT2", Id3Latin1TextPayload("OpenedObjectTitle"))) &&
+                                     WriteTextFile(replacementBadPath, "not an mp3 replacement\n");
+    passed = Expect(replacementPrepared, "TR-AUDIT-029 replacement-window sample should be prepared") && passed;
+    if (replacementPrepared)
+    {
+        bool replacementReadOk = false;
+        std::string replacementError;
+        std::string replacementTitle;
+        g_afterInitialOpenTargetPath = replacementTargetPath;
+        g_afterInitialOpenReplacementPath = replacementBadPath;
+        g_replaceInputPathAfterInitialOpenEnabled = true;
+        try
+        {
+            const MusicTag replacementTag = TagReader::Read(replacementTargetPath);
+            replacementTitle = replacementTag.title();
+            replacementReadOk = replacementTitle == "OpenedObjectTitle";
+        }
+        catch (const std::exception &ex)
+        {
+            replacementError = ex.what();
+        }
+        g_replaceInputPathAfterInitialOpenEnabled = false;
+
+        passed = Expect(replacementReadOk,
+            "TR-AUDIT-029 path replacement after initial open must keep opened object, title=" + replacementTitle + ", error=" + replacementError) && passed;
+        scenarioOutput += "replacementReadOk=" + std::string(replacementReadOk ? "true" : "false") + "\n";
+        scenarioOutput += "replacementTitle=" + replacementTitle + "\n";
+        scenarioOutput += "replacementError=" + replacementError + "\n";
+    }
+
     const std::string stdoutLike =
         "TR-AUDIT-029 regular-file-ok\n"
         "TR-AUDIT-029 symlink-rejected-before-open\n"
+        "TR-AUDIT-029 replacement-after-open-bound\n"
         "TR-AUDIT-029 " + std::string(passed ? "PASS" : "FAIL") + "\n";
     const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
                             WriteTextFile(evidenceRoot / "summary.txt",
@@ -3959,6 +4028,7 @@ bool RunTrAudit029()
     {
         std::cout << "TR-AUDIT-029 regular-file-ok\n";
         std::cout << "TR-AUDIT-029 symlink-rejected-before-open\n";
+        std::cout << "TR-AUDIT-029 replacement-after-open-bound\n";
     }
 
     return passed;

@@ -2,12 +2,12 @@
 
 #include "Id3Frames.hpp"
 #include "common/ParseHelpers.hpp"
+#include "io/ByteReader.hpp"
 #include "text/TextCodec.hpp"
 
 #include <array>
 #include <cctype>
 #include <cstdint>
-#include <ios>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -34,21 +34,13 @@ void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     }
 
     // ID3v1 只在文件尾部固定 128 字节内读取，适合做轻量补充。
-    std::array<char, 128> buffer{};
-    context.input.clear();
-    context.input.seekg(-128, std::ios::end);
-    if (!context.input)
+    const std::vector<std::uint8_t> buffer = tagreader_io::ReadRange(context.input, context.fileSize - 128, 128);
+    if (buffer.size() != 128)
     {
         return;
     }
 
-    context.input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    if (context.input.gcount() != static_cast<std::streamsize>(buffer.size()))
-    {
-        return;
-    }
-
-    if (std::string_view(buffer.data(), 3) != "TAG")
+    if (std::string_view(reinterpret_cast<const char *>(buffer.data()), 3) != "TAG")
     {
         return;
     }
@@ -56,7 +48,7 @@ void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
     auto readField = [&](std::size_t offset, std::size_t size)
     {
         // ID3v1 has no encoding marker, so sniff raw bytes before converting to UTF-8.
-        const DecodedField field = DecodeRawText(std::string_view(buffer.data() + offset, size));
+        const DecodedField field = DecodeRawText(std::string_view(reinterpret_cast<const char *>(buffer.data() + offset), size));
         return field.success ? field.value : std::string{};
     };
 

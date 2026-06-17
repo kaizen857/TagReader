@@ -42,7 +42,7 @@ bool AtomTypeIs(std::string_view atomType, std::string_view expected)
     return atomType.size() == expected.size() && std::memcmp(atomType.data(), expected.data(), expected.size()) == 0;
 }
 
-bool ReadMp4AtomHeader(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, Mp4AtomHeader &atom)
+bool ReadMp4AtomHeader(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit, bool allowSizeZero, Mp4AtomHeader &atom)
 {
     atom = {};
     if (limit <= offset)
@@ -119,7 +119,7 @@ bool ReadMp4AtomHeader(std::ifstream &input, std::uintmax_t offset, std::uintmax
     return true;
 }
 
-std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit)
+std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit)
 {
     (void)input;
     (void)offset;
@@ -127,7 +127,7 @@ std::optional<std::uintmax_t> FindNextMp4SiblingAfterSizeZero(std::ifstream &inp
     return std::nullopt;
 }
 
-std::optional<Mp4AtomRange> ReadMp4MetaChildRange(std::ifstream &input, const Mp4AtomHeader &atom)
+std::optional<Mp4AtomRange> ReadMp4MetaChildRange(tagreader_io::FileInput &input, const Mp4AtomHeader &atom)
 {
     if (atom.payloadOffset > atom.atomEnd)
     {
@@ -163,7 +163,7 @@ std::optional<Mp4AtomRange> ReadMp4MetaChildRange(std::ifstream &input, const Mp
     return Mp4AtomRange{childOffset, atom.atomEnd};
 }
 
-ParseStatus WalkMp4IlstItems(std::ifstream &input, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms, const Mp4ItemCallbacks &callbacks)
+ParseStatus WalkMp4IlstItems(tagreader_io::FileInput &input, std::uintmax_t offset, std::uintmax_t limit, std::size_t &visitedAtoms, const Mp4ItemCallbacks &callbacks)
 {
     if (!input.is_open() || limit <= offset)
     {
@@ -250,7 +250,7 @@ ParseStatus WalkMp4IlstItems(std::ifstream &input, std::uintmax_t offset, std::u
     return ParseStatus::Ok;
 }
 
-std::vector<uint8_t> ReadMp4AtomPayload(std::ifstream &input, const Mp4AtomHeader &atom, std::size_t maxPayloadSize)
+std::vector<uint8_t> ReadMp4AtomPayload(tagreader_io::FileInput &input, const Mp4AtomHeader &atom, std::size_t maxPayloadSize)
 {
     if (atom.payloadOffset > atom.atomEnd)
     {
