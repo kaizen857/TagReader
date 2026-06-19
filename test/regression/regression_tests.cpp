@@ -1,5 +1,7 @@
 #include "TagReader.hpp"
+#include "core/TagFormat.hpp"
 #include "formats/common/BoundedReader.hpp"
+#include "media/ContainerDetector.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -22,6 +24,7 @@ extern "C"
 #include <future>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,7 +46,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 36> kTestCases{{
+constexpr std::array<TestCase, 37> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -80,6 +83,7 @@ constexpr std::array<TestCase, 36> kTestCases{{
     {"TR-AUDIT-034", true},
     {"TR-AUDIT-035", true},
     {"TR-AUDIT-036", true},
+    {"TR-AUDIT-037", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -427,6 +431,42 @@ bool GenerateBaseM4a(const std::filesystem::path &path)
     if (!CommandSucceeds(command))
     {
         std::cerr << "failed to generate base M4A sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool GenerateBaseAlac(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-037 requires an audio-backed ALAC sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a alac \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate base ALAC sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool GenerateBareAac(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-037 requires an audio-backed bare AAC sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a aac -f adts \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate bare AAC sample with ffmpeg\n";
         return false;
     }
 
@@ -1311,6 +1351,54 @@ MusicTag TryReadTagOrEmpty(const std::filesystem::path &path)
     {
         return MusicTag{};
     }
+}
+
+std::optional<tagreader_core::TagFormat> DetectTagFormatForTest(const std::filesystem::path &path, std::string containerName)
+{
+#if !TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    (void)path;
+    (void)containerName;
+    return std::nullopt;
+#else
+    std::error_code ec;
+    const std::uintmax_t fileSize = std::filesystem::file_size(path, ec);
+    if (ec)
+    {
+        std::cerr << "failed to query probe file size: " << path.string() << ": " << ec.message() << '\n';
+        return std::nullopt;
+    }
+
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open probe file: " << path.string() << '\n';
+        return std::nullopt;
+    }
+
+    tagreader_core::ReadContext context;
+    context.filePath = path;
+    context.fileSize = fileSize;
+    context.input = tagreader_io::FileInput(fd);
+    context.containerName = std::move(containerName);
+    return tagreader_media::DetectTagFormat(context);
+#endif
+}
+
+bool ExpectDetectedFormat(const std::filesystem::path &path,
+                          std::string containerName,
+                          tagreader_core::TagFormat expected,
+                          std::string_view message)
+{
+    const std::optional<tagreader_core::TagFormat> actual = DetectTagFormatForTest(path, std::move(containerName));
+    return Expect(actual.has_value() && *actual == expected, message);
+}
+
+bool MetadataFieldsAreEmpty(const MusicTag &tag)
+{
+    return tag.title().empty() && tag.artist().empty() && tag.album().empty() &&
+           tag.albumArtist().empty() && tag.composer().empty() && tag.genre().empty() &&
+           tag.year() == 0 && tag.trackNumber() == 0 && tag.discNumber() == 0 &&
+           tag.coverPath().empty() && tag.lyrics().empty();
 }
 
 std::string DescribeTag(const MusicTag &tag)
@@ -4783,6 +4871,146 @@ bool RunTrAudit036()
 #endif
 }
 
+bool RunTrAudit037()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-037";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path baseM4aPath = evidenceRoot / "base.m4a";
+    const std::filesystem::path baseAlacPath = evidenceRoot / "base-alac.m4a";
+    const std::filesystem::path baseMp3Path = evidenceRoot / "base.mp3";
+    const std::filesystem::path bareAacPath = evidenceRoot / "bare-no-tag.aac";
+    if (!GenerateBaseM4a(baseM4aPath) || !GenerateBaseAlac(baseAlacPath) ||
+        !GenerateBaseMp3(baseMp3Path) || !GenerateBareAac(bareAacPath))
+    {
+        return false;
+    }
+
+    const std::filesystem::path m4aPath = evidenceRoot / "reuse-m4a.m4a";
+    const std::filesystem::path alacPath = evidenceRoot / "reuse-alac.m4a";
+    const std::filesystem::path mp4AacPath = evidenceRoot / "mp4-contained-aac.aac";
+    if (!InjectMp4Ilst(baseM4aPath, m4aPath, Mp4TextItem({0xA9, 'n', 'a', 'm'}, "M4A Raw Title")) ||
+        !InjectMp4Ilst(baseAlacPath, alacPath, Mp4TextItem({0xA9, 'n', 'a', 'm'}, "ALAC Raw Title")) ||
+        !InjectMp4Ilst(baseM4aPath, mp4AacPath, Mp4TextItem({0xA9, 'n', 'a', 'm'}, "MP4 AAC Raw Title")))
+    {
+        return false;
+    }
+
+    const std::filesystem::path apeReusePath = evidenceRoot / "reuse-ape.mpc";
+    const std::filesystem::path id3ReusePath = evidenceRoot / "reuse-id3.wv";
+    if (!AppendApeTag(baseMp3Path, apeReusePath, {ApeItem{"Title", ApeTextValue("APE Raw Title")}}, true) ||
+        !PrependId3Tag(baseMp3Path, id3ReusePath, Id3v23Frame("TIT2", Id3Latin1TextPayload("ID3 Raw Title"))))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    const MusicTag m4aTag = TagReader::Read(m4aPath);
+    const MusicTag alacTag = TagReader::Read(alacPath);
+    const MusicTag mp4AacTag = TagReader::Read(mp4AacPath);
+    const MusicTag apeReuseTag = TagReader::Read(apeReusePath);
+    const MusicTag id3ReuseTag = TagReader::Read(id3ReusePath);
+    const MusicTag bareAacTag = TagReader::Read(bareAacPath);
+
+    passed = Expect(m4aTag.title() == "M4A Raw Title", "m4a should reuse MP4 ilst parser") && passed;
+    passed = Expect(alacTag.title() == "ALAC Raw Title", "ALAC-in-MP4 should reuse MP4 ilst parser") && passed;
+    passed = Expect(mp4AacTag.title() == "MP4 AAC Raw Title", "MP4-contained .aac should reuse MP4 ilst parser") && passed;
+    passed = Expect(apeReuseTag.title() == "APE Raw Title", "APEv2 raw source should reuse APE parser") && passed;
+    passed = Expect(id3ReuseTag.title() == "ID3 Raw Title", "ID3 raw source should reuse ID3 parser") && passed;
+    passed = Expect(bareAacTag.sampleRate() > 0 && bareAacTag.channels() > 0, "bare AAC should still return media info") && passed;
+    passed = Expect(MetadataFieldsAreEmpty(bareAacTag), "bare AAC without supported metadata should not fabricate fields") && passed;
+
+    const std::vector<std::uint8_t> mp4ProbeBytes = Atom({'f', 't', 'y', 'p'}, Bytes("M4A \0\0\0\0M4A "));
+    const std::filesystem::path mp4ProbePath = evidenceRoot / "probe-mp4-family.bin";
+    if (!WriteBinaryFile(mp4ProbePath, mp4ProbeBytes))
+    {
+        return false;
+    }
+    for (std::string_view containerName : {"m4a", "alac", "aac"})
+    {
+        passed = ExpectDetectedFormat(mp4ProbePath, std::string(containerName), tagreader_core::TagFormat::RawMp4Ilst,
+                                      "MP4 family signature should dispatch to RawMp4Ilst") &&
+                 passed;
+    }
+
+    const std::vector<ApeItem> apeItems = {ApeItem{"Title", ApeTextValue("Detect APE")}};
+    const std::vector<std::uint8_t> apeItemBytes = BuildApeItems(apeItems);
+    std::vector<std::uint8_t> apeBytes = Bytes("raw-audio");
+    apeBytes.insert(apeBytes.end(), apeItemBytes.begin(), apeItemBytes.end());
+    const std::vector<std::uint8_t> apeFooter = BuildApeFooter(32 + static_cast<std::uint32_t>(apeItemBytes.size()), 1, 0);
+    apeBytes.insert(apeBytes.end(), apeFooter.begin(), apeFooter.end());
+    const std::vector<std::uint8_t> id3Bytes = Concat({Id3v23Tag(Id3v23Frame("TIT2", Id3Latin1TextPayload("Detect ID3"))), Bytes("raw-audio")});
+    const std::vector<std::uint8_t> noTagBytes = Bytes("raw-audio-without-supported-tags");
+
+    for (std::string_view suffix : {"mpc", "mp+", "mpp", "wv", "tak", "tta", "shn"})
+    {
+        const std::filesystem::path apePath = evidenceRoot / ("detect-ape." + std::string(suffix));
+        const std::filesystem::path id3Path = evidenceRoot / ("detect-id3." + std::string(suffix));
+        const std::filesystem::path noTagPath = evidenceRoot / ("detect-empty." + std::string(suffix));
+        if (!WriteBinaryFile(apePath, apeBytes) || !WriteBinaryFile(id3Path, id3Bytes) || !WriteBinaryFile(noTagPath, noTagBytes))
+        {
+            return false;
+        }
+        passed = ExpectDetectedFormat(apePath, std::string(suffix), tagreader_core::TagFormat::RawApeV2,
+                                      "APEv2 fallback family should require and reuse actual APE footer") &&
+                 passed;
+        passed = ExpectDetectedFormat(id3Path, std::string(suffix), tagreader_core::TagFormat::RawId3v2,
+                                      "ID3 fallback family should require and reuse actual ID3 header") &&
+                 passed;
+        passed = ExpectDetectedFormat(noTagPath, std::string(suffix), tagreader_core::TagFormat::Unknown,
+                                      "fallback family without raw tags should remain unknown") &&
+                 passed;
+    }
+
+    const std::string stdoutLike =
+        "TR-AUDIT-037 mp4-family m4a=ok alac=ok mp4-contained-aac=ok\n"
+        "TR-AUDIT-037 raw-family ape=ok id3=ok no-tag=unknown\n"
+        "TR-AUDIT-037 bare-aac media-info=ok metadata-empty=ok\n"
+        "TR-AUDIT-037 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-037\n"
+        "marker=mp4-family-raw-mp4-ilst\n"
+        "marker=ape-id3-family-raw-tags-only\n"
+        "marker=bare-aac-empty-metadata\n"
+        "m4aTitle=" + std::string(m4aTag.title()) + "\n" +
+        "alacTitle=" + std::string(alacTag.title()) + "\n" +
+        "mp4AacTitle=" + std::string(mp4AacTag.title()) + "\n" +
+        "apeReuseTitle=" + std::string(apeReuseTag.title()) + "\n" +
+        "id3ReuseTitle=" + std::string(id3ReuseTag.title()) + "\n" +
+        "bareAacSampleRate=" + std::to_string(bareAacTag.sampleRate()) + "\n" +
+        "bareAacChannels=" + std::to_string(bareAacTag.channels()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "m4a_output.txt", DescribeTag(m4aTag)) &&
+                            WriteTextFile(evidenceRoot / "alac_output.txt", DescribeTag(alacTag)) &&
+                            WriteTextFile(evidenceRoot / "mp4_aac_output.txt", DescribeTag(mp4AacTag)) &&
+                            WriteTextFile(evidenceRoot / "ape_reuse_output.txt", DescribeTag(apeReuseTag)) &&
+                            WriteTextFile(evidenceRoot / "id3_reuse_output.txt", DescribeTag(id3ReuseTag)) &&
+                            WriteTextFile(evidenceRoot / "bare_aac_output.txt", DescribeTag(bareAacTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-037 mp4-family m4a=ok alac=ok mp4-contained-aac=ok\n";
+        std::cout << "TR-AUDIT-037 raw-family ape=ok id3=ok no-tag=unknown\n";
+        std::cout << "TR-AUDIT-037 bare-aac media-info=ok metadata-empty=ok\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -5181,6 +5409,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-036")
     {
         if (!RunTrAudit036())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-037")
+    {
+        if (!RunTrAudit037())
         {
             return 1;
         }

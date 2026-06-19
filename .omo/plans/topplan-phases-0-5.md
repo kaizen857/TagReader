@@ -256,7 +256,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `新增有界二进制读取工具` | Files: [`src/formats/common/BoundedReader.hpp`, `src/formats/common/BoundedReader.cpp`, `CMakeLists.txt`, regression tests]
 
-- [ ] 4. 明确可复用后缀与 raw tag 检测规则
+- [x] 4. 明确可复用后缀与 raw tag 检测规则
 
   **What to do**: 实现/验证 `m4a`、`alac`、MP4-contained `aac` 继续走 MP4 `ilst`；`mpc`、`mp+`、`mpp`、`wv`、`tak`、`tta`、`shn` 在实际携带 APEv2/ID3 时复用现有 parser；裸 `aac` 仅当有 ID3v2 或 MP4 容器标签时读取，不能声明无标签裸流支持。
   **Must NOT do**: 不按扩展名直接宣称完整支持；不新增无标准来源的专属 parser。

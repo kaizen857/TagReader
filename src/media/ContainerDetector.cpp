@@ -44,6 +44,21 @@ bool ContainsAny(std::string_view value, std::initializer_list<std::string_view>
     return false;
 }
 
+bool IsMp4FamilyContainer(std::string_view container)
+{
+    return ContainsAny(container, {"mp4", "mov", "m4a", "m4b", "m4p", "m4v", "alac", "3gp"});
+}
+
+bool IsRawApeFamilyContainer(std::string_view container)
+{
+    return ContainsAny(container, {"ape", "mpc", "mpc8", "musepack", "mp+", "mpp", "wv", "wavpack", "tak", "tta", "shn", "shorten"});
+}
+
+bool IsRawId3FamilyContainer(std::string_view container)
+{
+    return ContainsAny(container, {"mp3", "mpeg", "aac", "adts"}) || IsRawApeFamilyContainer(container);
+}
+
 bool HasId3v1Footer(tagreader_core::ReadContext &context)
 {
     if (context.fileSize < 128)
@@ -144,6 +159,11 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
         uint32_t apeFlags = 0;
         if (HasApeFooter(context, apeTagSize, apeItemCount, apeFlags))
         {
+            const std::string container = ToLower(context.containerName);
+            if (IsRawApeFamilyContainer(container) || IsRawId3FamilyContainer(container))
+            {
+                return TagFormat::RawApeV2;
+            }
             return TagFormat::Ape;
         }
     }
@@ -152,6 +172,11 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     const std::vector<uint8_t> header = tagreader_io::ReadRange(context.input, 0, static_cast<std::size_t>(std::min<std::uintmax_t>(context.fileSize, kHeaderProbeBytes)));
     if (HasAsciiAt(header, 0, "ID3"))
     {
+        const std::string container = ToLower(context.containerName);
+        if (IsRawId3FamilyContainer(container))
+        {
+            return TagFormat::RawId3v2;
+        }
         return TagFormat::Id3v2;
     }
     if (HasAsciiAt(header, 0, "fLaC"))
@@ -168,7 +193,7 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     }
     if (HasAsciiAt(header, 4, "ftyp"))
     {
-        return TagFormat::Mp4;
+        return TagFormat::RawMp4Ilst;
     }
     if (HasAsciiAt(header, 0, "RIFF") && HasAsciiAt(header, 8, "WAVE"))
     {
@@ -198,13 +223,18 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     }
     if (HasId3v1Footer(context))
     {
+        const std::string container = ToLower(context.containerName);
+        if (IsRawId3FamilyContainer(container))
+        {
+            return TagFormat::RawId3v2;
+        }
         return TagFormat::Id3v1;
     }
 
     const std::string container = ToLower(context.containerName);
-    if (ContainsAny(container, {"mp4", "mov", "m4"}))
+    if (IsMp4FamilyContainer(container))
     {
-        return TagFormat::Mp4;
+        return TagFormat::RawMp4Ilst;
     }
     if (container.find("opus") != std::string::npos)
     {
@@ -218,11 +248,7 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     {
         return TagFormat::Flac;
     }
-    if (ContainsAny(container, {"mp3", "mpeg"}))
-    {
-        return TagFormat::Id3v2;
-    }
-    if (ContainsAny(container, {"ape", "mpc", "mpc8", "wv", "tak", "tta"}))
+    if (container.find("ape") != std::string::npos)
     {
         return TagFormat::Ape;
     }

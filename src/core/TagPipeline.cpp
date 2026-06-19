@@ -361,6 +361,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
     switch (tagFormat)
     {
     case TagFormat::Mp4:
+    case TagFormat::RawMp4Ilst:
         ignoreMalformedMetadata([&]()
                                 { tagreader_mp4::ReadMp4Metadata(context, metadata); });
         break;
@@ -374,6 +375,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                                 { tagreader_ogg_vorbis::ReadOggVorbisMetadata(context, metadata); });
         break;
     case TagFormat::Ape:
+    case TagFormat::RawApeV2:
         ignoreMalformedMetadata([&]()
                                 { tagreader_ape::ReadApeMetadata(context, metadata); });
         context.input.clear();
@@ -394,6 +396,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         }
         break;
     case TagFormat::Id3v2:
+    case TagFormat::RawId3v2:
         // ID3v2 is authoritative, but ID3v1 may still fill fields absent from the leading tag.
         ignoreMalformedMetadata([&]()
                                 { tagreader_id3::ReadID3v2Metadata(context, metadata); });
@@ -413,10 +416,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
     case TagFormat::Dff:
     case TagFormat::Asf:
     case TagFormat::Matroska:
-    case TagFormat::RawId3v2:
     case TagFormat::RawVorbisComment:
-    case TagFormat::RawMp4Ilst:
-    case TagFormat::RawApeV2:
         break;
     }
 
@@ -445,6 +445,7 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
         {
         case TagFormat::Id3v1:
         case TagFormat::Id3v2:
+        case TagFormat::RawId3v2:
             tagreader_id3::ReadID3Lyrics(context, lyrics);
             break;
         case TagFormat::Flac:
@@ -455,9 +456,11 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
             tagreader_ogg_vorbis::ReadOggVorbisLyrics(context, lyrics);
             break;
         case TagFormat::Mp4:
+        case TagFormat::RawMp4Ilst:
             tagreader_mp4::ReadMp4Lyrics(context, lyrics);
             break;
         case TagFormat::Ape:
+        case TagFormat::RawApeV2:
             tagreader_ape::ReadApeLyrics(context, lyrics);
             break;
         case TagFormat::OggOpus:
@@ -467,10 +470,7 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
         case TagFormat::Dff:
         case TagFormat::Asf:
         case TagFormat::Matroska:
-        case TagFormat::RawId3v2:
         case TagFormat::RawVorbisComment:
-        case TagFormat::RawMp4Ilst:
-        case TagFormat::RawApeV2:
         case TagFormat::Unknown:
             break;
         }

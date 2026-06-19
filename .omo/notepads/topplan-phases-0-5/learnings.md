@@ -39,3 +39,11 @@
 - `DetectTagFormat()` keeps APE footer priority before ID3, then checks leading raw signatures for ID3/FLAC/Ogg/MP4/RIFF/AIFF/DSF/DFF/ASF/Matroska and FFmpeg container-name fallbacks for planned containers.
 - `ReadMetadata()` and `ReadLyrics()` explicitly leave not-yet-implemented planned enum paths empty, so probeable files can still return media info without fabricating metadata or calling missing parsers.
 - Public `TagReader::Read()` API, CUE/album APIs, and Task 3 bounded-reader files were not touched.
+
+## 2026-06-19 Task 4: reusable raw tag dispatch
+- `DetectTagFormat()` now treats actual `ftyp` signatures and safe MP4 family container names as `RawMp4Ilst`, then `ReadMetadata()`/`ReadLyrics()` reuse the existing MP4 parser for m4a, ALAC-in-MP4, and MP4-contained `.aac`.
+- APE footer priority over ID3 is preserved; when an APEv2 footer is present on MP3/AAC/APE-family containers it dispatches as `RawApeV2`, otherwise standalone APE remains `Ape`.
+- ID3v2/ID3v1 signatures on MP3/AAC and APE fallback suffix families (`mpc`, `mp+`, `mpp`, `wv`, `tak`, `tta`, `shn`) dispatch as `RawId3v2`; the same suffix families without raw tags remain `Unknown` instead of extension-only metadata support.
+- Added `TR-AUDIT-037` with `/tmp/opencode/tagreader_regression/TR-AUDIT-037` evidence: MP4 family parser reuse, APE/ID3 raw fallback reuse, fallback-family no-tag unknown detection, and bare ADTS AAC returning media info with empty metadata.
+- Verification passed: `lsp_diagnostics` on `src/media/ContainerDetector.cpp`, `src/core/TagPipeline.cpp`, and `test/regression/regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-037`.
+- No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-037` run.
