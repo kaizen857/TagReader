@@ -537,7 +537,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `解析 ASF 元数据` | Files: [`src/formats/asf/*`, CMakeLists, dispatch, tests]
 
-- [ ] 11. 新增 Matroska/MKA/WebM tags 与附件封面 parser
+- [x] 11. 新增 Matroska/MKA/WebM tags 与附件封面 parser
 
   **What to do**: 新增 `src/formats/matroska/` EBML reader，读取 Segment 内 `Tags/SimpleTag` 的 `TagName`/`TagString` 文本字段，按 Matroska tag target 选择 album/track 常规字段；对 `mka`、`webm`、Matroska 都按 `Attachments/AttachedFile` 提取封面图片数据（仅支持 image MIME 且受 64 MiB 级资源上限约束）；定义 element depth、element count、payload、attachment image 上限。
   **Must NOT do**: 不实现完整 Matroska demux；不解析 `TagBinary` 为任意 metadata；不下载外部附件或引用。

@@ -5,6 +5,7 @@
 #include "formats/dsd/DsdParser.hpp"
 #include "formats/flac/FlacParser.hpp"
 #include "formats/id3/Id3Parser.hpp"
+#include "formats/matroska/MatroskaParser.hpp"
 #include "formats/mp4/Mp4Parser.hpp"
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
 #include "formats/opus/OpusParser.hpp"
@@ -436,9 +437,12 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         break;
     case TagFormat::Asf:
         ignoreMalformedMetadata([&]()
-                                { tagreader_asf::ReadAsfMetadata(context, metadata); });
+                                 { tagreader_asf::ReadAsfMetadata(context, metadata); });
         break;
     case TagFormat::Matroska:
+        ignoreMalformedMetadata([&]()
+                                 { tagreader_matroska::ReadMatroskaMetadata(context, metadata); });
+        break;
     case TagFormat::RawVorbisComment:
         break;
     }

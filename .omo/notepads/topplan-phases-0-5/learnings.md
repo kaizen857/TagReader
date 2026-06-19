@@ -93,3 +93,10 @@
 - Text descriptors decode as UTF-16LE and map title/author/album/albumArtist/year/track/comment/lyrics into raw fields; malformed text descriptors are local skips.
 - `WM/Picture` binary descriptors use the existing content-addressed PNG cover cache through `WriteCoverAsPng()` and enforce descriptor/image payload limits before export.
 - Added `TR-AUDIT-049`, `TR-AUDIT-050`, and `TR-AUDIT-051` covering ASF happy path, UTF-16LE valid/invalid descriptors, oversized object/descriptor/image limits, bad magic, and local skip behavior.
+
+## 2026-06-19 Task 11: Matroska/MKA/WebM tags and attachment covers
+- Added `src/formats/matroska/MatroskaParser.*`; it walks EBML/Segment enough for `Tags`/`Tag`/nested `SimpleTag` text and `Attachments`/`AttachedFile` image payloads without adding demux, chapters, cues, or external URL handling.
+- Matroska text tags map common names (`TITLE`, `ARTIST`, `ALBUM`, `DATE_RELEASED`/`DATE`, `GENRE`, track/disc and pragmatic variants) into `RawMetadata`; lyrics remain intentionally empty because Task 11 did not include Matroska lyrics semantics.
+- Image attachments export only when `FileMediaType` starts with `image/` and `FileData` is within the 64 MiB image limit, using the existing content-addressed PNG cover cache.
+- Parser limits cover scan size, element count, nesting depth, generic payload size, text size, and attachment image size; unknown elements, unknown-size elements, malformed bounds, deep nesting, and oversized payloads are local empty/skip behavior.
+- Added `TR-AUDIT-052`, `TR-AUDIT-053`, and `TR-AUDIT-054` synthetic EBML regressions under `/tmp/opencode/tagreader_regression` for text mapping, attachment cover export, and malformed/resource-limit behavior.

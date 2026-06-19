@@ -4,6 +4,7 @@
 #include "formats/asf/AsfParser.hpp"
 #include "formats/common/BoundedReader.hpp"
 #include "formats/dsd/DsdParser.hpp"
+#include "formats/matroska/MatroskaParser.hpp"
 #include "formats/riff/RiffParser.hpp"
 #include "media/ContainerDetector.hpp"
 
@@ -50,7 +51,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 51> kTestCases{{
+constexpr std::array<TestCase, 54> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -102,6 +103,9 @@ constexpr std::array<TestCase, 51> kTestCases{{
     {"TR-AUDIT-049", true},
     {"TR-AUDIT-050", true},
     {"TR-AUDIT-051", true},
+    {"TR-AUDIT-052", true},
+    {"TR-AUDIT-053", true},
+    {"TR-AUDIT-054", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -1360,6 +1364,142 @@ bool ReadAsfRawTagsForTest(const std::filesystem::path &path,
     (void)rawMetadata;
     (void)rawLyrics;
     std::cerr << "ASF internal RawMetadata assertions require POSIX FileInput\n";
+    return false;
+#endif
+}
+
+std::vector<std::uint8_t> MatroskaId(std::uint64_t id)
+{
+    std::vector<std::uint8_t> bytes;
+    bool started = false;
+    for (int shift = 56; shift >= 0; shift -= 8)
+    {
+        const auto byte = static_cast<std::uint8_t>((id >> shift) & 0xFFU);
+        if (byte != 0 || started)
+        {
+            bytes.push_back(byte);
+            started = true;
+        }
+    }
+    if (bytes.empty())
+    {
+        bytes.push_back(0x80);
+    }
+    return bytes;
+}
+
+void AppendMatroskaSize(std::vector<std::uint8_t> &bytes, std::uint64_t size)
+{
+    if (size <= 0x7FULL)
+    {
+        bytes.push_back(static_cast<std::uint8_t>(0x80U | size));
+        return;
+    }
+    if (size <= 0x3FFFULL)
+    {
+        bytes.push_back(static_cast<std::uint8_t>(0x40U | ((size >> 8) & 0x3FU)));
+        bytes.push_back(static_cast<std::uint8_t>(size & 0xFFU));
+        return;
+    }
+    if (size <= 0x1FFFFFULL)
+    {
+        bytes.push_back(static_cast<std::uint8_t>(0x20U | ((size >> 16) & 0x1FU)));
+        bytes.push_back(static_cast<std::uint8_t>((size >> 8) & 0xFFU));
+        bytes.push_back(static_cast<std::uint8_t>(size & 0xFFU));
+        return;
+    }
+    if (size <= 0x0FFFFFFFULL)
+    {
+        bytes.push_back(static_cast<std::uint8_t>(0x10U | ((size >> 24) & 0x0FU)));
+        bytes.push_back(static_cast<std::uint8_t>((size >> 16) & 0xFFU));
+        bytes.push_back(static_cast<std::uint8_t>((size >> 8) & 0xFFU));
+        bytes.push_back(static_cast<std::uint8_t>(size & 0xFFU));
+        return;
+    }
+    bytes.push_back(static_cast<std::uint8_t>(0x08U | ((size >> 32) & 0x07U)));
+    bytes.push_back(static_cast<std::uint8_t>((size >> 24) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((size >> 16) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((size >> 8) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(size & 0xFFU));
+}
+
+std::vector<std::uint8_t> MatroskaElement(std::uint64_t id, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes = MatroskaId(id);
+    AppendMatroskaSize(bytes, payload.size());
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> MatroskaUnknownSizeElement(std::uint64_t id, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes = MatroskaId(id);
+    bytes.push_back(0xFF);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> MatroskaTextElement(std::uint64_t id, std::string_view text)
+{
+    return MatroskaElement(id, Bytes(text));
+}
+
+std::vector<std::uint8_t> MatroskaSimpleTag(std::string_view name, std::string_view value)
+{
+    return MatroskaElement(0x67C8, Concat({
+        MatroskaTextElement(0x45A3, name),
+        MatroskaTextElement(0x4487, value),
+    }));
+}
+
+std::vector<std::uint8_t> MatroskaAttachedFile(std::string_view fileName, std::string_view mediaType, const std::vector<std::uint8_t> &fileData)
+{
+    return MatroskaElement(0x61A7, Concat({
+        MatroskaTextElement(0x466E, fileName),
+        MatroskaTextElement(0x4660, mediaType),
+        MatroskaElement(0x465C, fileData),
+    }));
+}
+
+std::vector<std::uint8_t> MatroskaFile(const std::vector<std::uint8_t> &segmentPayload)
+{
+    return Concat({
+        MatroskaElement(0x1A45DFA3, Concat({
+            MatroskaElement(0x4286, std::vector<std::uint8_t>{1}),
+            MatroskaTextElement(0x4282, "matroska"),
+        })),
+        MatroskaElement(0x18538067, segmentPayload),
+    });
+}
+
+bool ReadMatroskaRawMetadataForTest(const std::filesystem::path &path, const std::filesystem::path &coverExportDir, tagreader_core::RawMetadata &rawMetadata)
+{
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    std::error_code ec;
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open Matroska sample for internal parser assertion: " << path.string() << '\n';
+        return false;
+    }
+    tagreader_core::ReadContext context;
+    context.filePath = path;
+    context.coverExportDir = coverExportDir;
+    context.fileSize = std::filesystem::file_size(path, ec);
+    if (ec)
+    {
+        std::cerr << "failed to size Matroska sample for internal parser assertion: " << ec.message() << '\n';
+        ::close(fd);
+        return false;
+    }
+    context.input = tagreader_io::FileInput(fd);
+    tagreader_matroska::ReadMatroskaMetadata(context, rawMetadata);
+    return true;
+#else
+    (void)path;
+    (void)coverExportDir;
+    (void)rawMetadata;
+    std::cerr << "Matroska internal RawMetadata assertions require POSIX FileInput\n";
     return false;
 #endif
 }
@@ -7131,6 +7271,252 @@ bool RunTrAudit051()
     return passed;
 }
 
+bool RunTrAudit052()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-052";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path samplePath = evidenceRoot / "tags.mka";
+    const std::vector<std::uint8_t> tags = MatroskaElement(0x1254C367, MatroskaElement(0x7373, Concat({
+        MatroskaSimpleTag("TITLE", "Matroska Title"),
+        MatroskaSimpleTag("ARTIST", "Matroska Artist"),
+        MatroskaSimpleTag("ALBUM", "Matroska Album"),
+        MatroskaSimpleTag("DATE_RELEASED", "2026-06-19"),
+        MatroskaSimpleTag("GENRE", "Matroska Genre"),
+        MatroskaSimpleTag("TRACKNUMBER", "5/12"),
+    })));
+    if (!WriteBinaryFile(samplePath, MatroskaFile(tags)))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata rawMetadata{};
+    if (!ReadMatroskaRawMetadataForTest(samplePath, evidenceRoot / "covers", rawMetadata))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(rawMetadata.title == "Matroska Title", "Matroska TITLE SimpleTag should map title") && passed;
+    passed = Expect(rawMetadata.artist == "Matroska Artist", "Matroska ARTIST SimpleTag should map artist") && passed;
+    passed = Expect(rawMetadata.album == "Matroska Album", "Matroska ALBUM SimpleTag should map album") && passed;
+    passed = Expect(rawMetadata.year == 2026, "Matroska DATE_RELEASED SimpleTag should parse year") && passed;
+    passed = Expect(rawMetadata.genre == "Matroska Genre", "Matroska GENRE SimpleTag should map genre") && passed;
+    passed = Expect(rawMetadata.trackNumber == 5, "Matroska TRACKNUMBER SimpleTag should parse slash track") && passed;
+    passed = Expect(rawMetadata.coverPath.empty(), "text-only Matroska sample should not export cover") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-052 matroska-tags title=Matroska Title artist=Matroska Artist album=Matroska Album year=2026 genre=Matroska Genre track=5\n"
+        "TR-AUDIT-052 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-052\n"
+        "marker=matroska-simpletag-text-fields\n"
+        "sample=" + samplePath.string() + "\n" +
+        "title=" + rawMetadata.title + "\n" +
+        "artist=" + rawMetadata.artist + "\n" +
+        "album=" + rawMetadata.album + "\n" +
+        "year=" + std::to_string(rawMetadata.year) + "\n" +
+        "genre=" + rawMetadata.genre + "\n" +
+        "track=" + std::to_string(rawMetadata.trackNumber) + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-052 matroska-tags title=Matroska Title artist=Matroska Artist album=Matroska Album year=2026 genre=Matroska Genre track=5\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit053()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-053";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::filesystem::path samplePath = evidenceRoot / "attachment-cover.webm";
+    const std::filesystem::path nonImagePath = evidenceRoot / "attachment-non-image.mka";
+    const std::filesystem::path oversizedPath = evidenceRoot / "attachment-oversized.mka";
+    const std::vector<std::uint8_t> attachments = MatroskaElement(0x1941A469, Concat({
+        MatroskaAttachedFile("cover.txt", "text/plain", Bytes("not a cover")),
+        MatroskaAttachedFile("cover.png", "image/png", validPng),
+    }));
+    const std::vector<std::uint8_t> oversizedImage(static_cast<std::size_t>(64ULL * 1024ULL * 1024ULL + 1ULL), 0x89);
+    if (!WriteBinaryFile(samplePath, MatroskaFile(Concat({MatroskaElement(0x1254C367, MatroskaSimpleTag("TITLE", "Attachment Title")), attachments}))) ||
+        !WriteBinaryFile(nonImagePath, MatroskaFile(MatroskaElement(0x1941A469, MatroskaAttachedFile("cover.bin", "application/octet-stream", validPng)))) ||
+        !WriteBinaryFile(oversizedPath, MatroskaFile(MatroskaElement(0x1941A469, MatroskaAttachedFile("huge.png", "image/png", oversizedImage)))))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata rawMetadata{};
+    tagreader_core::RawMetadata nonImageRaw{};
+    tagreader_core::RawMetadata oversizedRaw{};
+    if (!ReadMatroskaRawMetadataForTest(samplePath, coverExportDir, rawMetadata) ||
+        !ReadMatroskaRawMetadataForTest(nonImagePath, coverExportDir, nonImageRaw) ||
+        !ReadMatroskaRawMetadataForTest(oversizedPath, coverExportDir, oversizedRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(rawMetadata.title == "Attachment Title", "Matroska tags before attachments should parse") && passed;
+    passed = Expect(!rawMetadata.coverPath.empty() && std::filesystem::is_regular_file(rawMetadata.coverPath, ec), "Matroska image attachment should export cover PNG") && passed;
+    ec.clear();
+    passed = Expect(PathIsUnder(rawMetadata.coverPath, coverExportDir), "Matroska cover path should stay under explicit export dir") && passed;
+    passed = Expect(CountPngFiles(coverExportDir) == 1, "only the image Matroska attachment should create one PNG") && passed;
+    passed = Expect(nonImageRaw.coverPath.empty(), "non-image Matroska attachment should not export cover") && passed;
+    passed = Expect(oversizedRaw.coverPath.empty(), "oversized Matroska image attachment should be skipped") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-053 matroska-attachment-cover coverPath=" + rawMetadata.coverPath.string() + "\n"
+        "TR-AUDIT-053 matroska-non-image-and-oversized-skipped\n"
+        "TR-AUDIT-053 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-053\n"
+        "marker=matroska-image-attachment-cover-cache\n"
+        "marker=matroska-attachment-resource-limits\n"
+        "sample=" + samplePath.string() + "\n" +
+        "nonImageSample=" + nonImagePath.string() + "\n" +
+        "oversizedSample=" + oversizedPath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + rawMetadata.coverPath.string() + "\n" +
+        "oversizedBytes=" + std::to_string(oversizedImage.size()) + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-053 matroska-attachment-cover coverPath=" << rawMetadata.coverPath.string() << '\n';
+        std::cout << "TR-AUDIT-053 matroska-non-image-and-oversized-skipped\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit054()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-054";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path unknownPath = evidenceRoot / "unknown-and-unknown-size.mka";
+    const std::filesystem::path malformedPath = evidenceRoot / "malformed-size.mka";
+    const std::filesystem::path oversizedPath = evidenceRoot / "oversized-payload.mka";
+    const std::filesystem::path deepPath = evidenceRoot / "deep-nesting.mka";
+
+    const std::vector<std::uint8_t> unknownElement = MatroskaElement(0x4FFF, Bytes("ignored"));
+    const std::vector<std::uint8_t> unknownSizeVoid = MatroskaUnknownSizeElement(0xEC, Bytes("unknown sized local padding"));
+    if (!WriteBinaryFile(unknownPath, MatroskaFile(Concat({unknownElement, unknownSizeVoid}))))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> malformed = MatroskaId(0x18538067);
+    AppendMatroskaSize(malformed, 32);
+    malformed.insert(malformed.end(), {'b', 'a', 'd'});
+    if (!WriteBinaryFile(malformedPath, Concat({MatroskaElement(0x1A45DFA3, {}), malformed})))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> oversizedSegment = MatroskaId(0x18538067);
+    AppendMatroskaSize(oversizedSegment, 64ULL * 1024ULL * 1024ULL + 1ULL);
+    if (!WriteBinaryFile(oversizedPath, Concat({MatroskaElement(0x1A45DFA3, {}), oversizedSegment})))
+    {
+        return false;
+    }
+
+    std::vector<std::uint8_t> deepPayload = MatroskaSimpleTag("TITLE", "Too Deep");
+    for (int i = 0; i < 24; ++i)
+    {
+        deepPayload = MatroskaElement(0x67C8, deepPayload);
+    }
+    if (!WriteBinaryFile(deepPath, MatroskaFile(MatroskaElement(0x1254C367, MatroskaElement(0x7373, deepPayload)))))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata unknownRaw{};
+    tagreader_core::RawMetadata malformedRaw{};
+    tagreader_core::RawMetadata oversizedRaw{};
+    tagreader_core::RawMetadata deepRaw{};
+    if (!ReadMatroskaRawMetadataForTest(unknownPath, evidenceRoot / "covers", unknownRaw) ||
+        !ReadMatroskaRawMetadataForTest(malformedPath, evidenceRoot / "covers", malformedRaw) ||
+        !ReadMatroskaRawMetadataForTest(oversizedPath, evidenceRoot / "covers", oversizedRaw) ||
+        !ReadMatroskaRawMetadataForTest(deepPath, evidenceRoot / "covers", deepRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(unknownRaw.title.empty() && unknownRaw.artist.empty() && unknownRaw.coverPath.empty(), "unknown Matroska elements and unknown-size local elements should be skipped empty") && passed;
+    passed = Expect(malformedRaw.title.empty() && malformedRaw.artist.empty(), "malformed Matroska element bounds should be local empty metadata") && passed;
+    passed = Expect(oversizedRaw.title.empty() && oversizedRaw.coverPath.empty(), "oversized Matroska payload should be rejected locally") && passed;
+    passed = Expect(deepRaw.title.empty(), "deep Matroska SimpleTag nesting beyond limit should not recurse unbounded") && passed;
+    passed = Expect(CountPngFiles(evidenceRoot / "covers") == 0, "malformed Matroska samples should not create cover files") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-054 matroska-unknown-and-unknown-size-empty\n"
+        "TR-AUDIT-054 matroska-malformed-oversized-deep-empty\n"
+        "TR-AUDIT-054 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-054\n"
+        "marker=matroska-malformed-local-empty\n"
+        "marker=matroska-depth-and-size-limits\n"
+        "unknownSample=" + unknownPath.string() + "\n" +
+        "malformedSample=" + malformedPath.string() + "\n" +
+        "oversizedSample=" + oversizedPath.string() + "\n" +
+        "deepSample=" + deepPath.string() + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-054 matroska-unknown-and-unknown-size-empty\n";
+        std::cout << "TR-AUDIT-054 matroska-malformed-oversized-deep-empty\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -7694,6 +8080,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-051")
     {
         if (!RunTrAudit051())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-052")
+    {
+        if (!RunTrAudit052())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-053")
+    {
+        if (!RunTrAudit053())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-054")
+    {
+        if (!RunTrAudit054())
         {
             return 1;
         }
