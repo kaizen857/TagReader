@@ -336,7 +336,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `读取 Ogg 内嵌封面` | Files: [`src/formats/ogg-vorbis/*`, `src/formats/flac/*` shared helper if needed, tests]
 
-- [ ] 6. 新增 OpusTags comment parser 路径
+- [x] 6. 新增 OpusTags comment parser 路径
 
   **What to do**: 新增 `src/formats/opus/` 或在 Ogg family 中明确 Opus branch，解析 Ogg Opus `OpusHead` 与第二 packet `OpusTags`；复用 Vorbis Comment 字段映射、UTF-8 策略、comment 数量上限和 `METADATA_BLOCK_PICTURE` 封面逻辑。
   **Must NOT do**: 不把 Opus 当 Ogg Vorbis 小改；不要求解析音频 granule duration；不改变 FFmpeg 媒体信息职责。

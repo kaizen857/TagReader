@@ -4,6 +4,7 @@
 #include "formats/id3/Id3Parser.hpp"
 #include "formats/mp4/Mp4Parser.hpp"
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
+#include "formats/opus/OpusParser.hpp"
 #include "formats/ape/ApeParser.hpp"
 #include "media/ContainerDetector.hpp"
 #include "media/FfmpegSession.hpp"
@@ -410,6 +411,9 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                                 { tagreader_id3::ReadID3v1Metadata(context, metadata); });
         break;
     case TagFormat::OggOpus:
+        ignoreMalformedMetadata([&]()
+                                { tagreader_opus::ReadOggOpusMetadata(context, metadata); });
+        break;
     case TagFormat::RiffWav:
     case TagFormat::Aiff:
     case TagFormat::Dsf:
@@ -464,6 +468,8 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
             tagreader_ape::ReadApeLyrics(context, lyrics);
             break;
         case TagFormat::OggOpus:
+            tagreader_opus::ReadOggOpusLyrics(context, lyrics);
+            break;
         case TagFormat::RiffWav:
         case TagFormat::Aiff:
         case TagFormat::Dsf:

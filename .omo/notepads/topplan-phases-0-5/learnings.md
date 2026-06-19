@@ -55,3 +55,12 @@
 - Added `TR-AUDIT-038` evidence in `/tmp/opencode/tagreader_regression/TR-AUDIT-038`: valid Ogg picture export, repeated-read cache reuse/no rewrite, malformed local cover skips, oversized skip, and URL skip without network fetch.
 - Verification passed: `lsp_diagnostics` on `FlacPicture.hpp`, `FlacPicture.cpp`, `FlacParser.cpp`, `OggVorbisParser.cpp`, and `regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-038`.
 - No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-038` run.
+
+## 2026-06-19 Task 6: OpusTags parser path
+- Added a distinct Ogg Opus parser in `src/formats/opus/OpusParser.*`; it requires `OpusHead` first and parses the following complete `OpusTags` packet instead of reusing Vorbis packet prefixes.
+- OpusTags payload reuses Vorbis comment text/lyrics mapping, UTF-8 behavior, the 4096 comment-count limit, strict Base64 `METADATA_BLOCK_PICTURE` handling, and the shared FLAC picture parser/content-addressed PNG cache.
+- `OggOpus` dispatch is now wired in `ReadMetadata()` and `ReadLyrics()` without changing public `TagReader::Read()` or FFmpeg media-info responsibilities.
+- Added `TR-AUDIT-039` with `/tmp/opencode/tagreader_regression/TR-AUDIT-039` evidence: valid title/artist/album/lyrics/cover, truncated OpusTags empty metadata, wrong second packet empty metadata, and oversized comment count empty metadata.
+- Verification passed: `lsp_diagnostics` on `OpusParser.hpp`, `OpusParser.cpp`, `TagPipeline.cpp`, and `regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-039`.
+- Debug finding: replacing the real second Opus packet with another `OpusHead` makes FFmpeg reject the whole file before parser dispatch; the regression now uses an OpusTags page sequence gap to exercise parser-local wrong-order rejection while preserving audio probe.
+- No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-039` run.

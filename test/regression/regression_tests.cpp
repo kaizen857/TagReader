@@ -46,7 +46,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 38> kTestCases{{
+constexpr std::array<TestCase, 39> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -85,6 +85,7 @@ constexpr std::array<TestCase, 38> kTestCases{{
     {"TR-AUDIT-036", true},
     {"TR-AUDIT-037", true},
     {"TR-AUDIT-038", true},
+    {"TR-AUDIT-039", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -520,6 +521,24 @@ bool GenerateOggVorbisSample(const std::filesystem::path &path, std::string_view
     if (!CommandSucceeds(command))
     {
         std::cerr << "failed to generate Ogg Vorbis sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool GenerateOggOpusSample(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; TR-AUDIT-039 requires an audio-backed Ogg Opus sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=48000:cl=mono -t 0.2 -codec:a libopus \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate Ogg Opus sample with ffmpeg\n";
         return false;
     }
 
@@ -1426,6 +1445,181 @@ bool ReplaceOggVorbisComments(const std::filesystem::path &basePath, const std::
     }
 
     std::cerr << "base Ogg sample has no replaceable Vorbis comment packet: " << basePath.string() << '\n';
+    return false;
+}
+
+std::vector<std::uint8_t> OggOpusHeadPacket()
+{
+    std::vector<std::uint8_t> packet;
+    AppendBytes(packet, "OpusHead");
+    packet.push_back(1);
+    packet.push_back(1);
+    packet.push_back(0);
+    packet.push_back(0);
+    AppendU32LE(packet, 48000);
+    packet.push_back(0);
+    packet.push_back(0);
+    packet.push_back(0);
+    return packet;
+}
+
+std::vector<std::uint8_t> OggOpusTagsPacket(const std::vector<std::string> &comments)
+{
+    std::vector<std::uint8_t> packet;
+    AppendBytes(packet, "OpusTags");
+    const std::vector<std::uint8_t> payload = VorbisCommentPayloadFromStrings(comments);
+    packet.insert(packet.end(), payload.begin(), payload.end());
+    return packet;
+}
+
+std::vector<std::uint8_t> OggOpusTagsPacketWithCount(std::uint32_t commentCount)
+{
+    std::vector<std::uint8_t> packet;
+    AppendBytes(packet, "OpusTags");
+    const std::vector<std::uint8_t> payload = VorbisCommentPayload(commentCount, {});
+    packet.insert(packet.end(), payload.begin(), payload.end());
+    return packet;
+}
+
+bool ReplaceOggOpusTags(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &tagPacket)
+{
+    const std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.empty())
+    {
+        std::cerr << "failed to read base Opus sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::size_t cursor = 0;
+    while (cursor + 27 <= data.size())
+    {
+        if (std::string_view(reinterpret_cast<const char *>(data.data() + cursor), 4) != "OggS")
+        {
+            break;
+        }
+
+        const std::uint8_t segmentCount = data[cursor + 26];
+        if (cursor + 27 + segmentCount > data.size())
+        {
+            break;
+        }
+
+        std::size_t payloadSize = 0;
+        for (std::size_t i = 0; i < segmentCount; ++i)
+        {
+            payloadSize += data[cursor + 27 + i];
+        }
+        const std::size_t payloadOffset = cursor + 27 + segmentCount;
+        const std::size_t pageEnd = payloadOffset + payloadSize;
+        if (pageEnd > data.size())
+        {
+            break;
+        }
+
+        const bool isOpusTagsPage = payloadSize >= 8 && std::string_view(reinterpret_cast<const char *>(data.data() + payloadOffset), 8) == "OpusTags";
+        if (isOpusTagsPage)
+        {
+            const std::uint8_t headerType = data[cursor + 5];
+            const std::uint32_t serial = static_cast<std::uint32_t>(data[cursor + 14]) |
+                                         (static_cast<std::uint32_t>(data[cursor + 15]) << 8) |
+                                         (static_cast<std::uint32_t>(data[cursor + 16]) << 16) |
+                                         (static_cast<std::uint32_t>(data[cursor + 17]) << 24);
+            const std::uint32_t sequence = static_cast<std::uint32_t>(data[cursor + 18]) |
+                                           (static_cast<std::uint32_t>(data[cursor + 19]) << 8) |
+                                           (static_cast<std::uint32_t>(data[cursor + 20]) << 16) |
+                                           (static_cast<std::uint32_t>(data[cursor + 21]) << 24);
+
+            std::vector<std::uint8_t> lacing;
+            std::size_t remainingTagBytes = tagPacket.size();
+            while (remainingTagBytes >= 255)
+            {
+                lacing.push_back(255);
+                remainingTagBytes -= 255;
+            }
+            if (tagPacket.empty() || remainingTagBytes > 0)
+            {
+                lacing.push_back(static_cast<std::uint8_t>(remainingTagBytes));
+            }
+
+            const std::vector<std::uint8_t> patchedPage = OggPage(serial, sequence, headerType, lacing, tagPacket);
+            std::vector<std::uint8_t> output;
+            output.insert(output.end(), data.begin(), data.begin() + static_cast<std::ptrdiff_t>(cursor));
+            output.insert(output.end(), patchedPage.begin(), patchedPage.end());
+            output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(pageEnd), data.end());
+            return WriteBinaryFile(outputPath, output);
+        }
+
+        cursor = pageEnd;
+    }
+
+    std::cerr << "base Opus sample has no replaceable OpusTags packet: " << basePath.string() << '\n';
+    return false;
+}
+
+bool PatchOggOpusTagsSequenceGap(const std::filesystem::path &basePath, const std::filesystem::path &outputPath)
+{
+    std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.empty())
+    {
+        std::cerr << "failed to read base Opus sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::size_t cursor = 0;
+    while (cursor + 27 <= data.size())
+    {
+        if (std::string_view(reinterpret_cast<const char *>(data.data() + cursor), 4) != "OggS")
+        {
+            break;
+        }
+
+        const std::uint8_t segmentCount = data[cursor + 26];
+        if (cursor + 27 + segmentCount > data.size())
+        {
+            break;
+        }
+
+        std::size_t payloadSize = 0;
+        for (std::size_t i = 0; i < segmentCount; ++i)
+        {
+            payloadSize += data[cursor + 27 + i];
+        }
+        const std::size_t payloadOffset = cursor + 27 + segmentCount;
+        const std::size_t pageEnd = payloadOffset + payloadSize;
+        if (pageEnd > data.size())
+        {
+            break;
+        }
+
+        const bool isOpusTagsPage = payloadSize >= 8 && std::string_view(reinterpret_cast<const char *>(data.data() + payloadOffset), 8) == "OpusTags";
+        if (isOpusTagsPage)
+        {
+            const std::uint32_t sequence = static_cast<std::uint32_t>(data[cursor + 18]) |
+                                           (static_cast<std::uint32_t>(data[cursor + 19]) << 8) |
+                                           (static_cast<std::uint32_t>(data[cursor + 20]) << 16) |
+                                           (static_cast<std::uint32_t>(data[cursor + 21]) << 24);
+            const std::uint32_t patchedSequence = sequence + 2;
+            data[cursor + 18] = static_cast<std::uint8_t>(patchedSequence & 0xFF);
+            data[cursor + 19] = static_cast<std::uint8_t>((patchedSequence >> 8) & 0xFF);
+            data[cursor + 20] = static_cast<std::uint8_t>((patchedSequence >> 16) & 0xFF);
+            data[cursor + 21] = static_cast<std::uint8_t>((patchedSequence >> 24) & 0xFF);
+            data[cursor + 22] = 0;
+            data[cursor + 23] = 0;
+            data[cursor + 24] = 0;
+            data[cursor + 25] = 0;
+            const std::vector<std::uint8_t> page(data.begin() + static_cast<std::ptrdiff_t>(cursor), data.begin() + static_cast<std::ptrdiff_t>(pageEnd));
+            const std::uint32_t crc = OggCrc(page);
+            data[cursor + 22] = static_cast<std::uint8_t>(crc & 0xFF);
+            data[cursor + 23] = static_cast<std::uint8_t>((crc >> 8) & 0xFF);
+            data[cursor + 24] = static_cast<std::uint8_t>((crc >> 16) & 0xFF);
+            data[cursor + 25] = static_cast<std::uint8_t>((crc >> 24) & 0xFF);
+            return WriteBinaryFile(outputPath, data);
+        }
+
+        cursor = pageEnd;
+    }
+
+    std::cerr << "base Opus sample has no patchable OpusTags sequence: " << basePath.string() << '\n';
     return false;
 }
 
@@ -5332,6 +5526,113 @@ bool RunTrAudit038()
     return passed;
 }
 
+bool RunTrAudit039()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-039";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.opus";
+    const std::filesystem::path validPath = evidenceRoot / "valid-opustags.opus";
+    const std::filesystem::path truncatedPath = evidenceRoot / "truncated-opustags.opus";
+    const std::filesystem::path wrongOrderPath = evidenceRoot / "wrong-second-packet.opus";
+    const std::filesystem::path oversizedPath = evidenceRoot / "oversized-comment-count.opus";
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::string validPicture = "METADATA_BLOCK_PICTURE=" + Base64Encode(FlacPicturePayload(validPng));
+    const std::vector<std::string> validComments{
+        "TITLE=OpusTags Title",
+        "ARTIST=OpusTags Artist",
+        "ALBUM=OpusTags Album",
+        "LYRICS=OpusTags lyric",
+        validPicture,
+    };
+
+    const std::vector<std::uint8_t> truncatedTags = Bytes("OpusTags");
+    const std::vector<std::uint8_t> oversizedComments = OggOpusTagsPacketWithCount(4097);
+
+    if (!GenerateOggOpusSample(basePath) ||
+        !ReplaceOggOpusTags(basePath, validPath, OggOpusTagsPacket(validComments)) ||
+        !ReplaceOggOpusTags(basePath, truncatedPath, truncatedTags) ||
+        !PatchOggOpusTagsSequenceGap(basePath, wrongOrderPath) ||
+        !ReplaceOggOpusTags(basePath, oversizedPath, oversizedComments))
+    {
+        return false;
+    }
+
+    const MusicTag validTag = TagReader::Read(validPath, coverExportDir);
+    const std::filesystem::path coverPath = validTag.coverPath();
+    const bool coverPathPresent = Expect(!coverPath.empty(), "OpusTags METADATA_BLOCK_PICTURE should export a cover path");
+    const bool coverExists = Expect(std::filesystem::is_regular_file(coverPath, ec), "exported OpusTags cover should exist on disk");
+    ec.clear();
+    const bool coverUnderExportDir = Expect(PathIsUnder(coverPath, coverExportDir), "exported OpusTags cover should stay under export directory");
+    const bool onePngAfterValidRead = Expect(CountPngFiles(coverExportDir) == 1, "valid OpusTags picture should create one PNG");
+
+    const MusicTag truncatedTag = TagReader::Read(truncatedPath, coverExportDir);
+    const MusicTag wrongOrderTag = TagReader::Read(wrongOrderPath, coverExportDir);
+    const MusicTag oversizedTag = TagReader::Read(oversizedPath, coverExportDir);
+    const std::size_t pngCountAfterMalformedReads = CountPngFiles(coverExportDir);
+
+    bool metadataOk = true;
+    metadataOk = Expect(validTag.title() == "OpusTags Title", "valid OpusTags sample should parse title") && metadataOk;
+    metadataOk = Expect(validTag.artist() == "OpusTags Artist", "valid OpusTags sample should parse artist") && metadataOk;
+    metadataOk = Expect(validTag.album() == "OpusTags Album", "valid OpusTags sample should parse album") && metadataOk;
+    metadataOk = Expect(!validTag.lyrics().empty() && validTag.lyrics().lyrics().front().text() == "OpusTags lyric", "valid OpusTags sample should parse lyrics") && metadataOk;
+
+    const bool truncatedEmpty = Expect(MetadataFieldsAreEmpty(truncatedTag), "truncated OpusTags should produce empty metadata without top-level crash");
+    const bool wrongOrderEmpty = Expect(MetadataFieldsAreEmpty(wrongOrderTag), "wrong Opus packet order should produce empty metadata without top-level crash");
+    const bool oversizedEmpty = Expect(MetadataFieldsAreEmpty(oversizedTag), "oversized OpusTags comment count should produce empty metadata without top-level crash");
+    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 1, "malformed OpusTags samples should not add cache files");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-039 opustags-fields title=OpusTags Title artist=OpusTags Artist album=OpusTags Album\n"
+        "TR-AUDIT-039 opustags-cover-exported coverPath=" + coverPath.string() + "\n"
+        "TR-AUDIT-039 opustags-malformed-empty truncated wrong-order oversized\n"
+        "TR-AUDIT-039 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-039\n"
+        "marker=opustags-comment-parser\n"
+        "marker=opustags-metadata-block-picture\n"
+        "marker=malformed-opustags-local-failure\n"
+        "validSample=" + validPath.string() + "\n" +
+        "truncatedSample=" + truncatedPath.string() + "\n" +
+        "wrongOrderSample=" + wrongOrderPath.string() + "\n" +
+        "oversizedSample=" + oversizedPath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + coverPath.string() + "\n" +
+        "pngFilesAfterMalformedReads=" + std::to_string(pngCountAfterMalformedReads) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "valid_output.txt", DescribeTag(validTag)) &&
+                            WriteTextFile(evidenceRoot / "truncated_output.txt", DescribeTag(truncatedTag)) &&
+                            WriteTextFile(evidenceRoot / "wrong_order_output.txt", DescribeTag(wrongOrderTag)) &&
+                            WriteTextFile(evidenceRoot / "oversized_output.txt", DescribeTag(oversizedTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = coverPathPresent && coverExists && coverUnderExportDir && onePngAfterValidRead && metadataOk &&
+                        truncatedEmpty && wrongOrderEmpty && oversizedEmpty && noExtraPng;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-039 opustags-fields title=OpusTags Title artist=OpusTags Artist album=OpusTags Album\n";
+        std::cout << "TR-AUDIT-039 opustags-cover-exported coverPath=" << coverPath.string() << '\n';
+        std::cout << "TR-AUDIT-039 opustags-malformed-empty truncated wrong-order oversized\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -5752,6 +6053,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-038")
     {
         if (!RunTrAudit038())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-039")
+    {
+        if (!RunTrAudit039())
         {
             return 1;
         }
