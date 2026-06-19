@@ -11,8 +11,19 @@ enum class TagFormat
     VorbisComment,
     Flac,
     OggVorbis,
+    OggOpus,
     Mp4,
     Ape,
+    RiffWav,
+    Aiff,
+    Dsf,
+    Dff,
+    Asf,
+    Matroska,
+    RawId3v2,
+    RawVorbisComment,
+    RawMp4Ilst,
+    RawApeV2,
 };
 }
 

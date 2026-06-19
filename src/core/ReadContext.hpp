@@ -19,8 +19,16 @@ enum class DetectedContainer
     Mp3,
     Flac,
     OggVorbis,
+    OggOpus,
     Mp4,
     Ape,
+    RiffWav,
+    Aiff,
+    Dsf,
+    Dff,
+    Asf,
+    Matroska,
+    RawTagSource,
 };
 
 struct ReadContext

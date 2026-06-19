@@ -15,6 +15,23 @@ namespace
 {
 using tagreader_common::ToLower;
 
+bool HasAsciiAt(const std::vector<uint8_t> &bytes, std::size_t offset, std::string_view magic)
+{
+    if (offset > bytes.size() || magic.size() > bytes.size() - offset)
+    {
+        return false;
+    }
+
+    return std::memcmp(bytes.data() + offset, magic.data(), magic.size()) == 0;
+}
+
+bool ContainsAscii(const std::vector<uint8_t> &bytes, std::string_view magic)
+{
+    return std::search(bytes.begin(), bytes.end(), magic.begin(), magic.end(),
+                       [](uint8_t lhs, char rhs)
+                       { return lhs == static_cast<uint8_t>(rhs); }) != bytes.end();
+}
+
 bool ContainsAny(std::string_view value, std::initializer_list<std::string_view> needles)
 {
     for (const auto needle : needles)
@@ -80,10 +97,29 @@ tagreader_core::DetectedContainer ContainerFromTagFormat(tagreader_core::TagForm
         return DetectedContainer::Flac;
     case TagFormat::OggVorbis:
         return DetectedContainer::OggVorbis;
+    case TagFormat::OggOpus:
+        return DetectedContainer::OggOpus;
     case TagFormat::Mp4:
         return DetectedContainer::Mp4;
     case TagFormat::Ape:
         return DetectedContainer::Ape;
+    case TagFormat::RiffWav:
+        return DetectedContainer::RiffWav;
+    case TagFormat::Aiff:
+        return DetectedContainer::Aiff;
+    case TagFormat::Dsf:
+        return DetectedContainer::Dsf;
+    case TagFormat::Dff:
+        return DetectedContainer::Dff;
+    case TagFormat::Asf:
+        return DetectedContainer::Asf;
+    case TagFormat::Matroska:
+        return DetectedContainer::Matroska;
+    case TagFormat::RawId3v2:
+    case TagFormat::RawVorbisComment:
+    case TagFormat::RawMp4Ilst:
+    case TagFormat::RawApeV2:
+        return DetectedContainer::RawTagSource;
     case TagFormat::Unknown:
         return DetectedContainer::Unknown;
     }
@@ -112,22 +148,53 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
         }
     }
 
-    const std::vector<uint8_t> header = tagreader_io::ReadRange(context.input, 0, static_cast<std::size_t>(std::min<std::uintmax_t>(context.fileSize, 12)));
-    if (header.size() >= 3 && std::memcmp(header.data(), "ID3", 3) == 0)
+    constexpr std::uintmax_t kHeaderProbeBytes = 64;
+    const std::vector<uint8_t> header = tagreader_io::ReadRange(context.input, 0, static_cast<std::size_t>(std::min<std::uintmax_t>(context.fileSize, kHeaderProbeBytes)));
+    if (HasAsciiAt(header, 0, "ID3"))
     {
         return TagFormat::Id3v2;
     }
-    if (header.size() >= 4 && std::string_view(reinterpret_cast<const char *>(header.data()), 4) == "fLaC")
+    if (HasAsciiAt(header, 0, "fLaC"))
     {
         return TagFormat::Flac;
     }
-    if (header.size() >= 4 && std::string_view(reinterpret_cast<const char *>(header.data()), 4) == "OggS")
+    if (HasAsciiAt(header, 0, "OggS"))
     {
+        if (ContainsAscii(header, "OpusHead"))
+        {
+            return TagFormat::OggOpus;
+        }
         return TagFormat::OggVorbis;
     }
-    if (header.size() >= 8 && std::string_view(reinterpret_cast<const char *>(header.data() + 4), 4) == "ftyp")
+    if (HasAsciiAt(header, 4, "ftyp"))
     {
         return TagFormat::Mp4;
+    }
+    if (HasAsciiAt(header, 0, "RIFF") && HasAsciiAt(header, 8, "WAVE"))
+    {
+        return TagFormat::RiffWav;
+    }
+    if (HasAsciiAt(header, 0, "FORM") && (HasAsciiAt(header, 8, "AIFF") || HasAsciiAt(header, 8, "AIFC")))
+    {
+        return TagFormat::Aiff;
+    }
+    if (HasAsciiAt(header, 0, "DSD "))
+    {
+        return TagFormat::Dsf;
+    }
+    if (HasAsciiAt(header, 0, "FRM8") && HasAsciiAt(header, 12, "DSD "))
+    {
+        return TagFormat::Dff;
+    }
+    constexpr uint8_t kAsfHeaderGuid[] = {0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11,
+                                          0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C};
+    if (header.size() >= sizeof(kAsfHeaderGuid) && std::memcmp(header.data(), kAsfHeaderGuid, sizeof(kAsfHeaderGuid)) == 0)
+    {
+        return TagFormat::Asf;
+    }
+    if (header.size() >= 4 && header[0] == 0x1A && header[1] == 0x45 && header[2] == 0xDF && header[3] == 0xA3)
+    {
+        return TagFormat::Matroska;
     }
     if (HasId3v1Footer(context))
     {
@@ -138,6 +205,10 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     if (ContainsAny(container, {"mp4", "mov", "m4"}))
     {
         return TagFormat::Mp4;
+    }
+    if (container.find("opus") != std::string::npos)
+    {
+        return TagFormat::OggOpus;
     }
     if (ContainsAny(container, {"ogg", "vorbis"}))
     {
@@ -154,6 +225,30 @@ tagreader_core::TagFormat DetectTagFormat(tagreader_core::ReadContext &context)
     if (ContainsAny(container, {"ape", "mpc", "mpc8", "wv", "tak", "tta"}))
     {
         return TagFormat::Ape;
+    }
+    if (ContainsAny(container, {"wav", "wave"}))
+    {
+        return TagFormat::RiffWav;
+    }
+    if (ContainsAny(container, {"aiff", "aifc"}))
+    {
+        return TagFormat::Aiff;
+    }
+    if (container.find("dsf") != std::string::npos)
+    {
+        return TagFormat::Dsf;
+    }
+    if (ContainsAny(container, {"dff", "dsdiff"}))
+    {
+        return TagFormat::Dff;
+    }
+    if (ContainsAny(container, {"asf", "wma"}))
+    {
+        return TagFormat::Asf;
+    }
+    if (ContainsAny(container, {"matroska", "webm", "mka"}))
+    {
+        return TagFormat::Matroska;
     }
 
     return TagFormat::Unknown;

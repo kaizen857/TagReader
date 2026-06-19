@@ -406,6 +406,18 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         ignoreMalformedMetadata([&]()
                                 { tagreader_id3::ReadID3v1Metadata(context, metadata); });
         break;
+    case TagFormat::OggOpus:
+    case TagFormat::RiffWav:
+    case TagFormat::Aiff:
+    case TagFormat::Dsf:
+    case TagFormat::Dff:
+    case TagFormat::Asf:
+    case TagFormat::Matroska:
+    case TagFormat::RawId3v2:
+    case TagFormat::RawVorbisComment:
+    case TagFormat::RawMp4Ilst:
+    case TagFormat::RawApeV2:
+        break;
     }
 
     // 评分和播放次数保持固定值，不参与元数据读取。
@@ -448,6 +460,17 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
         case TagFormat::Ape:
             tagreader_ape::ReadApeLyrics(context, lyrics);
             break;
+        case TagFormat::OggOpus:
+        case TagFormat::RiffWav:
+        case TagFormat::Aiff:
+        case TagFormat::Dsf:
+        case TagFormat::Dff:
+        case TagFormat::Asf:
+        case TagFormat::Matroska:
+        case TagFormat::RawId3v2:
+        case TagFormat::RawVorbisComment:
+        case TagFormat::RawMp4Ilst:
+        case TagFormat::RawApeV2:
         case TagFormat::Unknown:
             break;
         }
