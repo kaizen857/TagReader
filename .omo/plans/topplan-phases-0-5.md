@@ -416,7 +416,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `解析 WAV 元数据` | Files: [`src/formats/riff/*` or `src/formats/wav/*`, CMakeLists, dispatch, tests]
 
-- [ ] 8. 新增 AIFF/AIFC 原生 chunk 与 `ID3 ` 兼容提取
+- [x] 8. 新增 AIFF/AIFC 原生 chunk 与 `ID3 ` 兼容提取
 
   **What to do**: 新增 `src/formats/aiff/` parser，解析 `FORM`/`AIFF`/`AIFC` 大端 chunk；读取原生 `NAME`、`AUTH`、`ANNO`、`(c) `、`COMT` 基础字段；定位非标准 `ID3 ` chunk 并复用 ID3v2 parser；字段冲突规则：ID3v2 优先，AIFF native 补缺。
   **Must NOT do**: 不把 AIFF `ID3 ` 宣称为官方标准；不解析/重写音频样本。

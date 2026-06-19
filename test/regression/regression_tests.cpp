@@ -1,5 +1,6 @@
 #include "TagReader.hpp"
 #include "core/TagFormat.hpp"
+#include "formats/aiff/AiffParser.hpp"
 #include "formats/common/BoundedReader.hpp"
 #include "formats/riff/RiffParser.hpp"
 #include "media/ContainerDetector.hpp"
@@ -47,7 +48,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 42> kTestCases{{
+constexpr std::array<TestCase, 45> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -90,6 +91,9 @@ constexpr std::array<TestCase, 42> kTestCases{{
     {"TR-AUDIT-040", true},
     {"TR-AUDIT-041", true},
     {"TR-AUDIT-042", true},
+    {"TR-AUDIT-043", true},
+    {"TR-AUDIT-044", true},
+    {"TR-AUDIT-045", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -912,6 +916,133 @@ bool PatchRiffSize(const std::filesystem::path &inputPath, const std::filesystem
     bytes[6] = static_cast<std::uint8_t>((riffSize >> 16) & 0xFF);
     bytes[7] = static_cast<std::uint8_t>((riffSize >> 24) & 0xFF);
     return WriteBinaryFile(outputPath, bytes);
+}
+
+std::vector<std::uint8_t> AiffChunk(std::string_view chunkId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, chunkId);
+    AppendU32BE(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    if ((payload.size() % 2) != 0)
+    {
+        bytes.push_back(0);
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> AiffTextChunk(std::string_view chunkId, std::string_view value)
+{
+    return AiffChunk(chunkId, Bytes(value));
+}
+
+std::vector<std::uint8_t> AiffComtChunk(std::string_view value)
+{
+    std::vector<std::uint8_t> payload;
+    payload.push_back(0);
+    payload.push_back(1);
+    AppendU32BE(payload, 0);
+    payload.push_back(0);
+    payload.push_back(0);
+    payload.push_back(static_cast<std::uint8_t>((value.size() >> 8) & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>(value.size() & 0xFF));
+    AppendBytes(payload, value);
+    if ((value.size() % 2) != 0)
+    {
+        payload.push_back(0);
+    }
+    return AiffChunk("COMT", payload);
+}
+
+std::vector<std::uint8_t> AiffCommChunk()
+{
+    std::vector<std::uint8_t> payload;
+    payload.push_back(0);
+    payload.push_back(1);
+    AppendU32BE(payload, 1);
+    payload.push_back(0);
+    payload.push_back(16);
+    payload.insert(payload.end(), {0x40, 0x0E, 0xAC, 0x44, 0, 0, 0, 0, 0, 0});
+    return AiffChunk("COMM", payload);
+}
+
+std::vector<std::uint8_t> AiffSsndChunk()
+{
+    std::vector<std::uint8_t> payload;
+    AppendU32BE(payload, 0);
+    AppendU32BE(payload, 0);
+    payload.push_back(0);
+    payload.push_back(0);
+    return AiffChunk("SSND", payload);
+}
+
+std::vector<std::uint8_t> AiffFile(std::string_view formType, const std::vector<std::vector<std::uint8_t>> &chunks)
+{
+    std::vector<std::uint8_t> payload;
+    AppendBytes(payload, formType);
+    for (const std::vector<std::uint8_t> &chunk : chunks)
+    {
+        payload.insert(payload.end(), chunk.begin(), chunk.end());
+    }
+
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, "FORM");
+    AppendU32BE(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+bool WriteAiffFile(const std::filesystem::path &path, std::string_view formType, const std::vector<std::vector<std::uint8_t>> &metadataChunks)
+{
+    std::vector<std::vector<std::uint8_t>> chunks{AiffCommChunk(), AiffSsndChunk()};
+    chunks.insert(chunks.end(), metadataChunks.begin(), metadataChunks.end());
+    return WriteBinaryFile(path, AiffFile(formType, chunks));
+}
+
+bool PatchAiffFormSize(const std::filesystem::path &inputPath, const std::filesystem::path &outputPath, std::uint32_t formSize)
+{
+    std::vector<std::uint8_t> bytes = ReadBinaryFile(inputPath);
+    if (bytes.size() < 12)
+    {
+        return false;
+    }
+    bytes[4] = static_cast<std::uint8_t>((formSize >> 24) & 0xFF);
+    bytes[5] = static_cast<std::uint8_t>((formSize >> 16) & 0xFF);
+    bytes[6] = static_cast<std::uint8_t>((formSize >> 8) & 0xFF);
+    bytes[7] = static_cast<std::uint8_t>(formSize & 0xFF);
+    return WriteBinaryFile(outputPath, bytes);
+}
+
+bool ReadAiffRawMetadataForTest(const std::filesystem::path &path, const std::filesystem::path &coverExportDir, tagreader_core::RawMetadata &rawMetadata)
+{
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    std::error_code ec;
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open AIFF sample for internal parser assertion: " << path.string() << '\n';
+        return false;
+    }
+    tagreader_core::ReadContext context;
+    context.filePath = path;
+    context.coverExportDir = coverExportDir;
+    context.fileSize = std::filesystem::file_size(path, ec);
+    if (ec)
+    {
+        std::cerr << "failed to size AIFF sample for internal parser assertion: " << ec.message() << '\n';
+        ::close(fd);
+        return false;
+    }
+    context.input = tagreader_io::FileInput(fd);
+    tagreader_aiff::ReadAiffMetadata(context, rawMetadata);
+    return true;
+#else
+    (void)path;
+    (void)coverExportDir;
+    (void)rawMetadata;
+    std::cerr << "AIFF internal RawMetadata assertions require POSIX FileInput\n";
+    return false;
+#endif
 }
 
 std::vector<std::uint8_t> Id3v24Tag(std::uint8_t flags, const std::vector<std::uint8_t> &payload)
@@ -5971,6 +6102,242 @@ bool RunTrAudit042()
     return passed;
 }
 
+bool RunTrAudit043()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-043";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path nativePath = evidenceRoot / "native-only.aiff";
+    const std::filesystem::path comtPath = evidenceRoot / "native-comt.aifc";
+    if (!WriteAiffFile(nativePath, "AIFF", {
+            AiffTextChunk("NAME", "AIFF Native Title"),
+            AiffTextChunk("AUTH", "AIFF Native Artist"),
+            AiffTextChunk("(c) ", "AIFF Copyright Notice"),
+        }) ||
+        !WriteBinaryFile(comtPath, AiffFile("AIFC", {AiffComtChunk("AIFF COMT Comment")})))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(nativePath, evidenceRoot / "covers");
+    tagreader_core::RawMetadata nativeRaw{};
+    tagreader_core::RawMetadata comtRaw{};
+    if (!ReadAiffRawMetadataForTest(nativePath, evidenceRoot / "covers", nativeRaw) ||
+        !ReadAiffRawMetadataForTest(comtPath, evidenceRoot / "covers", comtRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(tag.title() == "AIFF Native Title", "AIFF NAME should parse title") && passed;
+    passed = Expect(tag.artist() == "AIFF Native Artist", "AIFF AUTH should parse artist") && passed;
+    passed = Expect(nativeRaw.comment == "AIFF Copyright Notice", "AIFF (c) chunk should parse into RawMetadata comment") && passed;
+    passed = Expect(comtRaw.comment == "AIFF COMT Comment", "AIFF/AIFC COMT marker text should parse into RawMetadata comment") && passed;
+    passed = Expect(tag.sampleRate() > 0 && tag.channels() > 0, "AIFF native sample should still return media info") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-043 aiff-native-fields title=AIFF Native Title artist=AIFF Native Artist\n"
+        "TR-AUDIT-043 aiff-native-comment copyright=AIFF Copyright Notice comt=AIFF COMT Comment\n"
+        "TR-AUDIT-043 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-043\n"
+        "marker=aiff-native-chunks\n"
+        "marker=aifc-magic-accepted\n"
+        "nativeSample=" + nativePath.string() + "\n" +
+        "comtSample=" + comtPath.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "rawCopyright=" + nativeRaw.comment + "\n" +
+        "rawComt=" + comtRaw.comment + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-043 aiff-native-fields title=AIFF Native Title artist=AIFF Native Artist\n";
+        std::cout << "TR-AUDIT-043 aiff-native-comment copyright=AIFF Copyright Notice comt=AIFF COMT Comment\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit044()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-044";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path mergedPath = evidenceRoot / "native-plus-id3.aiff";
+    const std::vector<std::uint8_t> id3Tag = Id3v23Tag(Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("AIFF Embedded ID3 Title")),
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("AIFF Embedded ID3 Artist")),
+    }));
+    if (!WriteAiffFile(mergedPath, "AIFF", {
+            AiffTextChunk("NAME", "AIFF Native Losing Title"),
+            AiffTextChunk("AUTH", "AIFF Native Losing Artist"),
+            AiffTextChunk("ANNO", "AIFF Native Fallback Comment"),
+            AiffChunk("ID3 ", id3Tag),
+        }))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(mergedPath, evidenceRoot / "covers");
+    tagreader_core::RawMetadata rawMetadata{};
+    if (!ReadAiffRawMetadataForTest(mergedPath, evidenceRoot / "covers", rawMetadata))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(tag.title() == "AIFF Embedded ID3 Title", "AIFF embedded ID3 TIT2 should win over NAME") && passed;
+    passed = Expect(tag.artist() == "AIFF Embedded ID3 Artist", "AIFF embedded ID3 TPE1 should win over AUTH") && passed;
+    passed = Expect(rawMetadata.comment == "AIFF Native Fallback Comment", "AIFF native ANNO should fill missing embedded ID3 comment") && passed;
+    passed = Expect(tag.sampleRate() > 0 && tag.channels() > 0, "AIFF merged sample should still return media info") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-044 aiff-id3-wins title=AIFF Embedded ID3 Title artist=AIFF Embedded ID3 Artist\n"
+        "TR-AUDIT-044 aiff-native-fallback comment=AIFF Native Fallback Comment\n"
+        "TR-AUDIT-044 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-044\n"
+        "marker=aiff-embedded-id3-primary\n"
+        "marker=aiff-native-fallback\n"
+        "sample=" + mergedPath.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "rawComment=" + rawMetadata.comment + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-044 aiff-id3-wins title=AIFF Embedded ID3 Title artist=AIFF Embedded ID3 Artist\n";
+        std::cout << "TR-AUDIT-044 aiff-native-fallback comment=AIFF Native Fallback Comment\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit045()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-045";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path oddPath = evidenceRoot / "odd-padding.aiff";
+    const std::filesystem::path truncatedComtPath = evidenceRoot / "truncated-comt.aiff";
+    const std::filesystem::path badMagicPath = evidenceRoot / "bad-magic.aiff";
+    const std::filesystem::path badFormSizePath = evidenceRoot / "bad-form-size.aiff";
+    const std::filesystem::path oversizedPath = evidenceRoot / "oversized-native.aiff";
+
+    std::vector<std::uint8_t> truncatedComtPayload;
+    truncatedComtPayload.push_back(0);
+    truncatedComtPayload.push_back(1);
+    truncatedComtPayload.push_back(0);
+    std::vector<std::uint8_t> oversizedPayload(static_cast<std::size_t>(16ULL * 1024ULL * 1024ULL + 1ULL), 'x');
+
+    if (!WriteAiffFile(oddPath, "AIFF", {AiffTextChunk("NAME", "Odd"), AiffTextChunk("AUTH", "After Odd")}) ||
+        !WriteAiffFile(truncatedComtPath, "AIFF", {AiffChunk("COMT", truncatedComtPayload)}) ||
+        !WriteBinaryFile(badMagicPath, Bytes("not an aiff file")) ||
+        !WriteAiffFile(badFormSizePath, "AIFF", {AiffTextChunk("NAME", "Bad Size")}) ||
+        !PatchAiffFormSize(badFormSizePath, badFormSizePath, 0xFFFFFFFFU) ||
+        !WriteAiffFile(oversizedPath, "AIFF", {AiffChunk("NAME", oversizedPayload)}))
+    {
+        return false;
+    }
+
+    const MusicTag oddTag = TagReader::Read(oddPath, evidenceRoot / "covers");
+    const MusicTag truncatedComtTag = TagReader::Read(truncatedComtPath, evidenceRoot / "covers");
+    const MusicTag oversizedTag = TagReader::Read(oversizedPath, evidenceRoot / "covers");
+    tagreader_core::RawMetadata truncatedComtRaw{};
+    tagreader_core::RawMetadata badMagicRaw{};
+    tagreader_core::RawMetadata badFormSizeRaw{};
+    if (!ReadAiffRawMetadataForTest(truncatedComtPath, evidenceRoot / "covers", truncatedComtRaw) ||
+        !ReadAiffRawMetadataForTest(badMagicPath, evidenceRoot / "covers", badMagicRaw) ||
+        !ReadAiffRawMetadataForTest(badFormSizePath, evidenceRoot / "covers", badFormSizeRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(oddTag.title() == "Odd", "odd-sized AIFF NAME should parse with padding") && passed;
+    passed = Expect(oddTag.artist() == "After Odd", "chunk after odd-sized AIFF NAME should parse after padding") && passed;
+    passed = Expect(truncatedComtTag.title().empty() && truncatedComtRaw.comment.empty(), "truncated AIFF COMT should be local empty metadata") && passed;
+    passed = Expect(oversizedTag.title().empty(), "oversized AIFF native chunk should be skipped locally") && passed;
+    passed = Expect(badMagicRaw.title.empty() && badMagicRaw.artist.empty() && badMagicRaw.comment.empty(), "AIFF parser should reject missing FORM/AIFF magic") && passed;
+    passed = Expect(badFormSizeRaw.title.empty(), "AIFF parser should reject out-of-bounds FORM size") && passed;
+    passed = Expect(oddTag.sampleRate() > 0 && truncatedComtTag.sampleRate() > 0 && oversizedTag.sampleRate() > 0,
+                    "malformed AIFF metadata samples should still return media info") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-045 aiff-odd-padding title=Odd artist=After Odd\n"
+        "TR-AUDIT-045 aiff-malformed-local-empty truncated-comt oversized-native bad-magic bad-form-size\n"
+        "TR-AUDIT-045 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-045\n"
+        "marker=aiff-big-endian-size-and-padding\n"
+        "marker=aiff-malformed-local-failure\n"
+        "oddSample=" + oddPath.string() + "\n" +
+        "truncatedComtSample=" + truncatedComtPath.string() + "\n" +
+        "badMagicSample=" + badMagicPath.string() + "\n" +
+        "badFormSizeSample=" + badFormSizePath.string() + "\n" +
+        "oversizedSample=" + oversizedPath.string() + "\n" +
+        "oversizedBytes=" + std::to_string(oversizedPayload.size()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "odd_output.txt", DescribeTag(oddTag)) &&
+                            WriteTextFile(evidenceRoot / "truncated_comt_output.txt", DescribeTag(truncatedComtTag)) &&
+                            WriteTextFile(evidenceRoot / "oversized_output.txt", DescribeTag(oversizedTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-045 aiff-odd-padding title=Odd artist=After Odd\n";
+        std::cout << "TR-AUDIT-045 aiff-malformed-local-empty truncated-comt oversized-native bad-magic bad-form-size\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -6435,6 +6802,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-042")
     {
         if (!RunTrAudit042())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-043")
+    {
+        if (!RunTrAudit043())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-044")
+    {
+        if (!RunTrAudit044())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-045")
+    {
+        if (!RunTrAudit045())
         {
             return 1;
         }

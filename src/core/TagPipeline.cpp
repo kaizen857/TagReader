@@ -1,5 +1,6 @@
 #include "core/TagPipeline.hpp"
 
+#include "formats/aiff/AiffParser.hpp"
 #include "formats/flac/FlacParser.hpp"
 #include "formats/id3/Id3Parser.hpp"
 #include "formats/mp4/Mp4Parser.hpp"
@@ -417,9 +418,12 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
         break;
     case TagFormat::RiffWav:
         ignoreMalformedMetadata([&]()
-                                { tagreader_riff::ReadRiffWavMetadata(context, metadata); });
+                                 { tagreader_riff::ReadRiffWavMetadata(context, metadata); });
         break;
     case TagFormat::Aiff:
+        ignoreMalformedMetadata([&]()
+                                { tagreader_aiff::ReadAiffMetadata(context, metadata); });
+        break;
     case TagFormat::Dsf:
     case TagFormat::Dff:
     case TagFormat::Asf:

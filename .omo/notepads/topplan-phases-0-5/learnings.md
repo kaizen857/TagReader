@@ -72,3 +72,9 @@
 - Merge behavior is ID3-primary: embedded ID3v2 fields populate first, then LIST/INFO fills only missing metadata.
 - Added `TR-AUDIT-040`, `TR-AUDIT-041`, and `TR-AUDIT-042` for INFO-only WAV, INFO+embedded ID3 conflict/fallback, odd padding, malformed RIFF size, truncated child chunk, and oversized LIST local-failure coverage.
 - Verification fix: `TR-AUDIT-040` now directly constructs an internal `ReadContext` for the INFO-only WAV and calls `tagreader_riff::ReadRiffWavMetadata()` to assert `RawMetadata::comment == "WAV INFO Comment"`, avoiding public `MusicTag` API drift because there is no comment accessor.
+
+## 2026-06-19 Task 8: AIFF/AIFC native chunks and embedded ID3
+- Added `src/formats/aiff/AiffParser.*`; it validates bytes 0-3 `FORM` and bytes 8-11 `AIFF`/`AIFC`, walks big-endian IFF chunks with even-byte padding, and bounds native plus embedded ID3 reads at 16 MiB.
+- AIFF native chunks map `NAME` to title, `AUTH` to artist, and `ANNO`/`(c) `/`COMT` to internal `RawMetadata::comment`; public API shape remains unchanged because `MusicTag` has no comment accessor.
+- Nonstandard AIFF `ID3 ` chunks reuse `ReadID3v2MetadataFromBytes()`; embedded ID3v2 metadata is primary and native AIFF fields only fill missing values.
+- Added `TR-AUDIT-043`, `TR-AUDIT-044`, and `TR-AUDIT-045` covering native-only fields, AIFC magic, ID3/native merge, big-endian chunk sizes, odd padding, truncated `COMT`, bad magic, bad FORM bounds, and oversized native chunks.
