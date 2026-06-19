@@ -578,7 +578,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `解析 Matroska 元数据` | Files: [`src/formats/matroska/*`, CMakeLists, dispatch, tests]
 
-- [ ] 12. 收束裸流边界与能力矩阵文档
+- [x] 12. 收束裸流边界与能力矩阵文档
 
   **What to do**: 更新 `docs/DESIGN.md` 和必要的 `docs/` 新文档，明确“当前可读”“检测可达”“目标能力”“明确不支持”；将 `dts`、`ac3`、`truehd` 裸流标为不规划独立 tag parser，只通过 Matroska/MP4 等外层容器读取标签；记录 TagLib 仅为未来架构决策，不混用。
   **Must NOT do**: 不修改 `README.md` 作为架构事实来源；不把阶段 6 CUE 写成已支持。

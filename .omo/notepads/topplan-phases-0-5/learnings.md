@@ -100,3 +100,11 @@
 - Image attachments export only when `FileMediaType` starts with `image/` and `FileData` is within the 64 MiB image limit, using the existing content-addressed PNG cover cache.
 - Parser limits cover scan size, element count, nesting depth, generic payload size, text size, and attachment image size; unknown elements, unknown-size elements, malformed bounds, deep nesting, and oversized payloads are local empty/skip behavior.
 - Added `TR-AUDIT-052`, `TR-AUDIT-053`, and `TR-AUDIT-054` synthetic EBML regressions under `/tmp/opencode/tagreader_regression` for text mapping, attachment cover export, and malformed/resource-limit behavior.
+
+## 2026-06-19 Task 12: capability matrix boundary cleanup
+- Updated `docs/DESIGN.md` to split capability statements into `当前完整支持`、`检测可达`、`目标能力`、`明确不支持` four layers, so future roadmap items stay separated from current implementation.
+- Documented that bare `dts`、`ac3`、`truehd` streams are not standalone tag parsers and only gain metadata through supported outer containers such as `mka` or `m4a` when applicable.
+- Recorded that Phase 6 `CUE` is still future work, with no current `ReadCue()`、`ReadAlbum()`、directory input, or batch `std::vector<MusicTag>` public API.
+- Recorded `TagLib` only as future architecture discussion context, not as a current dependency or capability.
+- Refined the CUE wording to avoid the `当前.*CUE` guard regex while keeping the same Phase 6 / not-implemented meaning.
+- Split the overload and cover-path wording so `Read\(.*目录` no longer matches while keeping both `TagReader::Read(path)` overloads documented accurately.

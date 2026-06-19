@@ -3,7 +3,8 @@
 ## 当前定位
 
 - TagReader 是一个 C++23 轻量音乐元数据读取库，支持 ID3v1/v2、Vorbis Comment（FLAC/Ogg Vorbis）、MP4 atom（ilst）和 APEv2 标签格式。
-- 对外 facade 保持单一读取入口：`TagReader::Read(path)` 和可选封面导出目录的 `TagReader::Read(path, coverExportDir)`。
+- 对外 facade 保持单一读取入口：`TagReader::Read(path)`。
+- 另一个重载 `TagReader::Read(path, coverExportDir)` 接收调用方提供的封面导出路径。
 - `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `ValidateCoverExportDir()` -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
 - `ContainerFromTagFormat()` 直接将 `TagFormat` 映射为 `DetectedContainer` 并写入 `context.detectedContainer`，不再有独立的 `DetectContainer()` 步骤。
 - `ReadMetadata()` 入口处和每个 catch 分支均调用 `context.input.clear()` 恢复流状态；`ReadLyrics()` 入口处也执行 `clear()`。
@@ -11,7 +12,9 @@
 - `MusicTag` 是最终返回对象；解析中间状态保存在内部的 `RawMediaInfo`、`RawMetadata`、`RawLyrics` 等结构中。
 - 写入 `MusicTag` 的文本字段必须是 UTF-8。
 
-## 当前完整支持的标签格式
+## 能力矩阵
+
+### 当前完整支持
 
 - 当前代码完整处理的标签格式族是：`ID3v1`、`ID3v2.2/v2.3/v2.4`、`FLAC Vorbis Comment`、`Ogg Vorbis Comment`、`MP4 ilst`、`APEv2`。
 - `TagFormat::VorbisComment` 目前作为 FLAC Vorbis Comment 分支处理，实际走 `ReadFlacMetadata()` 和 `ReadFlacLyrics()`；`TagFormat::Flac` 也是同一条 Vorbis Comment 解析路径。
@@ -25,7 +28,13 @@
 - `APEv1`，也就是 version < 2000 的 APE tag，当前会静默跳过，不属于支持格式。
 - 以上支持范围仅指标签格式支持，不表示所有容器都完整支持，也不包括 WMA/ASF、Matroska、WAV LIST INFO、Lyrics3 或 ID3v2.5。
 
-## 项目最终目标覆盖范围
+### 检测可达
+
+- `DetectTagFormat()` 当前能探测到的容器和标签来源，已经覆盖 `ID3v1`、`ID3v2`、`FLAC`、`Ogg Vorbis`、`MP4`、`APEv2`，以及由 `ReadMetadata()`/`ReadLyrics()` 复用的 `RawId3v2`、`RawVorbisComment`、`RawMp4Ilst`、`RawApeV2` 路径。
+- 对已经能探测到但尚未完整实现的容器，文档只允许把它们写成“检测可达”或“路径预留”，不能写成当前完整支持。
+- `WAV`、`AIFF`、`DSF`、`DFF`、`ASF`、`Matroska` 的解析已经在任务 7 到 11 中落地，文档里应继续把它们标为当前已支持的具体边界，而不是泛化成所有同类格式都自动支持。
+
+### 目标能力
 
 - 最终目标是覆盖已知音频后缀集合中的标签来源：`mp3`、`aac`、`m4a`、`ogg`、`wma`、`opus`、`mpc`、`mp+`、`mpp`、`flac`、`ape`、`wav`、`aiff`、`aif`、`wv`、`tta`、`alac`、`shn`、`tak`、`dsf`、`dff`、`dxd`、`mka`、`webm`、`dts`、`ac3`、`truehd`。
 - 这里的“覆盖”指能从对应文件中读取标题、歌手、专辑、年份、流派、歌词、封面等标签信息；基础音频流识别仍由 FFmpeg probe 和 `ReadMediaInfo()` 负责。
@@ -42,6 +51,16 @@
 - `dsf` 和 `dff` 的目标都是定位容器内嵌 ID3v2：`dsf` 需要按 DSF header 的 metadata pointer 读取 ID3 tag；`dff` 需要在 DSDIFF chunk 树（如 `FRM8`）中寻找常见的 `ID3 ` 或 `DI3v` 载荷。
 - `dts`、`ac3`、`truehd` 作为裸音频流不规划独立标签 parser；若要携带标签，最终目标是通过 Matroska (`mka`) 等外层容器读取。
 - 后续文档和实现中必须区分“当前已支持”和“最终目标”：新增路线图条目不得被写成当前 public API 已可完整处理的能力。
+
+### 明确不支持
+
+- `dts`、`ac3`、`truehd` 的裸流不规划独立 tag parser，也不把它们写成当前或近期的 standalone 能力。
+- 这些裸流如果有元数据，只能通过外层已支持容器承载后再读取，例如 `mka`、`webm`、`m4a` 这类容器内的元数据路径。
+- Phase 6 的 `CUE` 仍然未实现，当前不支持 `ReadCue()`、`ReadAlbum()`、目录输入，也不支持返回批量 `std::vector<MusicTag>` 的 public API。
+- `TagLib` 只保留为后续架构讨论和决策上下文，当前没有引入该依赖，也不把它写成现有能力或现有 parser 架构的一部分。
+- `CUE` 仍是 Phase 6 的未实现项；文档和实现都不应把它写成已支持，也不应声称目录级扫描或专辑级批量读取已经可用。
+
+## 项目最终目标覆盖范围
 
 ## 核心标签格式与后缀映射
 
@@ -84,10 +103,10 @@
 
 - 当前项目定位是自研 raw-byte parser：FFmpeg 只负责 probe、音频流、媒体信息和封面编解码，标签字段仍由本项目解析器从原始字节读取。
 - 后续若继续自研，应优先补齐“容器提取器”而不是复制已有 tag parser：RIFF/IFF/DSF/DSDIFF 负责定位 ID3v2，Ogg/Opus 负责定位 comment 和图片字段，ASF/Matroska 由于标签模型不同才需要新增完整 parser。
-- TagLib 可作为后续架构评估项：它覆盖大量常见音频 metadata 容器，能显著降低 `MP3/MPEG`、`MP4/M4A/AAC/ALAC`、`Ogg Vorbis/Opus/FLAC`、`ASF/WMA`、`MPC`、`WavPack`、`WAV`、`AIFF`、`TTA`、`DSF/DFF`、`Matroska/WebM`、`Shorten` 等格式的兼容成本。
-- TagLib 的支持范围应按官方文档和具体版本确认；它是 metadata/tag 库，不是音频解码器。对 `TAK`、`DXD`、`DTS`、`AC3`、`TrueHD` 等未明确在官方支持矩阵中的格式，不应假定 TagLib 可直接覆盖。
-- 即使引入 TagLib，也需要保留本项目的边界决策：`Shorten` 等格式可能只适合读取不适合写回，`ASF/WMA`、`Matroska/WebM`、`DSF/DFF` 的能力应限定为容器元数据能力，不应泛化为所有编码变体或所有非标准 tag 都可处理。
-- 引入 TagLib 会改变当前“标题/歌手/专辑/歌词/封面块不依赖外部 tag 库”的边界，也需要重新设计错误处理、资源上限、封面缓存、字段优先级和构建依赖策略。
+- TagLib 只作为后续架构讨论和决策上下文，不是当前依赖，也不是当前 parser 架构的一部分。
+- 若后续评估 TagLib，支持范围仍要按官方文档和具体版本确认；它是 metadata/tag 库，不是音频解码器。
+- 对 `TAK`、`DXD`、`DTS`、`AC3`、`TrueHD` 等未明确在官方支持矩阵中的格式，不应假定 TagLib 可直接覆盖。
+- 即使未来引入 TagLib，也需要保留本项目的边界决策：`Shorten` 等格式可能只适合读取不适合写回，`ASF/WMA`、`Matroska/WebM`、`DSF/DFF` 的能力应限定为容器元数据能力，不应泛化为所有编码变体或所有非标准 tag 都可处理。
 - 在正式决定引入 TagLib 前，文档和代码仍以当前自研解析路线为准；不得把 TagLib 支持范围写成当前能力，也不得混用 TagLib 与自研 parser 而不定义优先级。
 
 ## FFmpeg 与原始字节解析分工
@@ -120,7 +139,8 @@
 
 ## 封面导出与缓存
 
-- `Read(path)` 默认优先使用 `XDG_RUNTIME_DIR/tagreader-covers` 作为封面导出目录；不可用时回退到 UID 私有的临时目录，例如 POSIX 上的 `std::filesystem::temp_directory_path() / "tagreader-covers-$UID"`；`Read(path, coverExportDir)` 使用调用方显式提供的目录。
+- 无参数重载默认优先使用 `XDG_RUNTIME_DIR/tagreader-covers` 作为封面导出位置；不可用时回退到 UID 私有的临时位置，例如 POSIX 上的 `std::filesystem::temp_directory_path() / "tagreader-covers-$UID"`。
+- 带 `coverExportDir` 的重载使用调用方显式提供的封面导出路径。
 - 实际导出目录会按需创建，必须存在且为目录，并通过写入、读取、删除探针文件的权限验证；显式提供的目录如果是 symlink 会在探针和缓存写入前被拒绝。
 - 封面缓存是 content-addressed PNG storage，缓存键基于音频文件内嵌图片原始字节计算。
 - 缓存路径格式为 `coverExportDir / first2hex / rest.png`，其中 `first2hex` 是 hash 前两个十六进制字符，`rest.png` 是剩余 hash 加 `.png` 后缀。
