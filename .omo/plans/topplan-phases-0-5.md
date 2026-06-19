@@ -496,7 +496,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `提取 DSD 元数据` | Files: [`src/formats/dsd/*`, CMakeLists, dispatch, tests]
 
-- [ ] 10. 新增 ASF/WMA metadata object parser
+- [x] 10. 新增 ASF/WMA metadata object parser
 
   **What to do**: 新增 `src/formats/asf/` parser，读取 ASF object header `GUID(16)+size(8)`，只解析 Header Object 内的 `Content Description Object`、`Extended Content Description Object`、必要时 `Metadata Library Object`；映射 `Title`、`Author`、`WM/AlbumTitle`、`WM/AlbumArtist`、`WM/TrackNumber`、`WM/Year`、lyrics/description 和 picture-like binary 属性；定义 ASF object count、header size、single descriptor、image payload 上限。
   **Must NOT do**: 不实现 ASF packet/data 解复用；不从 Windows Media APIs 或 FFmpeg dictionary 读取 tag。

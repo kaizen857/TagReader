@@ -72,6 +72,7 @@ add_library(TagReaderCore STATIC
     src/formats/riff/RiffParser.cpp
     src/formats/aiff/AiffParser.cpp
     src/formats/dsd/DsdParser.cpp
+    src/formats/asf/AsfParser.cpp
     src/formats/mp4/Mp4AtomReader.cpp
     src/formats/mp4/Mp4Parser.cpp
     src/formats/ape/ApeParser.cpp

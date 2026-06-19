@@ -1,6 +1,7 @@
 #include "TagReader.hpp"
 #include "core/TagFormat.hpp"
 #include "formats/aiff/AiffParser.hpp"
+#include "formats/asf/AsfParser.hpp"
 #include "formats/common/BoundedReader.hpp"
 #include "formats/dsd/DsdParser.hpp"
 #include "formats/riff/RiffParser.hpp"
@@ -49,7 +50,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 48> kTestCases{{
+constexpr std::array<TestCase, 51> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -98,6 +99,9 @@ constexpr std::array<TestCase, 48> kTestCases{{
     {"TR-AUDIT-046", true},
     {"TR-AUDIT-047", true},
     {"TR-AUDIT-048", true},
+    {"TR-AUDIT-049", true},
+    {"TR-AUDIT-050", true},
+    {"TR-AUDIT-051", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -235,6 +239,12 @@ void AppendU32LE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
     bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
     bytes.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
+}
+
+void AppendU16LE(std::vector<std::uint8_t> &bytes, std::uint16_t value)
+{
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
 }
 
 void AppendU64LE(std::vector<std::uint8_t> &bytes, std::uint64_t value)
@@ -931,6 +941,153 @@ std::vector<std::uint8_t> DffFile(const std::vector<std::vector<std::uint8_t>> &
     return bytes;
 }
 
+using AsfGuid = std::array<std::uint8_t, 16>;
+
+constexpr AsfGuid kAsfHeaderGuid{0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11,
+                                 0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C};
+constexpr AsfGuid kAsfContentDescriptionGuid{0x33, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11,
+                                             0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C};
+constexpr AsfGuid kAsfExtendedContentDescriptionGuid{0x40, 0xA4, 0xD0, 0xD2, 0x07, 0xE3, 0xD2, 0x11,
+                                                     0x97, 0xF0, 0x00, 0xA0, 0xC9, 0x5E, 0xA8, 0x50};
+constexpr AsfGuid kAsfMetadataLibraryGuid{0x94, 0x1C, 0x23, 0x44, 0x98, 0x94, 0xD1, 0x49,
+                                          0xA1, 0x41, 0x1D, 0x13, 0x4E, 0x45, 0x70, 0x54};
+
+std::vector<std::uint8_t> Utf16LeBytes(std::string_view text, bool terminated = true)
+{
+    std::vector<std::uint8_t> bytes;
+    for (unsigned char ch : text)
+    {
+        bytes.push_back(ch);
+        bytes.push_back(0);
+    }
+    if (terminated)
+    {
+        bytes.push_back(0);
+        bytes.push_back(0);
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> AsfObject(const AsfGuid &guid, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes(guid.begin(), guid.end());
+    AppendU64LE(bytes, static_cast<std::uint64_t>(payload.size() + 24));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> AsfHeaderObject(const std::vector<std::vector<std::uint8_t>> &children)
+{
+    std::vector<std::uint8_t> payload;
+    AppendU32LE(payload, static_cast<std::uint32_t>(children.size()));
+    payload.push_back(0x01);
+    payload.push_back(0x02);
+    for (const std::vector<std::uint8_t> &child : children)
+    {
+        payload.insert(payload.end(), child.begin(), child.end());
+    }
+    return AsfObject(kAsfHeaderGuid, payload);
+}
+
+std::vector<std::uint8_t> AsfContentDescription(std::string_view title, std::string_view author, std::string_view copyright, std::string_view description, std::string_view rating)
+{
+    const std::vector<std::uint8_t> titleBytes = Utf16LeBytes(title);
+    const std::vector<std::uint8_t> authorBytes = Utf16LeBytes(author);
+    const std::vector<std::uint8_t> copyrightBytes = Utf16LeBytes(copyright);
+    const std::vector<std::uint8_t> descriptionBytes = Utf16LeBytes(description);
+    const std::vector<std::uint8_t> ratingBytes = Utf16LeBytes(rating);
+
+    std::vector<std::uint8_t> payload;
+    for (std::size_t size : {titleBytes.size(), authorBytes.size(), copyrightBytes.size(), descriptionBytes.size(), ratingBytes.size()})
+    {
+        payload.push_back(static_cast<std::uint8_t>(size & 0xFF));
+        payload.push_back(static_cast<std::uint8_t>((size >> 8) & 0xFF));
+    }
+    for (const std::vector<std::uint8_t> &field : {titleBytes, authorBytes, copyrightBytes, descriptionBytes, ratingBytes})
+    {
+        payload.insert(payload.end(), field.begin(), field.end());
+    }
+    return AsfObject(kAsfContentDescriptionGuid, payload);
+}
+
+std::vector<std::uint8_t> AsfExtendedDescriptor(std::string_view name, std::uint16_t valueType, const std::vector<std::uint8_t> &value)
+{
+    const std::vector<std::uint8_t> nameBytes = Utf16LeBytes(name);
+    std::vector<std::uint8_t> bytes;
+    bytes.push_back(static_cast<std::uint8_t>(nameBytes.size() & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>((nameBytes.size() >> 8) & 0xFF));
+    bytes.insert(bytes.end(), nameBytes.begin(), nameBytes.end());
+    bytes.push_back(static_cast<std::uint8_t>(valueType & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>((valueType >> 8) & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>(value.size() & 0xFF));
+    bytes.push_back(static_cast<std::uint8_t>((value.size() >> 8) & 0xFF));
+    bytes.insert(bytes.end(), value.begin(), value.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> AsfExtendedContentDescription(const std::vector<std::vector<std::uint8_t>> &descriptors)
+{
+    std::vector<std::uint8_t> payload;
+    payload.push_back(static_cast<std::uint8_t>(descriptors.size() & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((descriptors.size() >> 8) & 0xFF));
+    for (const std::vector<std::uint8_t> &descriptor : descriptors)
+    {
+        payload.insert(payload.end(), descriptor.begin(), descriptor.end());
+    }
+    return AsfObject(kAsfExtendedContentDescriptionGuid, payload);
+}
+
+std::vector<std::uint8_t> AsfMetadataLibraryDescriptor(std::string_view name, std::uint16_t valueType, const std::vector<std::uint8_t> &value)
+{
+    const std::vector<std::uint8_t> nameBytes = Utf16LeBytes(name);
+    std::vector<std::uint8_t> bytes;
+    AppendU16LE(bytes, 0);
+    AppendU16LE(bytes, 0);
+    AppendU16LE(bytes, static_cast<std::uint16_t>(nameBytes.size()));
+    AppendU16LE(bytes, valueType);
+    AppendU32LE(bytes, static_cast<std::uint32_t>(value.size()));
+    bytes.insert(bytes.end(), nameBytes.begin(), nameBytes.end());
+    bytes.insert(bytes.end(), value.begin(), value.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> AsfMetadataLibrary(const std::vector<std::vector<std::uint8_t>> &descriptors)
+{
+    std::vector<std::uint8_t> payload;
+    payload.push_back(static_cast<std::uint8_t>(descriptors.size() & 0xFF));
+    payload.push_back(static_cast<std::uint8_t>((descriptors.size() >> 8) & 0xFF));
+    for (const std::vector<std::uint8_t> &descriptor : descriptors)
+    {
+        payload.insert(payload.end(), descriptor.begin(), descriptor.end());
+    }
+    return AsfObject(kAsfMetadataLibraryGuid, payload);
+}
+
+std::vector<std::uint8_t> AsfPictureValue(const std::vector<std::uint8_t> &imageBytes)
+{
+    std::vector<std::uint8_t> value;
+    value.push_back(3);
+    AppendU32LE(value, static_cast<std::uint32_t>(imageBytes.size()));
+    const std::vector<std::uint8_t> mime = Utf16LeBytes("image/png");
+    const std::vector<std::uint8_t> description = Utf16LeBytes("front cover");
+    value.insert(value.end(), mime.begin(), mime.end());
+    value.insert(value.end(), description.begin(), description.end());
+    value.insert(value.end(), imageBytes.begin(), imageBytes.end());
+    return value;
+}
+
+std::vector<std::uint8_t> AsfPictureValueWithDeclaredImageSize(std::uint32_t declaredImageSize)
+{
+    std::vector<std::uint8_t> value;
+    value.push_back(3);
+    AppendU32LE(value, declaredImageSize);
+    const std::vector<std::uint8_t> mime = Utf16LeBytes("image/png");
+    const std::vector<std::uint8_t> description = Utf16LeBytes("front cover");
+    value.insert(value.end(), mime.begin(), mime.end());
+    value.insert(value.end(), description.begin(), description.end());
+    return value;
+}
+
 std::vector<std::uint8_t> RiffChunk(std::string_view chunkId, const std::vector<std::uint8_t> &payload)
 {
     std::vector<std::uint8_t> bytes;
@@ -1165,6 +1322,44 @@ bool ReadDsdRawMetadataForTest(const std::filesystem::path &path,
     (void)dsf;
     (void)rawMetadata;
     std::cerr << "DSD internal RawMetadata assertions require POSIX FileInput\n";
+    return false;
+#endif
+}
+
+bool ReadAsfRawTagsForTest(const std::filesystem::path &path,
+                           const std::filesystem::path &coverExportDir,
+                           tagreader_core::RawMetadata &rawMetadata,
+                           tagreader_core::RawLyrics &rawLyrics)
+{
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    std::error_code ec;
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open ASF sample for internal parser assertion: " << path.string() << '\n';
+        return false;
+    }
+    tagreader_core::ReadContext context;
+    context.filePath = path;
+    context.coverExportDir = coverExportDir;
+    context.fileSize = std::filesystem::file_size(path, ec);
+    if (ec)
+    {
+        std::cerr << "failed to size ASF sample for internal parser assertion: " << ec.message() << '\n';
+        ::close(fd);
+        return false;
+    }
+    context.input = tagreader_io::FileInput(fd);
+    tagreader_asf::ReadAsfMetadata(context, rawMetadata);
+    context.input.clear();
+    tagreader_asf::ReadAsfLyrics(context, rawLyrics);
+    return true;
+#else
+    (void)path;
+    (void)coverExportDir;
+    (void)rawMetadata;
+    (void)rawLyrics;
+    std::cerr << "ASF internal RawMetadata assertions require POSIX FileInput\n";
     return false;
 #endif
 }
@@ -6683,6 +6878,259 @@ bool RunTrAudit048()
     return passed;
 }
 
+bool RunTrAudit049()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-049";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> contentDescription = AsfContentDescription("ASF Title", "ASF Author", "", "ASF Description", "");
+    const std::vector<std::uint8_t> extendedDescription = AsfExtendedContentDescription({
+        AsfExtendedDescriptor("WM/AlbumTitle", 0, Utf16LeBytes("ASF Album")),
+        AsfExtendedDescriptor("WM/AlbumArtist", 0, Utf16LeBytes("ASF Album Artist")),
+        AsfExtendedDescriptor("WM/Year", 0, Utf16LeBytes("2026")),
+        AsfExtendedDescriptor("WM/TrackNumber", 0, Utf16LeBytes("7/12")),
+        AsfExtendedDescriptor("WM/Lyrics", 0, Utf16LeBytes("line one\nline two")),
+        AsfExtendedDescriptor("WM/Picture", 1, AsfPictureValue(validPng)),
+    });
+    const std::filesystem::path samplePath = evidenceRoot / "metadata-happy.asf";
+    if (!WriteBinaryFile(samplePath, AsfHeaderObject({contentDescription, extendedDescription})))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata rawMetadata{};
+    tagreader_core::RawLyrics rawLyrics{};
+    if (!ReadAsfRawTagsForTest(samplePath, coverExportDir, rawMetadata, rawLyrics))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(rawMetadata.title == "ASF Title", "ASF content description title should decode") && passed;
+    passed = Expect(rawMetadata.artist == "ASF Author", "ASF content description author should map to artist") && passed;
+    passed = Expect(rawMetadata.album == "ASF Album", "ASF WM/AlbumTitle should map album") && passed;
+    passed = Expect(rawMetadata.albumArtist == "ASF Album Artist", "ASF WM/AlbumArtist should map albumArtist") && passed;
+    passed = Expect(rawMetadata.year == 2026, "ASF WM/Year should parse year") && passed;
+    passed = Expect(rawMetadata.trackNumber == 7, "ASF WM/TrackNumber should parse slash track") && passed;
+    passed = Expect(!rawMetadata.coverPath.empty() && std::filesystem::is_regular_file(rawMetadata.coverPath, ec), "ASF WM/Picture should export cover PNG") && passed;
+    ec.clear();
+    passed = Expect(PathIsUnder(rawMetadata.coverPath, coverExportDir), "ASF cover path should stay under export dir") && passed;
+    passed = Expect(CountPngFiles(coverExportDir) == 1, "ASF valid picture should create one PNG") && passed;
+    passed = Expect(rawLyrics.text == "line one\nline two", "ASF WM/Lyrics should preserve plain lyrics before public normalization") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-049 asf-fields title=ASF Title artist=ASF Author album=ASF Album year=2026 track=7\n"
+        "TR-AUDIT-049 asf-picture-exported coverPath=" + rawMetadata.coverPath.string() + "\n"
+        "TR-AUDIT-049 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-049\n"
+        "marker=asf-metadata-happy-path\n"
+        "marker=asf-picture-cover-cache\n"
+        "sample=" + samplePath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "title=" + rawMetadata.title + "\n" +
+        "artist=" + rawMetadata.artist + "\n" +
+        "album=" + rawMetadata.album + "\n" +
+        "albumArtist=" + rawMetadata.albumArtist + "\n" +
+        "year=" + std::to_string(rawMetadata.year) + "\n" +
+        "track=" + std::to_string(rawMetadata.trackNumber) + "\n" +
+        "coverPath=" + rawMetadata.coverPath.string() + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-049 asf-fields title=ASF Title artist=ASF Author album=ASF Album year=2026 track=7\n";
+        std::cout << "TR-AUDIT-049 asf-picture-exported coverPath=" << rawMetadata.coverPath.string() << '\n';
+    }
+    return passed;
+}
+
+bool RunTrAudit050()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-050";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> malformedUtf16 = Utf16LeBytes("bad", false);
+    malformedUtf16.push_back(0x00);
+    const std::vector<std::uint8_t> extendedDescription = AsfExtendedContentDescription({
+        AsfExtendedDescriptor("Title", 0, malformedUtf16),
+        AsfExtendedDescriptor("Author", 0, Utf16LeBytes("Valid UTF16 Author")),
+        AsfExtendedDescriptor("WM/AlbumTitle", 0, Utf16LeBytes("Valid UTF16 Album")),
+        AsfExtendedDescriptor("WM/TrackNumber", 5, std::vector<std::uint8_t>{9, 0}),
+    });
+    const std::filesystem::path samplePath = evidenceRoot / "utf16-local-skip.asf";
+    if (!WriteBinaryFile(samplePath, AsfHeaderObject({extendedDescription})))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata rawMetadata{};
+    tagreader_core::RawLyrics rawLyrics{};
+    if (!ReadAsfRawTagsForTest(samplePath, evidenceRoot / "covers", rawMetadata, rawLyrics))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(rawMetadata.title.empty(), "malformed odd-length UTF-16LE ASF title should be skipped locally") && passed;
+    passed = Expect(rawMetadata.artist == "Valid UTF16 Author", "valid ASF UTF-16LE author after malformed descriptor should decode") && passed;
+    passed = Expect(rawMetadata.album == "Valid UTF16 Album", "valid ASF UTF-16LE album should decode") && passed;
+    passed = Expect(rawMetadata.trackNumber == 9, "ASF WORD track descriptor should parse numeric track") && passed;
+    passed = Expect(rawMetadata.coverPath.empty() && rawLyrics.timedLines.empty(), "UTF-16 local-skip sample should not create cover or lyrics side effects") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-050 asf-utf16le-valid artist=Valid UTF16 Author album=Valid UTF16 Album track=9\n"
+        "TR-AUDIT-050 asf-malformed-descriptor-skipped title=\n"
+        "TR-AUDIT-050 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-050\n"
+        "marker=asf-utf16le-decode\n"
+        "marker=asf-malformed-descriptor-local-skip\n"
+        "sample=" + samplePath.string() + "\n" +
+        "title=" + rawMetadata.title + "\n" +
+        "artist=" + rawMetadata.artist + "\n" +
+        "album=" + rawMetadata.album + "\n" +
+        "track=" + std::to_string(rawMetadata.trackNumber) + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-050 asf-utf16le-valid artist=Valid UTF16 Author album=Valid UTF16 Album track=9\n";
+        std::cout << "TR-AUDIT-050 asf-malformed-descriptor-skipped title=\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit051()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-051";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> oversizedText(static_cast<std::size_t>(1ULL * 1024ULL * 1024ULL + 1ULL), 'A');
+    const std::uint32_t oversizedImageBytes = static_cast<std::uint32_t>(64ULL * 1024ULL * 1024ULL + 1ULL);
+    const std::filesystem::path oversizedDescriptorPath = evidenceRoot / "oversized-descriptor.asf";
+    const std::filesystem::path oversizedImagePath = evidenceRoot / "oversized-image.asf";
+    const std::filesystem::path oversizedObjectPath = evidenceRoot / "oversized-object.asf";
+    const std::filesystem::path badMagicPath = evidenceRoot / "bad-magic.asf";
+
+    if (!WriteBinaryFile(oversizedDescriptorPath, AsfHeaderObject({AsfMetadataLibrary({
+            AsfMetadataLibraryDescriptor("Title", 0, oversizedText),
+            AsfMetadataLibraryDescriptor("Author", 0, Utf16LeBytes("After Oversized Descriptor")),
+        })})) ||
+        !WriteBinaryFile(oversizedImagePath, AsfHeaderObject({AsfMetadataLibrary({
+            AsfMetadataLibraryDescriptor("WM/Picture", 1, AsfPictureValueWithDeclaredImageSize(oversizedImageBytes)),
+            AsfMetadataLibraryDescriptor("Title", 0, Utf16LeBytes("After Oversized Image")),
+        })})) ||
+        !WriteBinaryFile(oversizedObjectPath, [&]
+        {
+            std::vector<std::uint8_t> bytes(kAsfHeaderGuid.begin(), kAsfHeaderGuid.end());
+            AppendU64LE(bytes, 64ULL * 1024ULL * 1024ULL + 25ULL);
+            AppendU32LE(bytes, 0);
+            bytes.push_back(0x01);
+            bytes.push_back(0x02);
+            return bytes;
+        }()) ||
+        !WriteBinaryFile(badMagicPath, Bytes("not an ASF object")))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata oversizedDescriptorRaw{};
+    tagreader_core::RawMetadata oversizedImageRaw{};
+    tagreader_core::RawMetadata oversizedObjectRaw{};
+    tagreader_core::RawMetadata badMagicRaw{};
+    tagreader_core::RawLyrics oversizedDescriptorLyrics{};
+    tagreader_core::RawLyrics oversizedImageLyrics{};
+    tagreader_core::RawLyrics oversizedObjectLyrics{};
+    tagreader_core::RawLyrics badMagicLyrics{};
+    if (!ReadAsfRawTagsForTest(oversizedDescriptorPath, coverExportDir, oversizedDescriptorRaw, oversizedDescriptorLyrics) ||
+        !ReadAsfRawTagsForTest(oversizedImagePath, coverExportDir, oversizedImageRaw, oversizedImageLyrics) ||
+        !ReadAsfRawTagsForTest(oversizedObjectPath, coverExportDir, oversizedObjectRaw, oversizedObjectLyrics) ||
+        !ReadAsfRawTagsForTest(badMagicPath, coverExportDir, badMagicRaw, badMagicLyrics))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(oversizedDescriptorRaw.title.empty(), "oversized ASF text descriptor should be skipped") && passed;
+    passed = Expect(oversizedDescriptorRaw.artist == "After Oversized Descriptor", "ASF parser should continue after oversized text descriptor") && passed;
+    passed = Expect(oversizedImageRaw.coverPath.empty(), "oversized ASF image descriptor should not export cover") && passed;
+    passed = Expect(oversizedImageRaw.title == "After Oversized Image", "ASF parser should continue after oversized image descriptor") && passed;
+    passed = Expect(CountPngFiles(coverExportDir) == 0, "oversized ASF image should not create PNG cache entries") && passed;
+    passed = Expect(oversizedObjectRaw.title.empty() && oversizedObjectRaw.artist.empty(), "oversized ASF header object should be rejected locally") && passed;
+    passed = Expect(badMagicRaw.title.empty() && badMagicRaw.artist.empty(), "bad ASF magic should be rejected locally") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-051 asf-oversized-descriptor-skipped artist=After Oversized Descriptor\n"
+        "TR-AUDIT-051 asf-oversized-image-skipped title=After Oversized Image\n"
+        "TR-AUDIT-051 asf-oversized-object-and-bad-magic-empty\n"
+        "TR-AUDIT-051 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-051\n"
+        "marker=asf-resource-limits\n"
+        "marker=asf-bad-magic-local-empty\n"
+        "oversizedDescriptorSample=" + oversizedDescriptorPath.string() + "\n" +
+        "oversizedImageSample=" + oversizedImagePath.string() + "\n" +
+        "oversizedObjectSample=" + oversizedObjectPath.string() + "\n" +
+        "badMagicSample=" + badMagicPath.string() + "\n" +
+        "oversizedTextBytes=" + std::to_string(oversizedText.size()) + "\n" +
+        "oversizedImageBytes=" + std::to_string(oversizedImageBytes) + "\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-051 asf-oversized-descriptor-skipped artist=After Oversized Descriptor\n";
+        std::cout << "TR-AUDIT-051 asf-oversized-image-skipped title=After Oversized Image\n";
+        std::cout << "TR-AUDIT-051 asf-oversized-object-and-bad-magic-empty\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -7213,6 +7661,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-048")
     {
         if (!RunTrAudit048())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-049")
+    {
+        if (!RunTrAudit049())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-050")
+    {
+        if (!RunTrAudit050())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-051")
+    {
+        if (!RunTrAudit051())
         {
             return 1;
         }

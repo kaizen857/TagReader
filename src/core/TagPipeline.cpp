@@ -1,6 +1,7 @@
 #include "core/TagPipeline.hpp"
 
 #include "formats/aiff/AiffParser.hpp"
+#include "formats/asf/AsfParser.hpp"
 #include "formats/dsd/DsdParser.hpp"
 #include "formats/flac/FlacParser.hpp"
 #include "formats/id3/Id3Parser.hpp"
@@ -434,6 +435,9 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                                 { tagreader_dsd::ReadDffMetadata(context, metadata); });
         break;
     case TagFormat::Asf:
+        ignoreMalformedMetadata([&]()
+                                { tagreader_asf::ReadAsfMetadata(context, metadata); });
+        break;
     case TagFormat::Matroska:
     case TagFormat::RawVorbisComment:
         break;
@@ -489,7 +493,10 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
         case TagFormat::Aiff:
         case TagFormat::Dsf:
         case TagFormat::Dff:
+            break;
         case TagFormat::Asf:
+            tagreader_asf::ReadAsfLyrics(context, lyrics);
+            break;
         case TagFormat::Matroska:
         case TagFormat::RawVorbisComment:
         case TagFormat::Unknown:

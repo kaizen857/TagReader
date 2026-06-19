@@ -86,3 +86,10 @@
 - DFF `ID3 ` and `DI3v` are compatibility-only nonstandard payload paths; this is not a claim that DSDIFF has official standard metadata tags.
 - DXD remains a boundary case only: no dedicated DXD parser or support claim was added; actual RIFF/FLAC/DSF magic remains handled by those existing container paths, otherwise metadata stays empty/unknown.
 - Added `TR-AUDIT-046`, `TR-AUDIT-047`, and `TR-AUDIT-048` for DSF pointer success/local-empty cases, DFF compatibility chunks/no-ID3 empty behavior, and DXD no-standalone-parser behavior.
+
+## 2026-06-19 Task 10: ASF/WMA metadata object parser
+- Added `src/formats/asf/AsfParser.*`; it validates ASF Header Object GUID bytes, requires bounded object sizes, and only walks child objects inside the ASF Header Object.
+- ASF parsing is metadata-only: Content Description Object, Extended Content Description Object, Metadata Object, and Metadata Library Object are handled; no ASF Data Object, packet, or payload demuxing was added.
+- Text descriptors decode as UTF-16LE and map title/author/album/albumArtist/year/track/comment/lyrics into raw fields; malformed text descriptors are local skips.
+- `WM/Picture` binary descriptors use the existing content-addressed PNG cover cache through `WriteCoverAsPng()` and enforce descriptor/image payload limits before export.
+- Added `TR-AUDIT-049`, `TR-AUDIT-050`, and `TR-AUDIT-051` covering ASF happy path, UTF-16LE valid/invalid descriptors, oversized object/descriptor/image limits, bad magic, and local skip behavior.
