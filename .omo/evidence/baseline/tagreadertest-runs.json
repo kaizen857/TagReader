@@ -1,0 +1,659 @@
+[
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_invalid_utf8.mp3",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_invalid_utf8.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_utf16.mp3",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_utf16.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_utf8.mp3",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/encoding_utf8.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/id3v23_large_latin1_text.mp3",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/id3v23_large_latin1_text.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/id3v23_utf16_odd_length.mp3",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/id3v23_utf16_odd_length.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/encoding/mp4_utf16_title_over_limit.m4a",
+    "category": "encoding",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/encoding/mp4_utf16_title_over_limit.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_oversized_block.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_oversized_block.flac",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_desc_truncated.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_desc_truncated.flac /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_picture_desc_truncated.flac.stdout",
+    "stdout_bytes": 329,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_image_truncated.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_image_truncated.flac /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_picture_image_truncated.flac.stdout",
+    "stdout_bytes": 330,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_mime_truncated.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_mime_truncated.flac /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_picture_mime_truncated.flac.stdout",
+    "stdout_bytes": 329,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_valid.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_valid.flac /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_picture_valid.flac.stdout",
+    "stdout_bytes": 437,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_truncated_block.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_truncated_block.flac",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_valid_chain.flac.stdout",
+    "stdout_bytes": 322,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_key_then_title.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_key_then_title.flac",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_vorbis_invalid_key_then_title.flac.stdout",
+    "stdout_bytes": 353,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_lyrics_then_title.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_lyrics_then_title.flac",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_vorbis_invalid_lyrics_then_title.flac.stdout",
+    "stdout_bytes": 359,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_value_then_artist.flac",
+    "category": "flac",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_value_then_artist.flac",
+    "returncode": 0,
+    "stdout_file": ".omo/evidence/baseline/flac_flac_vorbis_invalid_value_then_artist.flac.stdout",
+    "stdout_bytes": 358,
+    "stderr": ""
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_large_unknown_geo.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_large_unknown_geo.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_lyrics_flagged.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_lyrics_flagged.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_minimal.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_minimal.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_slt_line_cap.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_slt_line_cap.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_large_geob.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_large_geob.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_bracket_plain.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_bracket_plain.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_line_cap.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_line_cap.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_timed_multi.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_timed_multi.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_timestamp_explosion.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_lrc_timestamp_explosion.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_minimal.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_minimal.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_plain_lyrics_over_limit.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_plain_lyrics_over_limit.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_public_api_multi_field.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_public_api_multi_field.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_sylt_line_cap.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v23_sylt_line_cap.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_frame_unsync_text.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_frame_unsync_text.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_large_priv.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_large_priv.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_minimal.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_minimal.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_oversized.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_oversized.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_public_api_txxx_lrc.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_public_api_txxx_lrc.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_and_frame_unsync_text.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_and_frame_unsync_text.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_apic.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_apic.mp3 /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_extended_header.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_extended_header.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_footer.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_footer.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_text.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_tag_unsync_text.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_truncated.mp3",
+    "category": "id3",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/id3/id3v24_truncated.mp3",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/image/image_apic_large_payload.mp3",
+    "category": "image",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/image/image_apic_large_payload.mp3 /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/image/image_apic_png.mp3",
+    "category": "image",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/image/image_apic_png.mp3 /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/image/image_apic_truncated.mp3",
+    "category": "image",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/image/image_apic_truncated.mp3 /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_covr_invalid_then_valid.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_covr_invalid_then_valid.m4a /home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/evidence/baseline/covers",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_atoms.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_atoms.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_metadata_item.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_metadata_item.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_nesting_matrix.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_deep_nesting_matrix.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: Invalid data found when processing input"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_extended_atom.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_extended_atom.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_freeform_lyrics_utf16_bom.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_freeform_lyrics_utf16_bom.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_oversized.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_oversized.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf16_bom.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf16_bom.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf16_odd.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf16_odd.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf8.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_lyrics_utf8.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_meta_payload_too_small.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_meta_payload_too_small.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_meta_version_1.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_meta_version_1.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_multi_data_first_empty.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_multi_data_first_empty.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_public_api_metadata_and_lyrics.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_public_api_metadata_and_lyrics.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_size0_hides_metadata.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_size0_hides_metadata.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_size0_tail_ok.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_size0_tail_ok.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_truncated_atom.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_truncated_atom.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_valid_tree.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_valid_tree.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_zero_size_atom_before_title.m4a",
+    "category": "mp4",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/mp4/mp4_zero_size_atom_before_title.m4a",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: no audio stream found in input file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_bad_continuation.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_bad_continuation.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_comment_resource_limit.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_comment_resource_limit.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_oversized_payload_boundary.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_oversized_payload_boundary.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_public_api_comments_and_lrc.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_public_api_comments_and_lrc.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_truncated_page.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_truncated_page.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_truncated_payload_boundary.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_truncated_payload_boundary.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_valid_vorbis_pages.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_valid_vorbis_pages.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_key_then_title.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_key_then_title.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_lyrics_then_title.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_lyrics_then_title.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_value_then_artist.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_invalid_value_then_artist.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  },
+  {
+    "sample": "/tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_multistream_target_comments.ogg",
+    "category": "ogg",
+    "command": "/home/kaizen857/cppProject(app_and_lib)/TagReader/build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/ogg/ogg_vorbis_multistream_target_comments.ogg",
+    "returncode": 2,
+    "stdout_file": "",
+    "stdout_bytes": 0,
+    "stderr": "TagReader error: avformat_open_input failed: End of file"
+  }
+]

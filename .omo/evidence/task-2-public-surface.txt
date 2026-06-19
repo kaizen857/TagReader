@@ -1,0 +1,2 @@
+grep include/*.hpp for src/|core/|media/|io/|text/|cover/|formats/ => no matches
+grep include/*.hpp for TagReaderCore|TagReaderTest|TagReaderSecuritySmoke|TagReaderFuzz => no matches

@@ -1,0 +1,29 @@
+Task 4 ID3v2.2 unsupported flag evidence
+
+Code behavior:
+- Id3v22TagFlagsAreSupported() rejects ID3v2.2 compression flag 0x40 and unknown tag-level flags.
+- Rejected v2.2 tag flags fail locally in ReadID3Lyrics() by returning without lyrics; no v2.3/v2.4 frame flag preparation is applied to v2.2 frames.
+- The unsupported sample contains a ULT payload string but uses v2.2 compression flag 0x40, so lyrics output must stay empty.
+
+Commands run:
+$ lsp_diagnostics src/TagReader.cpp
+exit 0
+No diagnostics found
+
+$ python3 test/security/generate_samples.py
+exit 0
+created /tmp/opencode/tagreader_security_samples/id3v22_lyrics_unsupported_flag.mp3
+
+$ cmake -S . -B build
+exit 0
+
+$ cmake --build build
+exit 0
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_security_samples/id3v22_lyrics_unsupported_flag.mp3
+exit 0
+lyricsCount: 0
+lyrics:
+
+Damaged payload check:
+- stdout did not include: ID3v22 unsupported damaged lyric payload

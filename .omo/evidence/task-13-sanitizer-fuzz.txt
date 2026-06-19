@@ -1,0 +1,55 @@
+Task 13 sanitizer and fuzz evidence
+Date: 2026-05-31
+Workdir: /home/kaizen857/cppProject(app_and_lib)/TagReader
+
+Sanitizer build
+===============
+
+Command: cmake -S . -B build-sanitize -DTAGREADER_ENABLE_SANITIZERS=ON
+Status: PASS (exit 0)
+Compiler/tooling evidence:
+-- The CXX compiler identification is GNU 16.1.1
+-- Found PkgConfig: /usr/bin/pkg-config (found version "2.5.1")
+-- Found libavformat, version 62.12.101
+-- Found libavcodec, version 62.28.101
+-- Found libavutil, version 60.26.101
+-- Found libswscale, version 9.5.101
+-- Found Iconv: built in to C library
+-- Build files have been written to: /home/kaizen857/cppProject(app_and_lib)/TagReader/build-sanitize
+
+Command: cmake --build build-sanitize
+Status: PASS (exit 0)
+Output summary:
+- Built target TagReaderCore
+- Built target TagReaderTest
+- Built target TagReaderSecuritySmoke
+
+Skip reason: none. The project sanitizer gate supports GNU/Clang and the local compiler was GNU 16.1.1.
+
+Clang fuzz build
+================
+
+Command: command -v clang++
+Status: PASS (exit 0)
+Output: /usr/bin/clang++
+
+Command: cmake -S . -B build-fuzz-clang -DTAGREADER_ENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++
+Status: PASS (exit 0)
+Output summary:
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/kaizen857/cppProject(app_and_lib)/TagReader/build-fuzz-clang
+
+Command: cmake --build build-fuzz-clang --target TagReaderFuzz
+Status: PASS (exit 0)
+Output summary:
+- Built target TagReaderCore
+- Built target TagReaderFuzz
+
+Skip reason: none. `clang++` existed at `/usr/bin/clang++`, so the Clang-only fuzz build was configured and built.
+
+Notes
+=====
+
+- This task built the fuzz target; it did not run a fuzz campaign and does not claim fuzz corpus coverage beyond successful local target construction.
+- No source behavior changes were made for sanitizer or fuzz handling.

@@ -1,0 +1,5 @@
+TR-AUDIT-031 default-temp-cover-export
+TR-AUDIT-031 explicit-cover-export
+TR-AUDIT-031 non-writable-dir-rejected
+TR-AUDIT-031 symlink-dir-accepted
+TR-AUDIT-031 PASS

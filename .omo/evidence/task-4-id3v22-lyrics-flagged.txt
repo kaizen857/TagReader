@@ -1,0 +1,48 @@
+Task 4 ID3v2.2 flagged lyrics evidence
+
+Code behavior:
+- ReadID3Lyrics() now accepts supported ID3v2.2 tag-level flags via Id3v22TagFlagsAreSupported().
+- ID3v2.2 unsynchronization flag 0x80 is supported because ReadId3TagBytes() already removes tag-level unsynchronization for versions before 2.4.
+- ID3v2.2 frame parsing remains in ReadID3v22LyricsFrames() using 3-byte frame ids and 24-bit sizes; v2.3/v2.4 frame flags are not applied.
+
+Commands run:
+$ lsp_diagnostics src/TagReader.cpp
+exit 0
+No diagnostics found
+
+$ python3 test/security/generate_samples.py
+exit 0
+created /tmp/opencode/tagreader_security_samples/id3v22_lyrics_flagged.mp3
+created /tmp/opencode/tagreader_security_samples/id3v22_lyrics_unsupported_flag.mp3
+
+$ python3 test/corpus/generate_corpus.py
+exit 0
+encoding: 6
+flac: 10
+id3: 22
+image: 3
+mp4: 12
+ogg: 9
+generated corpus under /tmp/opencode/tagreader_fuzz_corpus
+
+$ test -f /tmp/opencode/tagreader_fuzz_corpus/id3/id3v22_lyrics_flagged.mp3
+exit 0
+
+$ cmake -S . -B build
+exit 0
+-- Configuring done
+-- Generating done
+-- Build files have been written to: build
+
+$ cmake --build build
+exit 0
+[1/4] Building CXX object CMakeFiles/TagReaderCore.dir/src/TagReader.cpp.o
+[2/4] Linking CXX static library libTagReaderCore.a
+[3/4] Linking CXX executable TagReaderTest
+[4/4] Linking CXX executable TagReaderSecuritySmoke
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_security_samples/id3v22_lyrics_flagged.mp3
+exit 0
+lyricsCount: 1
+lyrics:
+[0us]:ID3v22 flagged lyric line

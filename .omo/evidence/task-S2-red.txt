@@ -1,0 +1,2 @@
+expectation failed: explicit symlink directory should be rejected or platform-skip
+expectation failed: rejected symlink export should not write PNG files into target

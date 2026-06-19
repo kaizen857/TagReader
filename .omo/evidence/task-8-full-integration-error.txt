@@ -1,0 +1,130 @@
+Task 8 commit audit and whitespace/status checks
+Date: 2026-06-08T17:11:13+08:00
+
+## git status --short
+
+## git diff --check
+
+## git log --oneline -10
+8f2b7b4 fix(cover): pad FFmpeg decoder packet input
+6f81368 fix(cover): keep export policy regression portable
+3aee5cc fix(cover): align export directory permission policy
+9e0483c fix(text): make no-iconv encoding fallback explicit
+6564a1c fix(media): reject symlink inputs before opening
+d26a542 fix(id3): reject unsupported v2.2 metadata flags
+a898722 fix(ape): honor APEv2 footer tag size semantics
+1a6f7b5 sync
+a28c85d refactor: extract shared parse helpers to src/common/ and unify ParseUInt16
+f073443 fix(text): tighten UTF-16 without BOM detection heuristic
+
+## required commit message presence
+
+### fix(ape): honor APEv2 footer tag size semantics
+a898722 fix(ape): honor APEv2 footer tag size semantics
+
+### fix(id3): reject unsupported v2.2 metadata flags
+d26a542 fix(id3): reject unsupported v2.2 metadata flags
+
+### fix(cover): pad FFmpeg decoder packet input
+8f2b7b4 fix(cover): pad FFmpeg decoder packet input
+
+### fix(media): reject symlink inputs before opening
+6564a1c fix(media): reject symlink inputs before opening
+
+### fix(text): make no-iconv encoding fallback explicit
+9e0483c fix(text): make no-iconv encoding fallback explicit
+
+### fix(cover): align export directory permission policy
+3aee5cc fix(cover): align export directory permission policy
+
+### fix(cover): keep export policy regression portable
+6f81368 fix(cover): keep export policy regression portable
+
+## commit file scopes
+
+### a898722
+a898722 fix(ape): honor APEv2 footer tag size semantics
+
+src/formats/ape/ApeParser.cpp
+test/regression/regression_tests.cpp
+
+### d26a542
+d26a542 fix(id3): reject unsupported v2.2 metadata flags
+
+src/formats/id3/Id3Parser.cpp
+test/regression/regression_tests.cpp
+
+### 8f2b7b4
+8f2b7b4 fix(cover): pad FFmpeg decoder packet input
+
+src/cover/CoverDecoder.cpp
+test/regression/regression_tests.cpp
+
+### 6564a1c
+6564a1c fix(media): reject symlink inputs before opening
+
+src/media/FfmpegSession.cpp
+test/regression/regression_tests.cpp
+
+### 9e0483c
+9e0483c fix(text): make no-iconv encoding fallback explicit
+
+CMakeLists.txt
+src/text/TextCodec.cpp
+test/regression/regression_tests.cpp
+
+### 3aee5cc
+3aee5cc fix(cover): align export directory permission policy
+
+ANALYSIS.md
+docs/DESIGN.md
+src/core/TagPipeline.cpp
+src/cover/CoverCache.cpp
+test/regression/regression_tests.cpp
+
+### 6f81368
+6f81368 fix(cover): keep export policy regression portable
+
+test/regression/regression_tests.cpp
+
+Task 8 commit audit complete.
+
+
+## lsp diagnostics and stub grep summary
+Checked LSP diagnostics: src/formats/ape/ApeParser.cpp, src/formats/id3/Id3Parser.cpp, src/cover/CoverCache.cpp, src/cover/CoverDecoder.cpp, src/core/TagPipeline.cpp, src/text/TextCodec.cpp, test/regression/regression_tests.cpp: no diagnostics found.
+Initial conceptual paths src/cover/CoverExtractor.cpp and src/text/Encoding.cpp do not exist; replaced with actual files src/cover/CoverDecoder.cpp and src/text/TextCodec.cpp.
+Stub marker grep for TODO/FIXME/HACK/xxx/XXX/stub/STUB found only ID3 TXXX/txxx standard frame references, not TODO/stub placeholders.
+
+## final git status --short
+
+
+## final git status --short after notepad append
+
+
+## F1 correction: failure-first unknown-case rationale
+Date: 2026-06-08T17:18:09+08:00
+Tasks 2, 3, 4, 5, and 7 recorded failure-first baselines as unknown regression case because Task 1 explicitly kept kTestCases truthful and did not register broken placeholders for TR-AUDIT-026..031 before each implementation task.
+This is an evidence-process limitation, not a remaining product or test blocker: each case was added with its responsible implementation, then verified post-fix by task-specific tests, dedicated bug-fix commits, normal Task 8 TR-AUDIT-001..031, and sanitizer Task 8 TR-AUDIT-026..031.
+The behavioral coverage therefore comes from the implemented regression cases and commit scopes rather than from pre-registered failing placeholder cases.
+
+## F1 correction git status --short
+
+## F1 correction git diff --check
+
+## F1 correction git log --oneline -10
+8f2b7b4 fix(cover): pad FFmpeg decoder packet input
+6f81368 fix(cover): keep export policy regression portable
+3aee5cc fix(cover): align export directory permission policy
+9e0483c fix(text): make no-iconv encoding fallback explicit
+6564a1c fix(media): reject symlink inputs before opening
+d26a542 fix(id3): reject unsupported v2.2 metadata flags
+a898722 fix(ape): honor APEv2 footer tag size semantics
+1a6f7b5 sync
+a28c85d refactor: extract shared parse helpers to src/common/ and unify ParseUInt16
+f073443 fix(text): tighten UTF-16 without BOM detection heuristic
+
+
+## F1 correction final git status --short
+
+## F1 correction final no-source-change note
+No source, test, docs, plan checkbox, or commit changes were made by this F1 correction; only allowed .omo evidence/notepad files were appended.

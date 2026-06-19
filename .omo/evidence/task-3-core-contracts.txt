@@ -1,0 +1,55 @@
+Task 3 core contracts verification
+
+Files created/modified:
+- include/TagReader.hpp
+- src/core/ReadContext.hpp
+- src/core/RawTagData.hpp
+- src/core/TagFormat.hpp
+- src/TagReader.cpp
+
+Contract extraction:
+- DetectedContainer and ReadContext moved to src/core/ReadContext.hpp under tagreader_core.
+- RawMediaInfo, RawMetadata, RawLyrics, DecodedField, and Id3TagView moved to src/core/RawTagData.hpp under tagreader_core.
+- TagFormat defined in src/core/TagFormat.hpp with Unknown, Id3v1, Id3v2, VorbisComment, Flac, OggVorbis, Mp4.
+- src/TagReader.cpp now privately includes src/core headers and keeps parser algorithms in place as file-local helper functions used by the public Read facade.
+
+Build verification:
+$ cmake -S . -B build
+Result: PASS
+
+$ cmake --build build
+Result: PASS (TagReaderCore, TagReaderTest, TagReaderSecuritySmoke linked)
+
+Baseline comparison:
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac > /tmp/opencode/task3_actual.stdout
+Result: PASS
+
+$ cmp -s /tmp/opencode/task3_actual.stdout .omo/evidence/baseline/flac_flac_valid_chain.flac.stdout
+Result: PASS; stdout is identical to baseline.
+
+
+Review fix verification (internal linkage + placeholder removal):
+$ cmake -S . -B build
+Result: PASS
+
+$ cmake --build build
+Result: PASS (no work after successful rebuild)
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac > /tmp/opencode/task3_actual.stdout
+Result: PASS
+
+$ cmp -s /tmp/opencode/task3_actual.stdout .omo/evidence/baseline/flac_flac_valid_chain.flac.stdout
+Result: PASS; stdout remains identical to baseline.
+
+$ rg -n "NotImplemented" src/TagReader.cpp
+Result: no matches.
+
+$ rg -n "^void ValidatePath|^ReadContext OpenContext|^RawMetadata ReadMetadata|^MusicTag BuildMusicTag|^void ReadID3v1Metadata" src/TagReader.cpp
+Result: matches remain at lines 53, 55, 58, 68, 70, 1121, 1187, 3072, 3204, 5334 because formatting starts helper declarations/definitions at column 1. Internal linkage is still guaranteed: lines 43-106 are inside an anonymous namespace for helper declarations, lines 1119-5392 are inside an anonymous namespace for helper definitions, while TagReader::Read remains outside at lines 1093-1117.
+
+LSP diagnostics:
+- src/TagReader.cpp: no diagnostics
+- include/TagReader.hpp: no diagnostics
+- src/core/ReadContext.hpp: no diagnostics
+- src/core/RawTagData.hpp: no diagnostics
+- src/core/TagFormat.hpp: no diagnostics

@@ -1,0 +1,2 @@
+same-timestamp scaling small_ns=48909052 large_ns=778134362 ratio=15.9098
+expectation failed: same-timestamp unique lyric normalization scaled too poorly: 2048 lines took 48909052ns, 8192 lines took 778134362ns, ratio=15.9098, expected ratio below 10

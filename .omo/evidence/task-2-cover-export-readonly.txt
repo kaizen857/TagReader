@@ -1,0 +1,18 @@
+Task 2 readonly/unwritable cover export evidence
+
+Commands run from repo root:
+- rm -rf /tmp/opencode/tagreader_security_samples/readonly-covers
+- mkdir -p /tmp/opencode/tagreader_security_samples/readonly-covers
+- chmod 0555 /tmp/opencode/tagreader_security_samples/readonly-covers
+- ./build/TagReaderTest /tmp/opencode/tagreader_security_samples/cover_export_base.mp3 /tmp/opencode/tagreader_security_samples/readonly-covers > /tmp/opencode/task2-cover-export-readonly-stdout.txt 2> /tmp/opencode/task2-cover-export-readonly-stderr.txt
+- python3 -c '<checked stderr contains cover export|cover cache|Permission denied|filesystem>'
+- chmod 0755 /tmp/opencode/tagreader_security_samples/readonly-covers
+
+Exit status summary:
+- TagReaderTest readonly cover export: 2 (expected non-zero)
+- diagnostic regex check: 0
+
+stderr:
+TagReader error: cover cache failed to create shard directory /tmp/opencode/tagreader_security_samples/readonly-covers/72: Permission denied
+
+stdout was empty.

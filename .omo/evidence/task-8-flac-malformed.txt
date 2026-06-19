@@ -1,0 +1,169 @@
+Task 8 FLAC malformed/generated sample attempts
+=============================================
+Real sample note: there are no real FLAC/MP3/Ogg/MP4/M4A samples in the repo; this inherits Task 1 baseline limitations and uses generated corpus only.
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_oversized_block.flac
+exit=2
+[stderr]
+TagReader error: avformat_open_input failed: Invalid data found when processing input
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_truncated_block.flac
+exit=2
+[stderr]
+TagReader error: avformat_open_input failed: Invalid data found when processing input
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_desc_truncated.flac /tmp/opencode/tagreader_flac_malformed_covers
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_desc_truncated.flac
+title: 
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_image_truncated.flac /tmp/opencode/tagreader_flac_malformed_covers
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_image_truncated.flac
+title: 
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_mime_truncated.flac /tmp/opencode/tagreader_flac_malformed_covers
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_mime_truncated.flac
+title: 
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_key_then_title.flac
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_key_then_title.flac
+title: after invalid key
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_lyrics_then_title.flac
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_lyrics_then_title.flac
+title: after invalid lyrics
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:
+
+$ ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_value_then_artist.flac
+exit=0
+[stdout]
+filePath: /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_value_then_artist.flac
+title: 
+artist: after invalid value
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: flac
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 0
+offset(us): 0
+sampleRate: 0
+bitDepth: 0
+bitRate: 0
+channels: 0
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:

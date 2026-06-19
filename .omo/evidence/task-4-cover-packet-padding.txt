@@ -1,0 +1,55 @@
+Command: cmake --build build
+ninja: no work to do.
+exit=0
+
+Command: ./build/TagReaderRegressionTests TR-AUDIT-028
+TR-AUDIT-028 default-temp-safe
+TR-AUDIT-028 explicit-dir-safe
+TR-AUDIT-028 truncated-cover-skipped
+TR-AUDIT-028 PASS
+exit=0
+
+Command: ./build/TagReaderRegressionTests TR-AUDIT-011
+TR-AUDIT-011 valid-image-exported coverPath=/tmp/opencode/tagreader_regression/TR-AUDIT-011/covers/4f/f6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5.png
+TR-AUDIT-011 malformed-image-skipped coverPath=
+TR-AUDIT-011 PASS
+exit=0
+
+Command: ./build/TagReaderRegressionTests TR-AUDIT-013
+TR-AUDIT-013 sha256-cache-path coverPath=/tmp/opencode/tagreader_regression/TR-AUDIT-013/covers/4f/f6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5.png
+TR-AUDIT-013 polluted-cache-rejected path=/tmp/opencode/tagreader_regression/TR-AUDIT-013/covers/4f/f6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5.png
+TR-AUDIT-013 PASS
+exit=0
+
+Command: ./build/TagReaderRegressionTests TR-AUDIT-014
+TR-AUDIT-014 valid-png-exported coverPath=/tmp/opencode/tagreader_regression/TR-AUDIT-014/png-covers/4f/f6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5.png
+TR-AUDIT-014 valid-jpeg-exported coverPath=/tmp/opencode/tagreader_regression/TR-AUDIT-014/jpeg-covers/9c/a2e36bf6da93d6b60ce887b66109ca8b3530ede3e815f81686946652bca945.png
+TR-AUDIT-014 malformed-cover-skipped coverPath=
+TR-AUDIT-014 fallback-budget-enforced unknownMagicBytes=2097152
+TR-AUDIT-014 PASS
+exit=0
+
+Command: ./build/TagReaderRegressionTests TR-AUDIT-023
+TR-AUDIT-023 huge-cover-skipped title=Hello cover=
+TR-AUDIT-023 PASS
+exit=0
+
+Command: cmake -S . -B build-sanitize -DTAGREADER_ENABLE_SANITIZERS=ON
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/kaizen857/cppProject(app_and_lib)/TagReader/build-sanitize
+exit=0
+
+Command: cmake --build build-sanitize
+[ 76%] Built target TagReaderCore
+[ 84%] Built target TagReaderTest
+[ 92%] Built target TagReaderSecuritySmoke
+[100%] Built target TagReaderRegressionTests
+exit=0
+
+Command: ./build-sanitize/TagReaderRegressionTests TR-AUDIT-028
+TR-AUDIT-028 default-temp-safe
+TR-AUDIT-028 explicit-dir-safe
+TR-AUDIT-028 truncated-cover-skipped
+TR-AUDIT-028 PASS
+exit=0

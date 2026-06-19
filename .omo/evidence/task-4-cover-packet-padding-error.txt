@@ -1,0 +1,11 @@
+Prerequisite: ./build/TagReaderRegressionTests TR-AUDIT-031
+TR-AUDIT-031 default-temp-cover-export
+TR-AUDIT-031 explicit-cover-export
+TR-AUDIT-031 non-writable-dir-rejected
+TR-AUDIT-031 symlink-dir-accepted
+TR-AUDIT-031 PASS
+exit=0
+
+Failure-first: ./build/TagReaderRegressionTests TR-AUDIT-028
+TR-AUDIT-028 unknown regression case
+exit=2

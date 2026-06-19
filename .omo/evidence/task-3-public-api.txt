@@ -1,0 +1,19 @@
+Task 3 public API scan
+
+$ rg -n "static MusicTag Read" include/TagReader.hpp
+10:    static MusicTag Read(const std::filesystem::path &filePath);
+11:    static MusicTag Read(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir);
+
+$ rg -n "RawMetadata|RawLyrics|ReadContext|TagFormat|DecodedField|Id3TagView|DetectedContainer" include/TagReader.hpp
+Result: no matches.
+
+Justification:
+No temporary private raw/internal declarations remain in include/TagReader.hpp. The public facade header exposes only TagReader and the two required Read overloads; internal contracts live under src/core and are included privately by src/TagReader.cpp.
+
+
+Review fix public/internal boundary scan:
+- `TagReader::Read` definitions remain global/public implementation points in src/TagReader.cpp.
+- `tagreader_core::ReadContext::FormatContextDeleter::operator()` remains defined with the correct qualified name.
+- Non-public helper declarations and definitions in src/TagReader.cpp are now inside anonymous namespace blocks, giving them internal linkage.
+- `rg -n "NotImplemented" src/TagReader.cpp` returned no matches.
+- Public header raw/internal scan remains no matches; no temporary private declarations were reintroduced into include/TagReader.hpp.

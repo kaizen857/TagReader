@@ -1,0 +1,15 @@
+TR-AUDIT-026 unknown regression case
+
+exit_code=2
+TR-AUDIT-020 ape-wrap-guard
+TR-AUDIT-020 PASS
+TR-AUDIT-026 footer-only title=SpecTitle lyrics=SpecLyrics track=7
+TR-AUDIT-026 header-present title=SpecTitle lyrics=SpecLyrics track=7
+TR-AUDIT-026 malformed-sizes rejected=true
+TR-AUDIT-026 PASS
+TR-AUDIT-020 ape-wrap-guard
+TR-AUDIT-020 PASS
+TR-AUDIT-026 footer-only title=SpecTitle lyrics=SpecLyrics track=7
+TR-AUDIT-026 header-present title=SpecTitle lyrics=SpecLyrics track=7
+TR-AUDIT-026 malformed-sizes rejected=true
+TR-AUDIT-026 PASS

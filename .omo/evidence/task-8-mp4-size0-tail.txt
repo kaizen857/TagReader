@@ -1,0 +1,22 @@
+filePath: /tmp/opencode/tagreader_security_samples/mp4_size0_tail_ok.m4a
+title: Size0 Tail OK
+artist: Size0 Artist
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: m4a
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 200000
+offset(us): 0
+sampleRate: 44100
+bitDepth: 16
+bitRate: 2042
+channels: 1
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 0
+lyrics:

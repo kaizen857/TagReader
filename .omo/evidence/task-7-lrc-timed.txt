@@ -1,0 +1,62 @@
+Task 7 LRC timed evidence
+
+Command: lsp_diagnostics src/TagReader.cpp
+Exit status: 0
+Output:
+No diagnostics found
+
+Command: cmake --build build
+Exit status: 0
+Output:
+[1/4] Building CXX object CMakeFiles/TagReaderCore.dir/src/TagReader.cpp.o
+[2/4] Linking CXX static library libTagReaderCore.a
+[3/4] Linking CXX executable TagReaderSecuritySmoke
+[4/4] Linking CXX executable TagReaderTest
+
+Command: ./build/TagReaderTest /tmp/opencode/tagreader_security_samples/lyrics_timed_multi.mp3
+Exit status: 0
+Output:
+filePath: /tmp/opencode/tagreader_security_samples/lyrics_timed_multi.mp3
+title: Security LRC Sample
+artist: 
+album: 
+albumArtist: 
+composer: 
+genre: 
+format: mp3
+year: 0
+trackNumber: 0
+discNumber: 0
+duration(us): 200000
+offset(us): 25057
+sampleRate: 44100
+bitDepth: 0
+bitRate: 64000
+channels: 1
+playCount: 0
+rating: 0
+coverPath: 
+lyricsCount: 2
+lyrics:
+[1000000us]:first timed line
+[2000000us]:second timed line
+
+Command: python3 -c "from pathlib import Path; text=Path('/tmp/opencode/task7-timed.txt').read_text(); assert '[1000000us]:first timed line' in text; assert '[2000000us]:second timed line' in text"
+Exit status: 0
+Output:
+(no output)
+
+Command: grep -q '\[1000000us\]:first timed line' /tmp/opencode/task7-timed.txt
+Exit status: 0
+Output:
+(no output)
+
+Command: grep -q '\[2000000us\]:second timed line' /tmp/opencode/task7-timed.txt
+Exit status: 0
+Output:
+(no output)
+
+Command: python3 -c "from pathlib import Path; text=Path('/tmp/opencode/task7-existing-lrc.txt').read_text(); assert '[1000000us]:first line' in text; assert '[2000000us]:repeated line' in text; assert '[3000000us]:repeated line' in text"
+Exit status: 0
+Output:
+(no output)

@@ -1,0 +1,46 @@
+# Final reinterpret_cast inventory
+
+Date: 2026-05-31
+Scope: current `src include` scan for `reinterpret_cast`.
+Command basis: `rg -n "reinterpret_cast" src include`.
+
+Total current matches in `src include`: 29.
+Current matches in `include`: 0.
+
+## Inventory
+
+- `src/formats/mp4/Mp4Parser.cpp:123` - moved original parser boundary - MP4 parser maps atom payload bytes to a string view for text decoding.
+- `src/formats/mp4/Mp4Parser.cpp:326` - moved original parser boundary - MP4 parser maps `data` atom bytes after the type/locale header to a string view for text decoding.
+- `src/formats/mp4/Mp4AtomReader.cpp:78` - moved original parser boundary - MP4 atom reader maps atom header bytes to the four-character atom type.
+- `src/formats/mp4/Mp4AtomReader.cpp:152` - moved original parser boundary - MP4 atom reader maps atom header bytes to a four-character atom type view.
+- `src/formats/ogg-vorbis/OggVorbisParser.cpp:81` - moved original parser boundary - Ogg/Vorbis parser maps comment packet bytes to a string view for Vorbis comment entry parsing.
+- `src/formats/ogg-vorbis/OggVorbisParser.cpp:102` - moved original parser boundary - Ogg/Vorbis parser checks the Vorbis packet signature in raw packet bytes.
+- `src/formats/ogg-vorbis/OggVorbisParser.cpp:130` - moved original parser boundary - Ogg parser checks the Ogg page capture pattern in raw page header bytes.
+- `src/formats/flac/FlacParser.cpp:43` - moved original parser boundary - FLAC parser checks the `fLaC` stream marker in raw file bytes.
+- `src/formats/flac/FlacParser.cpp:84` - moved original parser boundary - FLAC parser maps Vorbis comment block bytes to a string view for comment entry parsing.
+- `src/formats/flac/FlacParser.cpp:111` - moved original parser boundary - FLAC picture parser maps MIME bytes to a string before normalization.
+- `src/formats/id3/Id3Frames.cpp:827` - moved original parser boundary - ID3v2.2 parser maps 3-byte frame header bytes to a frame id string.
+- `src/formats/id3/Id3Frames.cpp:861` - moved original parser boundary - ID3v2.3/2.4 parser maps 4-byte frame header bytes to a frame id string.
+- `src/formats/id3/Id3Frames.cpp:1002` - moved original parser boundary - ID3v2.2 PIC parser maps three image-format bytes to a string.
+- `src/formats/id3/Id3Frames.cpp:1178` - moved original parser boundary - ID3v2.2 lyrics parser maps 3-byte frame header bytes to a frame id string.
+- `src/formats/id3/Id3Frames.cpp:1290` - moved original parser boundary - ID3v2.3/2.4 lyrics parser maps 4-byte frame header bytes to a frame id string.
+- `src/text/TextCodec.cpp:75` - legacy byte/string boundary - text codec maps `std::string` storage to byte reads for UTF-16 code unit decoding.
+- `src/text/TextCodec.cpp:141` - legacy byte/string boundary - text codec maps `std::string` storage to bytes for locale-encoded fallback decoding.
+- `src/text/TextCodec.cpp:164` - C API boundary - iconv sentinel value comparison uses the C API `iconv_t` invalid handle representation.
+- `src/text/TextCodec.cpp:195` - C API boundary - iconv deleter result comparison uses the C API `iconv_t` invalid handle representation.
+- `src/text/TextCodec.cpp:201` - C API boundary - iconv input parameter requires a `char *` view over byte input.
+- `src/text/TextCodec.cpp:392` - legacy byte/string boundary - UTF-8 validator maps string data to unsigned bytes for byte classification.
+- `src/text/TextCodec.cpp:496` - legacy byte/string boundary - text codec maps raw byte data to a string value at a decoding boundary.
+- `src/text/TextCodec.cpp:657` - legacy byte/string boundary - decoded raw field maps string storage to bytes for UTF-16 decoding.
+- `src/text/TextCodec.cpp:672` - legacy byte/string boundary - decoded raw field maps string storage to bytes for Latin-1 decoding.
+- `src/text/TextCodec.cpp:681` - legacy byte/string boundary - decoded raw field maps string storage to bytes for locale-encoded decoding.
+- `src/io/ByteReader.cpp:138` - legacy byte/string boundary - byte reader fills a `std::vector<uint8_t>` through `std::istream::read`'s `char *` interface.
+- `src/media/ContainerDetector.cpp:84` - moved original parser boundary - raw-byte-first container detector checks the `fLaC` marker in file header bytes.
+- `src/media/ContainerDetector.cpp:88` - moved original parser boundary - raw-byte-first container detector checks the `OggS` marker in file header bytes.
+- `src/media/ContainerDetector.cpp:92` - moved original parser boundary - raw-byte-first container detector checks the MP4 `ftyp` marker in file header bytes.
+
+## Classification summary
+
+- Moved original parser boundary: 18
+- Legacy byte/string boundary: 8
+- C API boundary: 3

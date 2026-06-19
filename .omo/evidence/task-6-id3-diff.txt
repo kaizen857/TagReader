@@ -1,0 +1,15 @@
+Id3Parser frame dispatch evidence:
+145:        ReadID3v22Frames(context, metadata, tagView.bytes, tagView.cursor);
+149:    ReadID3v23Or24Frames(context, metadata, tagView.bytes, tagView.versionMajor, tagView.tagUnsync, tagView.cursor, tagView.limit);
+168:        ReadID3v22LyricsFrames(context, lyrics, tagView.bytes, tagView.cursor);
+172:    ReadID3v23Or24LyricsFrames(context, lyrics, tagView.bytes, tagView.versionMajor, tagView.tagUnsync, tagView.cursor, tagView.limit);
+
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_desc_truncated.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_image_truncated.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_mime_truncated.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_picture_valid.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_key_then_title.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_lyrics_then_title.flac: rc=0 stdout_match=True stderr=''
+BASELINE /tmp/opencode/tagreader_fuzz_corpus/flac/flac_vorbis_invalid_value_then_artist.flac: rc=0 stdout_match=True stderr=''
+FULL_RUNNABLE_BASELINE_RESULT=PASS runnable_count=8

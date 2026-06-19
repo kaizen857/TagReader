@@ -1,0 +1,4 @@
+TR-AUDIT-027 legal flags=0x00 title=LegalTitle
+TR-AUDIT-027 unsupported flags=0x40 title=
+TR-AUDIT-027 unsupported-v22-flags-skipped
+TR-AUDIT-027 PASS

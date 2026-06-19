@@ -1,0 +1,810 @@
+{
+  "schema_version": 2,
+  "active_work_id": "tagreader-security-fixes-aa3c39aa",
+  "works": {
+    "analysis-bugfix-3e7a1592": {
+      "work_id": "analysis-bugfix-3e7a1592",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/analysis-bugfix.md",
+      "plan_name": "analysis-bugfix",
+      "status": "completed",
+      "started_at": "2026-06-07T13:56:37.326Z",
+      "updated_at": "2026-06-07T14:58:24.419Z",
+      "session_ids": [
+        "opencode:ses_174e97bddffeMaLXyZlsWvMiOj"
+      ],
+      "session_origins": {
+        "opencode:ses_174e97bddffeMaLXyZlsWvMiOj": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "MEDIUM-001：无 iconv 构建编码回退缺少编译时警告",
+          "session_id": "opencode:ses_15da02979ffe1l4kTT3k7DSVi4",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:15:14.654Z",
+          "started_at": "2026-06-07T14:14:25.202Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:15:14.654Z",
+          "elapsed_ms": 49452
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "MEDIUM-006：ApeParser itemRegionOffset 无符号减法回绕",
+          "session_id": "opencode:ses_15d8f7d30ffe3y1Xr940coBrvo",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:21:36.378Z",
+          "started_at": "2026-06-07T14:18:15.941Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:21:36.378Z",
+          "elapsed_ms": 200437
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "LOW-002：Latin-1 解码遇 0x00 字节截断改为空格",
+          "session_id": "opencode:ses_15d899fbaffe0PVlnY5Poz6lr8",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:28:59.397Z",
+          "started_at": "2026-06-07T14:26:42.687Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:28:59.397Z",
+          "elapsed_ms": 136710
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "LOW-003：收紧 UTF-16 无 BOM 嗅探启发式阈值",
+          "session_id": "opencode:ses_15d828ae2ffeF34Cg9R57RMoUf",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:41:23.492Z",
+          "started_at": "2026-06-07T14:41:07.333Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:41:23.492Z",
+          "elapsed_ms": 16159
+        },
+        "todo:9": {
+          "task_key": "todo:9",
+          "task_label": "9",
+          "task_title": "AD-003 + LOW-005：抽取共享 helpers + 统一 ParseUInt16 行为",
+          "session_id": "opencode:ses_15d771c02ffeud45QWL6cccAgj",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-07T14:54:09.346Z",
+          "started_at": "2026-06-07T14:53:47.785Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:54:09.346Z",
+          "elapsed_ms": 21561
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "**Scope Fidelity Check** — Verify each commit matches its task:",
+          "session_id": "opencode:ses_15d6beebcffeyxCrDu9K3NQp1Z",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-07T14:58:11.098Z",
+          "started_at": "2026-06-07T14:56:18.976Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:58:11.098Z",
+          "elapsed_ms": 112122
+        },
+        "final-wave:f3": {
+          "task_key": "final-wave:f3",
+          "task_label": "F3",
+          "task_title": "**Real Manual QA** — Run all tests and verify evidence:",
+          "session_id": "opencode:ses_15d6c0342ffeSckTq2wEeG8nfw",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:58:09.245Z",
+          "started_at": "2026-06-07T14:56:37.905Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:58:09.245Z",
+          "elapsed_ms": 91340
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "**Code Quality Review** — Run builds and check code quality:",
+          "session_id": "opencode:ses_15d6c140cffeTFMV42AB4LNmcD",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-07T14:58:08.740Z",
+          "started_at": "2026-06-07T14:57:12.041Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:58:08.740Z",
+          "elapsed_ms": 56699
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "**Plan Compliance Audit** — Read `.omo/plans/analysis-bugfix.md` end-to-end. Verify:",
+          "session_id": "opencode:ses_15d6c23dfffe9DmUZSNfZSV7d6",
+          "agent": "oracle",
+          "updated_at": "2026-06-07T14:58:06.992Z",
+          "started_at": "2026-06-07T14:57:43.095Z",
+          "status": "completed",
+          "ended_at": "2026-06-07T14:58:06.992Z",
+          "elapsed_ms": 23897
+        }
+      },
+      "ended_at": "2026-06-07T14:58:24.419Z",
+      "elapsed_ms": 3707093
+    },
+    "analysis-fix-plan-ad4f604f": {
+      "work_id": "analysis-fix-plan-ad4f604f",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/analysis-fix-plan.md",
+      "plan_name": "analysis-fix-plan",
+      "status": "active",
+      "started_at": "2026-06-08T08:01:44.577Z",
+      "updated_at": "2026-06-08T08:01:44.577Z",
+      "session_ids": [
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI"
+      ],
+      "session_origins": {
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "analysis-fix-plan-68f61edc": {
+      "work_id": "analysis-fix-plan-68f61edc",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/analysis-fix-plan.md",
+      "plan_name": "analysis-fix-plan",
+      "status": "active",
+      "started_at": "2026-06-08T08:01:44.587Z",
+      "updated_at": "2026-06-08T08:01:44.587Z",
+      "session_ids": [
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI"
+      ],
+      "session_origins": {
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "analysis-fix-plan-def7688c": {
+      "work_id": "analysis-fix-plan-def7688c",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/analysis-fix-plan.md",
+      "plan_name": "analysis-fix-plan",
+      "status": "active",
+      "started_at": "2026-06-08T08:03:02.378Z",
+      "updated_at": "2026-06-08T08:03:02.378Z",
+      "session_ids": [
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI"
+      ],
+      "session_origins": {
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "analysis-fix-plan-cabc6fad": {
+      "work_id": "analysis-fix-plan-cabc6fad",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/analysis-fix-plan.md",
+      "plan_name": "analysis-fix-plan",
+      "status": "completed",
+      "started_at": "2026-06-08T08:03:02.408Z",
+      "updated_at": "2026-06-08T09:31:21.370Z",
+      "session_ids": [
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI"
+      ],
+      "session_origins": {
+        "opencode:ses_15a58bf41ffeQ0UNSu49VOldOI": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Reserve regression IDs and shared helpers",
+          "session_id": "opencode:ses_159bca9f8ffez7AQtA48T4Zm55",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T08:08:06.287Z",
+          "started_at": "2026-06-08T08:08:06.287Z",
+          "status": "running"
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "Fix APEv2 footer `tagSize` semantics",
+          "session_id": "opencode:ses_159b771eaffej9i3pf0hD8BGLc",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T08:20:19.446Z",
+          "started_at": "2026-06-08T08:20:19.446Z",
+          "status": "running"
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Reject unsupported ID3v2.2 tag flags in metadata path",
+          "session_id": "opencode:ses_159ad0c13ffehQmfYpKH9Xilqk",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-08T08:24:13.466Z",
+          "started_at": "2026-06-08T08:24:13.466Z",
+          "status": "running"
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Reorder input path symlink checks and reduce TOCTOU exposure",
+          "session_id": "opencode:ses_159a9e1f0ffeWLariNOVFQmkVT",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T08:30:35.406Z",
+          "started_at": "2026-06-08T08:30:35.406Z",
+          "status": "running"
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Make no-iconv legacy encoding fallback explicit and testable",
+          "session_id": "opencode:ses_159a411eeffeF2AIoNOVpFKyal",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T08:40:46.282Z",
+          "started_at": "2026-06-08T08:40:46.282Z",
+          "status": "running"
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "Implement default-temp cover export and permission policy",
+          "session_id": "opencode:ses_15999896dffe8tUpCIAF90iizH",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T08:55:59.191Z",
+          "started_at": "2026-06-08T08:55:59.191Z",
+          "status": "running"
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Use padded FFmpeg packet input for cover decoding",
+          "session_id": "opencode:ses_1598871cdffe7rHkHhlVRzvCrr",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-08T09:00:44.275Z",
+          "status": "running",
+          "updated_at": "2026-06-08T09:08:09.184Z"
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "Run full integration verification and audit commits",
+          "session_id": "opencode:ses_159815338ffeXK9B3GedIt1ex1",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T09:13:38.223Z",
+          "started_at": "2026-06-08T09:13:38.223Z",
+          "status": "running"
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan Compliance Audit — oracle",
+          "session_id": "opencode:ses_1597ccf5bffezgPAPizm1HNamR",
+          "agent": "oracle",
+          "category": "",
+          "started_at": "2026-06-08T09:16:22.722Z",
+          "status": "running",
+          "updated_at": "2026-06-08T09:21:00.310Z"
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code Quality Review — unspecified-high",
+          "session_id": "opencode:ses_1597650aaffeuC7uhJEObSwmrU",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T09:24:04.455Z",
+          "started_at": "2026-06-08T09:24:04.455Z",
+          "status": "running"
+        },
+        "final-wave:f3": {
+          "task_key": "final-wave:f3",
+          "task_label": "F3",
+          "task_title": "Real Manual QA — unspecified-high",
+          "session_id": "opencode:ses_1597390a9ffeyXubGPsva3tzYj",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-06-08T09:27:01.610Z",
+          "started_at": "2026-06-08T09:27:01.610Z",
+          "status": "running"
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope Fidelity Check — deep",
+          "session_id": "opencode:ses_15970e637ffe6chvMtfgtSmpaW",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-08T09:29:12.245Z",
+          "started_at": "2026-06-08T09:29:12.245Z",
+          "status": "running"
+        }
+      },
+      "ended_at": "2026-06-08T09:31:21.370Z",
+      "elapsed_ms": 5298962
+    },
+    "tagreader-security-fixes-b0e51805": {
+      "work_id": "tagreader-security-fixes-b0e51805",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T08:29:52.222Z",
+      "updated_at": "2026-06-17T08:29:52.222Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-ab3fcd92": {
+      "work_id": "tagreader-security-fixes-ab3fcd92",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T08:29:52.244Z",
+      "updated_at": "2026-06-17T14:10:16.267Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm",
+        "opencode:ses_12b4a9f3bffeGaGtFtgVhqr9OB",
+        "opencode:ses_12b4a9f1dffeSyoDmPnw26fYBZ",
+        "opencode:ses_12b4a9e56ffeVFX3J9ZUWGtRxn",
+        "opencode:ses_12b4a9a21ffebv19pCJTPl9d1L"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct",
+        "opencode:ses_12b4a9f3bffeGaGtFtgVhqr9OB": "appended",
+        "opencode:ses_12b4a9f1dffeSyoDmPnw26fYBZ": "appended",
+        "opencode:ses_12b4a9e56ffeVFX3J9ZUWGtRxn": "appended",
+        "opencode:ses_12b4a9a21ffebv19pCJTPl9d1L": "appended"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan Compliance Audit — oracle",
+          "session_id": "opencode:ses_12a4fcf99ffe0Ym850Q18UqBOA",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "started_at": "2026-06-17T08:43:24.602Z",
+          "status": "running",
+          "updated_at": "2026-06-17T14:10:16.268Z"
+        }
+      }
+    },
+    "tagreader-security-fixes-1c8d996b": {
+      "work_id": "tagreader-security-fixes-1c8d996b",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:55:08.024Z",
+      "updated_at": "2026-06-17T22:55:08.024Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-c31c7f86": {
+      "work_id": "tagreader-security-fixes-c31c7f86",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:55:08.046Z",
+      "updated_at": "2026-06-17T22:55:08.046Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-5762680f": {
+      "work_id": "tagreader-security-fixes-5762680f",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:55:43.852Z",
+      "updated_at": "2026-06-17T22:55:43.852Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-30a5a342": {
+      "work_id": "tagreader-security-fixes-30a5a342",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:55:43.879Z",
+      "updated_at": "2026-06-17T22:55:43.879Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-91e9c5f5": {
+      "work_id": "tagreader-security-fixes-91e9c5f5",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:56:07.833Z",
+      "updated_at": "2026-06-17T22:56:07.833Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-25f89e3b": {
+      "work_id": "tagreader-security-fixes-25f89e3b",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:56:07.861Z",
+      "updated_at": "2026-06-17T22:56:07.861Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-283dff19": {
+      "work_id": "tagreader-security-fixes-283dff19",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:56:29.983Z",
+      "updated_at": "2026-06-17T22:56:29.983Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-b2409731": {
+      "work_id": "tagreader-security-fixes-b2409731",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:56:30.020Z",
+      "updated_at": "2026-06-17T22:56:30.020Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-68aa6340": {
+      "work_id": "tagreader-security-fixes-68aa6340",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:58:20.292Z",
+      "updated_at": "2026-06-17T22:58:20.292Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-f8904f38": {
+      "work_id": "tagreader-security-fixes-f8904f38",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T22:58:20.301Z",
+      "updated_at": "2026-06-17T22:58:20.301Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-f6dec282": {
+      "work_id": "tagreader-security-fixes-f6dec282",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:04:20.078Z",
+      "updated_at": "2026-06-17T23:04:20.078Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-2cf455f0": {
+      "work_id": "tagreader-security-fixes-2cf455f0",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:04:20.087Z",
+      "updated_at": "2026-06-17T23:04:20.087Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-063e79c0": {
+      "work_id": "tagreader-security-fixes-063e79c0",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:04:31.185Z",
+      "updated_at": "2026-06-17T23:04:31.185Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-0f1c1220": {
+      "work_id": "tagreader-security-fixes-0f1c1220",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:04:31.213Z",
+      "updated_at": "2026-06-17T23:04:31.213Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-2cef932e": {
+      "work_id": "tagreader-security-fixes-2cef932e",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:05:23.055Z",
+      "updated_at": "2026-06-17T23:05:23.055Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-0ab3fb21": {
+      "work_id": "tagreader-security-fixes-0ab3fb21",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-17T23:05:23.133Z",
+      "updated_at": "2026-06-18T00:30:31.314Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan Compliance Audit — oracle",
+          "session_id": "opencode:ses_127fdbf2affebce54Igrmse6Or",
+          "agent": "oracle",
+          "category": "",
+          "started_at": "2026-06-17T23:20:45.127Z",
+          "status": "running",
+          "updated_at": "2026-06-18T00:30:31.098Z"
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope Fidelity Check — deep",
+          "session_id": "opencode:ses_127fdbca2ffeQN00hEVvszmt17",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "started_at": "2026-06-17T23:41:23.753Z",
+          "status": "running",
+          "updated_at": "2026-06-18T00:30:31.314Z"
+        },
+        "final-wave:f3": {
+          "task_key": "final-wave:f3",
+          "task_label": "F3",
+          "task_title": "Real Manual QA — unspecified-high",
+          "session_id": "opencode:ses_127fdbce7ffeSPqYsbmHKrYFw5",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-17T23:41:59.905Z",
+          "status": "running",
+          "updated_at": "2026-06-18T00:30:31.239Z"
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code Quality Review — unspecified-high",
+          "session_id": "opencode:ses_127fdbda4ffe1Ge3LyOaEUBF29",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-17T23:47:43.668Z",
+          "status": "running",
+          "updated_at": "2026-06-18T00:30:31.162Z"
+        }
+      }
+    },
+    "tagreader-security-fixes-ff932396": {
+      "work_id": "tagreader-security-fixes-ff932396",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "active",
+      "started_at": "2026-06-19T00:55:30.999Z",
+      "updated_at": "2026-06-19T00:55:30.999Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "tagreader-security-fixes-aa3c39aa": {
+      "work_id": "tagreader-security-fixes-aa3c39aa",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+      "plan_name": "tagreader-security-fixes",
+      "status": "completed",
+      "started_at": "2026-06-19T00:55:31.025Z",
+      "updated_at": "2026-06-19T01:23:28.496Z",
+      "session_ids": [
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+      ],
+      "session_origins": {
+        "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan Compliance Audit — oracle",
+          "session_id": "opencode:ses_1229eccf3ffeVqmVeYrLXetTy9",
+          "agent": "oracle",
+          "category": "",
+          "updated_at": "2026-06-19T00:58:15.983Z",
+          "started_at": "2026-06-19T00:58:15.983Z",
+          "status": "running"
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code Quality Review — unspecified-high",
+          "session_id": "opencode:ses_122916800ffeV3mw0cCYtHExAm",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-19T01:05:34.783Z",
+          "status": "running",
+          "updated_at": "2026-06-19T01:16:49.427Z"
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope Fidelity Check — deep",
+          "session_id": "opencode:ses_1228a1c92ffeFKRbNz782msFqt",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-06-19T01:22:22.117Z",
+          "started_at": "2026-06-19T01:22:22.117Z",
+          "status": "running"
+        }
+      },
+      "ended_at": "2026-06-19T01:23:28.496Z",
+      "elapsed_ms": 1677471
+    }
+  },
+  "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/tagreader-security-fixes.md",
+  "started_at": "2026-06-19T00:55:31.025Z",
+  "status": "completed",
+  "updated_at": "2026-06-19T01:23:28.496Z",
+  "session_ids": [
+    "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm"
+  ],
+  "session_origins": {
+    "opencode:ses_12b97ede6ffeTrOHIu5iEQq2zm": "direct"
+  },
+  "plan_name": "tagreader-security-fixes",
+  "task_sessions": {
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "opencode:ses_1229eccf3ffeVqmVeYrLXetTy9",
+      "agent": "oracle",
+      "category": "",
+      "updated_at": "2026-06-19T00:58:15.983Z",
+      "started_at": "2026-06-19T00:58:15.983Z",
+      "status": "running"
+    },
+    "final-wave:f2": {
+      "task_key": "final-wave:f2",
+      "task_label": "F2",
+      "task_title": "Code Quality Review — unspecified-high",
+      "session_id": "opencode:ses_122916800ffeV3mw0cCYtHExAm",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "started_at": "2026-06-19T01:05:34.783Z",
+      "status": "running",
+      "updated_at": "2026-06-19T01:16:49.427Z"
+    },
+    "final-wave:f4": {
+      "task_key": "final-wave:f4",
+      "task_label": "F4",
+      "task_title": "Scope Fidelity Check — deep",
+      "session_id": "opencode:ses_1228a1c92ffeFKRbNz782msFqt",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-06-19T01:22:22.117Z",
+      "started_at": "2026-06-19T01:22:22.117Z",
+      "status": "running"
+    }
+  },
+  "agent": "atlas",
+  "ended_at": "2026-06-19T01:23:28.496Z",
+  "elapsed_ms": 1677471
+}

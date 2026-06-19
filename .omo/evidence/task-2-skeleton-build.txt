@@ -1,0 +1,10 @@
+1) cmake -S . -B build
+   exit=0
+2) cmake --build build
+   exit=0
+3) ./build/TagReaderTest /tmp/opencode/tagreader_fuzz_corpus/flac/flac_valid_chain.flac
+   exit=0
+4) stdout compare: /tmp/opencode/task2_actual.stdout == .omo/evidence/baseline/flac_flac_valid_chain.flac.stdout
+   result=IDENTICAL
+5) lsp_diagnostics on CMakeLists.txt
+   result=NO_LSP_SERVER_FOR_EXTENSION_.txt
