@@ -296,7 +296,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `复用原始标签检测分发` | Files: [`src/media/ContainerDetector.cpp`, parser dispatch, regression samples]
 
-- [ ] 5. 为 Ogg Vorbis 增加 `METADATA_BLOCK_PICTURE` 封面读取
+- [x] 5. 为 Ogg Vorbis 增加 `METADATA_BLOCK_PICTURE` 封面读取
 
   **What to do**: 在 `src/formats/ogg-vorbis/` 的 comment 解析中识别 `METADATA_BLOCK_PICTURE`，Base64 decode 后复用 FLAC picture block 解析思路；支持图片导出到现有 cover cache；URL 图片 MIME `-->` 跳过；坏 Base64/坏 picture block 只清空封面。
   **Must NOT do**: 不改变 Ogg Vorbis 文本字段和歌词映射；不把 URL 图片下载成本地封面。

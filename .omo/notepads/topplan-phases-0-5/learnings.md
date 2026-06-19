@@ -47,3 +47,11 @@
 - Added `TR-AUDIT-037` with `/tmp/opencode/tagreader_regression/TR-AUDIT-037` evidence: MP4 family parser reuse, APE/ID3 raw fallback reuse, fallback-family no-tag unknown detection, and bare ADTS AAC returning media info with empty metadata.
 - Verification passed: `lsp_diagnostics` on `src/media/ContainerDetector.cpp`, `src/core/TagPipeline.cpp`, and `test/regression/regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-037`.
 - No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-037` run.
+
+## 2026-06-19 Task 5: Ogg Vorbis METADATA_BLOCK_PICTURE
+- Extracted FLAC picture block parsing into `src/formats/flac/FlacPicture.*`; FLAC metadata still uses the same picture semantics and existing content-addressed PNG cover cache.
+- Ogg Vorbis metadata now recognizes `METADATA_BLOCK_PICTURE`, strictly Base64-decodes the value, and delegates the decoded block to the shared FLAC picture parser; ordinary Vorbis text and lyrics mapping remains on the existing parser path.
+- URL pictures with MIME marker `-->`, malformed Base64, malformed picture blocks, and declared image payloads over 64 MiB are skipped as local cover failures, preserving readable title/artist/lyrics fields.
+- Added `TR-AUDIT-038` evidence in `/tmp/opencode/tagreader_regression/TR-AUDIT-038`: valid Ogg picture export, repeated-read cache reuse/no rewrite, malformed local cover skips, oversized skip, and URL skip without network fetch.
+- Verification passed: `lsp_diagnostics` on `FlacPicture.hpp`, `FlacPicture.cpp`, `FlacParser.cpp`, `OggVorbisParser.cpp`, and `regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-038`.
+- No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-038` run.

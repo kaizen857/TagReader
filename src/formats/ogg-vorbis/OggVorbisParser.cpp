@@ -1,12 +1,16 @@
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
 
+#include "formats/flac/FlacPicture.hpp"
 #include "formats/vorbis/VorbisCommentLimits.hpp"
 #include "formats/vorbis/VorbisCommentParser.hpp"
 #include "io/ByteReader.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +28,7 @@ constexpr std::size_t kMaxOggPacketBytes = 8z * 1024 * 1024;
 constexpr std::size_t kMaxOggScannedBytes = 64z * 1024 * 1024;
 constexpr std::size_t kMaxOggPages = 100000;
 constexpr std::size_t kMaxOggLogicalStreams = 256;
+constexpr std::size_t kMaxCoverInputBytes = 64z * 1024 * 1024;
 
 enum class VorbisStreamStage
 {
@@ -114,6 +119,137 @@ bool IsValidVorbisIdentificationPacket(const std::vector<uint8_t> &bytes)
 bool IsPlausibleVorbisCommentPacket(const std::vector<uint8_t> &bytes)
 {
     return bytes.size() >= 11 && HasVorbisPrefix(bytes, 0x03);
+}
+
+std::optional<uint8_t> DecodeBase64Char(unsigned char ch)
+{
+    if (ch >= 'A' && ch <= 'Z')
+    {
+        return static_cast<uint8_t>(ch - 'A');
+    }
+    if (ch >= 'a' && ch <= 'z')
+    {
+        return static_cast<uint8_t>(26 + ch - 'a');
+    }
+    if (ch >= '0' && ch <= '9')
+    {
+        return static_cast<uint8_t>(52 + ch - '0');
+    }
+    if (ch == '+')
+    {
+        return 62;
+    }
+    if (ch == '/')
+    {
+        return 63;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::vector<uint8_t>> DecodeBase64(std::string_view text, std::size_t maxDecodedBytes)
+{
+    if (text.empty() || text.size() % 4 != 0)
+    {
+        return std::nullopt;
+    }
+
+    const std::size_t padding = (text.ends_with("==") ? 2z : (text.ends_with('=') ? 1z : 0z));
+    if (padding > 0)
+    {
+        for (std::size_t i = text.size() - padding; i < text.size(); ++i)
+        {
+            if (text[i] != '=')
+            {
+                return std::nullopt;
+            }
+        }
+    }
+    for (std::size_t i = 0; i + padding < text.size(); ++i)
+    {
+        if (text[i] == '=')
+        {
+            return std::nullopt;
+        }
+    }
+
+    const std::size_t decodedSize = (text.size() / 4) * 3 - padding;
+    if (decodedSize > maxDecodedBytes)
+    {
+        return std::nullopt;
+    }
+
+    std::vector<uint8_t> decoded;
+    decoded.reserve(decodedSize);
+    for (std::size_t offset = 0; offset < text.size(); offset += 4)
+    {
+        std::array<uint8_t, 4> values{};
+        std::size_t blockPadding = 0;
+        for (std::size_t i = 0; i < 4; ++i)
+        {
+            const char ch = text[offset + i];
+            if (ch == '=')
+            {
+                values[i] = 0;
+                ++blockPadding;
+            }
+            else
+            {
+                const std::optional<uint8_t> value = DecodeBase64Char(static_cast<unsigned char>(ch));
+                if (!value.has_value() || blockPadding != 0)
+                {
+                    return std::nullopt;
+                }
+                values[i] = *value;
+            }
+        }
+
+        if (blockPadding > 0 && offset + 4 != text.size())
+        {
+            return std::nullopt;
+        }
+        if (blockPadding > 2)
+        {
+            return std::nullopt;
+        }
+
+        decoded.push_back(static_cast<uint8_t>((values[0] << 2) | (values[1] >> 4)));
+        if (blockPadding < 2)
+        {
+            decoded.push_back(static_cast<uint8_t>((values[1] << 4) | (values[2] >> 2)));
+        }
+        if (blockPadding < 1)
+        {
+            decoded.push_back(static_cast<uint8_t>((values[2] << 6) | values[3]));
+        }
+    }
+
+    if (decoded.size() != decodedSize)
+    {
+        return std::nullopt;
+    }
+    return decoded;
+}
+
+void ReadOggVorbisPictureEntry(ReadContext &context, RawMetadata &metadata, std::string_view entry)
+{
+    if (!metadata.coverPath.empty())
+    {
+        return;
+    }
+
+    constexpr std::string_view kPictureKey = "METADATA_BLOCK_PICTURE=";
+    if (!entry.starts_with(kPictureKey))
+    {
+        return;
+    }
+
+    const std::optional<std::vector<uint8_t>> picture = DecodeBase64(entry.substr(kPictureKey.size()), kMaxCoverInputBytes);
+    if (!picture.has_value())
+    {
+        return;
+    }
+
+    tagreader_flac::ReadFlacPictureEntry(context, metadata, picture->data(), picture->size());
 }
 
 bool ReadOggVorbisCommentEntries(ReadContext &context, const std::function<void(std::string_view)> &handler)
@@ -292,7 +428,9 @@ namespace tagreader_ogg_vorbis
 void ReadOggVorbisMetadata(ReadContext &context, RawMetadata &metadata)
 {
     const bool ok = ReadOggVorbisCommentEntries(context, [&](std::string_view entry)
-                                                { tagreader_vorbis::ReadVorbisCommentEntry(metadata, entry); });
+                                                {
+        tagreader_vorbis::ReadVorbisCommentEntry(metadata, entry);
+        ReadOggVorbisPictureEntry(context, metadata, entry); });
     (void)ok;
 }
 

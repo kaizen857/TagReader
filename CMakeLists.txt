@@ -64,6 +64,7 @@ add_library(TagReaderCore STATIC
     src/formats/id3/Id3Parser.cpp
     src/formats/id3/Id3Frames.cpp
     src/formats/vorbis/VorbisCommentParser.cpp
+    src/formats/flac/FlacPicture.cpp
     src/formats/flac/FlacParser.cpp
     src/formats/common/BoundedReader.cpp
     src/formats/ogg-vorbis/OggVorbisParser.cpp

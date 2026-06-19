@@ -46,7 +46,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 37> kTestCases{{
+constexpr std::array<TestCase, 38> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -84,6 +84,7 @@ constexpr std::array<TestCase, 37> kTestCases{{
     {"TR-AUDIT-035", true},
     {"TR-AUDIT-036", true},
     {"TR-AUDIT-037", true},
+    {"TR-AUDIT-038", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -251,6 +252,25 @@ std::vector<std::uint8_t> Bytes(std::string_view text)
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
+std::string Base64Encode(const std::vector<std::uint8_t> &bytes)
+{
+    constexpr std::string_view kAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string encoded;
+    encoded.reserve(((bytes.size() + 2) / 3) * 4);
+    for (std::size_t offset = 0; offset < bytes.size(); offset += 3)
+    {
+        const std::uint32_t first = bytes[offset];
+        const std::uint32_t second = offset + 1 < bytes.size() ? bytes[offset + 1] : 0;
+        const std::uint32_t third = offset + 2 < bytes.size() ? bytes[offset + 2] : 0;
+        const std::uint32_t value = (first << 16) | (second << 8) | third;
+        encoded.push_back(kAlphabet[(value >> 18) & 0x3F]);
+        encoded.push_back(kAlphabet[(value >> 12) & 0x3F]);
+        encoded.push_back(offset + 1 < bytes.size() ? kAlphabet[(value >> 6) & 0x3F] : '=');
+        encoded.push_back(offset + 2 < bytes.size() ? kAlphabet[value & 0x3F] : '=');
+    }
+    return encoded;
+}
+
 void AppendBytes(std::vector<std::uint8_t> &bytes, std::string_view text)
 {
     bytes.insert(bytes.end(), text.begin(), text.end());
@@ -270,25 +290,15 @@ std::uint32_t OggCrc(const std::vector<std::uint8_t> &bytes)
     return crc;
 }
 
-std::vector<std::uint8_t> OggPage(std::uint32_t serial, std::uint32_t sequence, std::uint8_t headerType, const std::vector<std::uint8_t> &payload)
+std::vector<std::uint8_t> OggPage(std::uint32_t serial, std::uint32_t sequence, std::uint8_t headerType, const std::vector<std::uint8_t> &lacing, const std::vector<std::uint8_t> &payload)
 {
     std::vector<std::uint8_t> bytes{'O', 'g', 'g', 'S', 0, headerType};
     AppendU64LE(bytes, 0);
     AppendU32LE(bytes, serial);
     AppendU32LE(bytes, sequence);
     AppendU32LE(bytes, 0);
-    bytes.push_back(static_cast<std::uint8_t>((payload.size() + 254) / 255));
-
-    std::size_t remaining = payload.size();
-    while (remaining >= 255)
-    {
-        bytes.push_back(255);
-        remaining -= 255;
-    }
-    if (payload.empty() || remaining > 0)
-    {
-        bytes.push_back(static_cast<std::uint8_t>(remaining));
-    }
+    bytes.push_back(static_cast<std::uint8_t>(lacing.size()));
+    bytes.insert(bytes.end(), lacing.begin(), lacing.end());
 
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     const std::uint32_t crc = OggCrc(bytes);
@@ -297,6 +307,22 @@ std::vector<std::uint8_t> OggPage(std::uint32_t serial, std::uint32_t sequence, 
     bytes[24] = static_cast<std::uint8_t>((crc >> 16) & 0xFF);
     bytes[25] = static_cast<std::uint8_t>((crc >> 24) & 0xFF);
     return bytes;
+}
+
+std::vector<std::uint8_t> OggPage(std::uint32_t serial, std::uint32_t sequence, std::uint8_t headerType, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> lacing;
+    std::size_t remaining = payload.size();
+    while (remaining >= 255)
+    {
+        lacing.push_back(255);
+        remaining -= 255;
+    }
+    if (payload.empty() || remaining > 0)
+    {
+        lacing.push_back(static_cast<std::uint8_t>(remaining));
+    }
+    return OggPage(serial, sequence, headerType, lacing, payload);
 }
 
 std::vector<std::uint8_t> ManySerialPrefix(std::size_t serialCount)
@@ -1039,6 +1065,21 @@ std::vector<std::uint8_t> VorbisCommentPayload(std::uint32_t commentCount, std::
     return payload;
 }
 
+std::vector<std::uint8_t> VorbisCommentPayloadFromStrings(const std::vector<std::string> &comments)
+{
+    std::vector<std::uint8_t> payload;
+    constexpr std::string_view kVendor = "tagreader-regression";
+    AppendU32LE(payload, static_cast<std::uint32_t>(kVendor.size()));
+    AppendBytes(payload, kVendor);
+    AppendU32LE(payload, static_cast<std::uint32_t>(comments.size()));
+    for (const std::string &comment : comments)
+    {
+        AppendU32LE(payload, static_cast<std::uint32_t>(comment.size()));
+        AppendBytes(payload, comment);
+    }
+    return payload;
+}
+
 bool ReplaceFlacVorbisCommentBlock(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &payload)
 {
     const std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
@@ -1087,13 +1128,12 @@ bool ReplaceFlacVorbisCommentBlock(const std::filesystem::path &basePath, const 
     return false;
 }
 
-std::vector<std::uint8_t> FlacPicturePayload(const std::vector<std::uint8_t> &imageBytes)
+std::vector<std::uint8_t> FlacPicturePayload(std::uint32_t pictureType, std::string_view mime, const std::vector<std::uint8_t> &imageBytes)
 {
-    constexpr std::string_view kPngMime = "image/png";
     std::vector<std::uint8_t> payload;
-    AppendU32BE(payload, 3);
-    AppendU32BE(payload, static_cast<std::uint32_t>(kPngMime.size()));
-    AppendBytes(payload, kPngMime);
+    AppendU32BE(payload, pictureType);
+    AppendU32BE(payload, static_cast<std::uint32_t>(mime.size()));
+    AppendBytes(payload, mime);
     AppendU32BE(payload, 0);
     AppendU32BE(payload, 1);
     AppendU32BE(payload, 1);
@@ -1101,6 +1141,26 @@ std::vector<std::uint8_t> FlacPicturePayload(const std::vector<std::uint8_t> &im
     AppendU32BE(payload, 0);
     AppendU32BE(payload, static_cast<std::uint32_t>(imageBytes.size()));
     payload.insert(payload.end(), imageBytes.begin(), imageBytes.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> FlacPicturePayload(const std::vector<std::uint8_t> &imageBytes)
+{
+    return FlacPicturePayload(3, "image/png", imageBytes);
+}
+
+std::vector<std::uint8_t> FlacPicturePayloadWithDeclaredImageSize(std::uint32_t declaredImageSize)
+{
+    std::vector<std::uint8_t> payload;
+    AppendU32BE(payload, 3);
+    AppendU32BE(payload, 9);
+    AppendBytes(payload, "image/png");
+    AppendU32BE(payload, 0);
+    AppendU32BE(payload, 1);
+    AppendU32BE(payload, 1);
+    AppendU32BE(payload, 32);
+    AppendU32BE(payload, 0);
+    AppendU32BE(payload, declaredImageSize);
     return payload;
 }
 
@@ -1260,6 +1320,112 @@ bool PatchOggVorbisCommentCount(const std::filesystem::path &basePath, const std
     }
 
     std::cerr << "base Ogg sample has no patchable Vorbis comment packet: " << basePath.string() << '\n';
+    return false;
+}
+
+std::vector<std::uint8_t> OggVorbisCommentPacket(const std::vector<std::string> &comments)
+{
+    std::vector<std::uint8_t> packet{0x03, 'v', 'o', 'r', 'b', 'i', 's'};
+    const std::vector<std::uint8_t> payload = VorbisCommentPayloadFromStrings(comments);
+    packet.insert(packet.end(), payload.begin(), payload.end());
+    packet.push_back(1);
+    return packet;
+}
+
+bool ReplaceOggVorbisComments(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::string> &comments)
+{
+    const std::vector<std::uint8_t> data = ReadBinaryFile(basePath);
+    if (data.empty())
+    {
+        std::cerr << "failed to read base Ogg sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::size_t cursor = 0;
+    while (cursor + 27 <= data.size())
+    {
+        if (std::string_view(reinterpret_cast<const char *>(data.data() + cursor), 4) != "OggS")
+        {
+            break;
+        }
+
+        const std::uint8_t segmentCount = data[cursor + 26];
+        if (cursor + 27 + segmentCount > data.size())
+        {
+            break;
+        }
+
+        std::size_t payloadSize = 0;
+        for (std::size_t i = 0; i < segmentCount; ++i)
+        {
+            payloadSize += data[cursor + 27 + i];
+        }
+        const std::size_t payloadOffset = cursor + 27 + segmentCount;
+        const std::size_t pageEnd = payloadOffset + payloadSize;
+        if (pageEnd > data.size())
+        {
+            break;
+        }
+
+        const bool isCommentPage = payloadSize >= 7 && data[payloadOffset] == 0x03 &&
+                                   std::string_view(reinterpret_cast<const char *>(data.data() + payloadOffset + 1), 6) == "vorbis";
+        if (isCommentPage)
+        {
+            std::size_t packetEndOffset = payloadOffset;
+            std::size_t packetEndSegment = 0;
+            for (; packetEndSegment < segmentCount; ++packetEndSegment)
+            {
+                packetEndOffset += data[cursor + 27 + packetEndSegment];
+                if (data[cursor + 27 + packetEndSegment] < 255)
+                {
+                    ++packetEndSegment;
+                    break;
+                }
+            }
+            if (packetEndSegment == 0 || packetEndOffset > pageEnd)
+            {
+                break;
+            }
+
+            const std::uint8_t headerType = data[cursor + 5];
+            const std::uint32_t serial = static_cast<std::uint32_t>(data[cursor + 14]) |
+                                         (static_cast<std::uint32_t>(data[cursor + 15]) << 8) |
+                                         (static_cast<std::uint32_t>(data[cursor + 16]) << 16) |
+                                         (static_cast<std::uint32_t>(data[cursor + 17]) << 24);
+            const std::uint32_t sequence = static_cast<std::uint32_t>(data[cursor + 18]) |
+                                           (static_cast<std::uint32_t>(data[cursor + 19]) << 8) |
+                                           (static_cast<std::uint32_t>(data[cursor + 20]) << 16) |
+                                           (static_cast<std::uint32_t>(data[cursor + 21]) << 24);
+
+            const std::vector<std::uint8_t> commentPacket = OggVorbisCommentPacket(comments);
+            std::vector<std::uint8_t> lacing;
+            std::size_t remainingCommentBytes = commentPacket.size();
+            while (remainingCommentBytes >= 255)
+            {
+                lacing.push_back(255);
+                remainingCommentBytes -= 255;
+            }
+            lacing.push_back(static_cast<std::uint8_t>(remainingCommentBytes));
+            for (std::size_t i = packetEndSegment; i < segmentCount; ++i)
+            {
+                lacing.push_back(data[cursor + 27 + i]);
+            }
+
+            std::vector<std::uint8_t> payload = commentPacket;
+            payload.insert(payload.end(), data.begin() + static_cast<std::ptrdiff_t>(packetEndOffset), data.begin() + static_cast<std::ptrdiff_t>(pageEnd));
+
+            const std::vector<std::uint8_t> patchedPage = OggPage(serial, sequence, headerType, lacing, payload);
+            std::vector<std::uint8_t> output;
+            output.insert(output.end(), data.begin(), data.begin() + static_cast<std::ptrdiff_t>(cursor));
+            output.insert(output.end(), patchedPage.begin(), patchedPage.end());
+            output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(pageEnd), data.end());
+            return WriteBinaryFile(outputPath, output);
+        }
+
+        cursor = pageEnd;
+    }
+
+    std::cerr << "base Ogg sample has no replaceable Vorbis comment packet: " << basePath.string() << '\n';
     return false;
 }
 
@@ -5011,6 +5177,161 @@ bool RunTrAudit037()
     return passed;
 }
 
+bool RunTrAudit038()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-038";
+    constexpr std::uint32_t kOversizedCoverBytes = 64U * 1024U * 1024U + 1U;
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.ogg";
+    const std::filesystem::path validPath = evidenceRoot / "metadata-block-picture.ogg";
+    const std::filesystem::path malformedBase64Path = evidenceRoot / "malformed-base64.ogg";
+    const std::filesystem::path malformedPicturePath = evidenceRoot / "malformed-picture-block.ogg";
+    const std::filesystem::path oversizedPicturePath = evidenceRoot / "oversized-picture.ogg";
+    const std::filesystem::path urlPicturePath = evidenceRoot / "url-picture.ogg";
+
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::string validPicture = "METADATA_BLOCK_PICTURE=" + Base64Encode(FlacPicturePayload(validPng));
+    const std::string malformedBase64Picture = "METADATA_BLOCK_PICTURE=not@base64";
+    const std::string malformedPicture = "METADATA_BLOCK_PICTURE=" + Base64Encode(Bytes("not-a-picture-block"));
+    const std::string oversizedPicture = "METADATA_BLOCK_PICTURE=" + Base64Encode(FlacPicturePayloadWithDeclaredImageSize(kOversizedCoverBytes));
+    const std::string urlPicture = "METADATA_BLOCK_PICTURE=" + Base64Encode(FlacPicturePayload(3, "-->", Bytes("https://example.invalid/cover.png")));
+
+    const std::vector<std::string> validComments{
+        "TITLE=Ogg Picture Title",
+        "ARTIST=Ogg Picture Artist",
+        "LYRICS=Ogg picture lyric",
+        validPicture,
+    };
+    const std::vector<std::string> malformedBase64Comments{
+        "TITLE=Malformed Base64 Title",
+        "ARTIST=Malformed Base64 Artist",
+        "LYRICS=Malformed Base64 lyric",
+        malformedBase64Picture,
+    };
+    const std::vector<std::string> malformedPictureComments{
+        "TITLE=Malformed Picture Title",
+        "ARTIST=Malformed Picture Artist",
+        "LYRICS=Malformed Picture lyric",
+        malformedPicture,
+    };
+    const std::vector<std::string> oversizedPictureComments{
+        "TITLE=Oversized Picture Title",
+        "ARTIST=Oversized Picture Artist",
+        "LYRICS=Oversized Picture lyric",
+        oversizedPicture,
+    };
+    const std::vector<std::string> urlPictureComments{
+        "TITLE=URL Picture Title",
+        "ARTIST=URL Picture Artist",
+        "LYRICS=URL Picture lyric",
+        urlPicture,
+    };
+
+    if (!GenerateOggVorbisSample(basePath, "base-title", "base-artist") ||
+        !ReplaceOggVorbisComments(basePath, validPath, validComments) ||
+        !ReplaceOggVorbisComments(basePath, malformedBase64Path, malformedBase64Comments) ||
+        !ReplaceOggVorbisComments(basePath, malformedPicturePath, malformedPictureComments) ||
+        !ReplaceOggVorbisComments(basePath, oversizedPicturePath, oversizedPictureComments) ||
+        !ReplaceOggVorbisComments(basePath, urlPicturePath, urlPictureComments))
+    {
+        return false;
+    }
+
+    const MusicTag firstTag = TagReader::Read(validPath, coverExportDir);
+    const std::filesystem::path firstCoverPath = firstTag.coverPath();
+    const bool coverPathPresent = Expect(!firstCoverPath.empty(), "Ogg METADATA_BLOCK_PICTURE should export a cover path");
+    const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported Ogg cover should exist on disk");
+    ec.clear();
+    const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported Ogg cover should stay under export directory");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "valid Ogg picture should create one PNG");
+    const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool firstMtimeOk = Expect(!ec, "exported Ogg cover mtime should be readable");
+    ec.clear();
+
+    const MusicTag repeatedTag = TagReader::Read(validPath, coverExportDir);
+    const bool repeatedPathSame = Expect(repeatedTag.coverPath() == firstCoverPath, "repeated Ogg picture read should reuse cache path");
+    const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated Ogg picture read should not rewrite cached PNG");
+    ec.clear();
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated Ogg picture read should still have one PNG");
+
+    const MusicTag malformedBase64Tag = TagReader::Read(malformedBase64Path, coverExportDir);
+    const MusicTag malformedPictureTag = TagReader::Read(malformedPicturePath, coverExportDir);
+    const MusicTag oversizedPictureTag = TagReader::Read(oversizedPicturePath, coverExportDir);
+    const MusicTag urlPictureTag = TagReader::Read(urlPicturePath, coverExportDir);
+    const std::size_t pngCountAfterMalformedReads = CountPngFiles(coverExportDir);
+
+    bool metadataOk = true;
+    metadataOk = Expect(firstTag.title() == "Ogg Picture Title", "valid Ogg picture sample should preserve title") && metadataOk;
+    metadataOk = Expect(firstTag.artist() == "Ogg Picture Artist", "valid Ogg picture sample should preserve artist") && metadataOk;
+    metadataOk = Expect(!firstTag.lyrics().empty() && firstTag.lyrics().lyrics().front().text() == "Ogg picture lyric", "valid Ogg picture sample should preserve lyrics") && metadataOk;
+    metadataOk = Expect(malformedBase64Tag.title() == "Malformed Base64 Title" && !malformedBase64Tag.lyrics().empty(), "malformed Base64 should preserve readable metadata and lyrics") && metadataOk;
+    metadataOk = Expect(malformedPictureTag.title() == "Malformed Picture Title" && !malformedPictureTag.lyrics().empty(), "malformed picture block should preserve readable metadata and lyrics") && metadataOk;
+    metadataOk = Expect(oversizedPictureTag.title() == "Oversized Picture Title" && !oversizedPictureTag.lyrics().empty(), "oversized picture payload should preserve readable metadata and lyrics") && metadataOk;
+    metadataOk = Expect(urlPictureTag.title() == "URL Picture Title" && !urlPictureTag.lyrics().empty(), "URL picture marker should preserve readable metadata and lyrics") && metadataOk;
+
+    const bool malformedBase64NoCover = Expect(malformedBase64Tag.coverPath().empty(), "malformed Base64 Ogg picture should not produce coverPath");
+    const bool malformedPictureNoCover = Expect(malformedPictureTag.coverPath().empty(), "malformed Ogg picture block should not produce coverPath");
+    const bool oversizedPictureNoCover = Expect(oversizedPictureTag.coverPath().empty(), "oversized Ogg picture payload should not produce coverPath");
+    const bool urlPictureNoCover = Expect(urlPictureTag.coverPath().empty(), "URL Ogg picture marker should not produce coverPath");
+    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 1, "malformed, oversized, and URL Ogg picture samples should not add cache files");
+
+    const std::string stdoutLike =
+        "TR-AUDIT-038 ogg-picture-exported coverPath=" + firstCoverPath.string() + "\n"
+        "TR-AUDIT-038 ogg-picture-malformed-skipped base64 block oversized\n"
+        "TR-AUDIT-038 ogg-picture-url-skipped\n"
+        "TR-AUDIT-038 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-038\n"
+        "marker=ogg-metadata-block-picture\n"
+        "marker=malformed-local-cover-failure\n"
+        "marker=url-picture-skipped\n"
+        "validSample=" + validPath.string() + "\n" +
+        "malformedBase64Sample=" + malformedBase64Path.string() + "\n" +
+        "malformedPictureSample=" + malformedPicturePath.string() + "\n" +
+        "oversizedPictureSample=" + oversizedPicturePath.string() + "\n" +
+        "urlPictureSample=" + urlPicturePath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + firstCoverPath.string() + "\n" +
+        "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
+        "pngFilesAfterMalformedReads=" + std::to_string(pngCountAfterMalformedReads) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "first_output.txt", DescribeTag(firstTag)) &&
+                            WriteTextFile(evidenceRoot / "repeated_output.txt", DescribeTag(repeatedTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_base64_output.txt", DescribeTag(malformedBase64Tag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_picture_output.txt", DescribeTag(malformedPictureTag)) &&
+                            WriteTextFile(evidenceRoot / "oversized_picture_output.txt", DescribeTag(oversizedPictureTag)) &&
+                            WriteTextFile(evidenceRoot / "url_picture_output.txt", DescribeTag(urlPictureTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = coverPathPresent && coverExists && coverUnderExportDir && onePngAfterFirstRead && firstMtimeOk &&
+                        repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead && metadataOk &&
+                        malformedBase64NoCover && malformedPictureNoCover && oversizedPictureNoCover && urlPictureNoCover && noExtraPng;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-038 ogg-picture-exported coverPath=" << firstCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-038 ogg-picture-malformed-skipped base64 block oversized\n";
+        std::cout << "TR-AUDIT-038 ogg-picture-url-skipped\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -5420,6 +5741,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-037")
     {
         if (!RunTrAudit037())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-038")
+    {
+        if (!RunTrAudit038())
         {
             return 1;
         }
