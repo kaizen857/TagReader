@@ -40,7 +40,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 31> kTestCases{{
+constexpr std::array<TestCase, 35> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -72,6 +72,10 @@ constexpr std::array<TestCase, 31> kTestCases{{
     {"TR-AUDIT-029", true},
     {"TR-AUDIT-030", true},
     {"TR-AUDIT-031", true},
+    {"TR-AUDIT-032", true},
+    {"TR-AUDIT-033", true},
+    {"TR-AUDIT-034", true},
+    {"TR-AUDIT-035", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -786,6 +790,50 @@ bool PrependId3v22Tag(const std::filesystem::path &basePath, const std::filesyst
 
     std::vector<std::uint8_t> output = Id3v22Tag(frames);
     output.insert(output.end(), base.begin(), base.end());
+    return WriteBinaryFile(outputPath, output);
+}
+
+void WriteId3v1TextField(std::vector<std::uint8_t> &tag, std::size_t offset, std::size_t size, std::string_view value)
+{
+    const std::size_t count = std::min(size, value.size());
+    std::copy(value.begin(), value.begin() + static_cast<std::ptrdiff_t>(count), tag.begin() + static_cast<std::ptrdiff_t>(offset));
+}
+
+std::vector<std::uint8_t> Id3v1Tag(std::string_view title,
+                                   std::string_view artist,
+                                   std::string_view album,
+                                   std::string_view year,
+                                   std::uint8_t genre,
+                                   std::uint8_t track)
+{
+    std::vector<std::uint8_t> tag(128, 0);
+    tag[0] = 'T';
+    tag[1] = 'A';
+    tag[2] = 'G';
+    WriteId3v1TextField(tag, 3, 30, title);
+    WriteId3v1TextField(tag, 33, 30, artist);
+    WriteId3v1TextField(tag, 63, 30, album);
+    WriteId3v1TextField(tag, 93, 4, year);
+    if (track != 0)
+    {
+        tag[125] = 0;
+        tag[126] = track;
+    }
+    tag[127] = genre;
+    return tag;
+}
+
+bool AppendId3v1Tag(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::uint8_t> &tag)
+{
+    const std::vector<std::uint8_t> base = ReadBinaryFile(basePath);
+    if (base.empty())
+    {
+        std::cerr << "failed to read base sample for ID3v1 append: " << basePath.string() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> output = base;
+    output.insert(output.end(), tag.begin(), tag.end());
     return WriteBinaryFile(outputPath, output);
 }
 
@@ -4251,6 +4299,338 @@ bool RunTrAudit031()
     return passed;
 }
 
+bool RunTrAudit032()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-032";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path id3Path = evidenceRoot / "id3-baseline.mp3";
+    const std::filesystem::path apeOverId3Path = evidenceRoot / "ape-over-id3.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> id3Frames = Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("ID3 Title")),
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("ID3 Artist")),
+        Id3v23Frame("TALB", Id3Latin1TextPayload("ID3 Album")),
+        Id3v23Frame("TCON", Id3Latin1TextPayload("ID3 Genre")),
+        Id3v23Frame("TYER", Id3Latin1TextPayload("1999")),
+        Id3v23Frame("TRCK", Id3Latin1TextPayload("4")),
+    });
+    if (!PrependId3Tag(basePath, id3Path, id3Frames))
+    {
+        return false;
+    }
+
+    const std::vector<ApeItem> apeItems = {
+        {"Title", ApeTextValue("APE Title")},
+        {"Artist", ApeTextValue("APE Artist")},
+        {"Track", ApeTextValue("9")},
+    };
+    if (!AppendApeTag(id3Path, apeOverId3Path, apeItems, true))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(apeOverId3Path);
+    bool passed = true;
+    passed = Expect(tag.title() == "APE Title", "APE title should win over ID3 title") && passed;
+    passed = Expect(tag.artist() == "APE Artist", "APE artist should win over ID3 artist") && passed;
+    passed = Expect(tag.trackNumber() == 9, "APE track should win over ID3 track") && passed;
+    passed = Expect(tag.album() == "ID3 Album", "ID3 album should fill missing APE album") && passed;
+    passed = Expect(tag.genre() == "ID3 Genre", "ID3 genre should fill missing APE genre") && passed;
+    passed = Expect(tag.year() == 1999, "ID3 year should fill missing APE year") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-032 ape-over-id3 title=APE Title artist=APE Artist track=9\n"
+        "TR-AUDIT-032 id3-fallback album=ID3 Album genre=ID3 Genre year=1999\n"
+        "TR-AUDIT-032 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-032\n"
+        "marker=ape-over-id3\n"
+        "marker=id3-fallback\n"
+        "sample=" + apeOverId3Path.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "album=" + std::string(tag.album()) + "\n" +
+        "genre=" + std::string(tag.genre()) + "\n" +
+        "year=" + std::to_string(tag.year()) + "\n" +
+        "track=" + std::to_string(tag.trackNumber()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-032 ape-over-id3 title=APE Title artist=APE Artist track=9\n";
+        std::cout << "TR-AUDIT-032 id3-fallback album=ID3 Album genre=ID3 Genre year=1999\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit033()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-033";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path id3v1Path = evidenceRoot / "id3v1-only.mp3";
+    const std::filesystem::path id3v2OverV1Path = evidenceRoot / "id3v2-over-id3v1.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> id3v1 = Id3v1Tag("V1 Title", "V1 Artist", "V1 Album", "2001", 17, 6);
+    if (!AppendId3v1Tag(basePath, id3v1Path, id3v1))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> id3v2Frames = Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("V2 Title")),
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("V2 Artist")),
+    });
+    if (!PrependId3Tag(id3v1Path, id3v2OverV1Path, id3v2Frames))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(id3v2OverV1Path);
+    bool passed = true;
+    passed = Expect(tag.title() == "V2 Title", "ID3v2 title should win over ID3v1 title") && passed;
+    passed = Expect(tag.artist() == "V2 Artist", "ID3v2 artist should win over ID3v1 artist") && passed;
+    passed = Expect(tag.album() == "V1 Album", "ID3v1 album should fill missing ID3v2 album") && passed;
+    passed = Expect(tag.year() == 2001, "ID3v1 year should fill missing ID3v2 year") && passed;
+    passed = Expect(tag.trackNumber() == 6, "ID3v1 track should fill missing ID3v2 track") && passed;
+    passed = Expect(tag.genre() == "Rock", "ID3v1 genre should fill missing ID3v2 genre") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-033 id3v2-over-id3v1 title=V2 Title artist=V2 Artist\n"
+        "TR-AUDIT-033 id3v1-fallback album=V1 Album year=2001 track=6 genre=Rock\n"
+        "TR-AUDIT-033 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-033\n"
+        "marker=id3v2-over-id3v1\n"
+        "marker=id3v1-fallback\n"
+        "sample=" + id3v2OverV1Path.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "album=" + std::string(tag.album()) + "\n" +
+        "year=" + std::to_string(tag.year()) + "\n" +
+        "track=" + std::to_string(tag.trackNumber()) + "\n" +
+        "genre=" + std::string(tag.genre()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-033 id3v2-over-id3v1 title=V2 Title artist=V2 Artist\n";
+        std::cout << "TR-AUDIT-033 id3v1-fallback album=V1 Album year=2001 track=6 genre=Rock\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit034()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-034";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path coverExportDir = evidenceRoot / "covers";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path sampleAPath = evidenceRoot / "cover-a.mp3";
+    const std::filesystem::path sampleBPath = evidenceRoot / "cover-b.mp3";
+    const std::vector<std::uint8_t> validPng = OneByOnePng();
+    const std::vector<std::uint8_t> apicPayload = Concat({std::vector<std::uint8_t>{0}, Bytes("image/png"), std::vector<std::uint8_t>{0, 3, 0}, validPng});
+    if (!GenerateBaseMp3(basePath) ||
+        !PrependId3Tag(basePath, sampleAPath, Id3v23Frame("APIC", apicPayload)) ||
+        !PrependId3Tag(basePath, sampleBPath, Id3v23Frame("APIC", apicPayload)))
+    {
+        return false;
+    }
+
+    const MusicTag firstTag = TagReader::Read(sampleAPath, coverExportDir);
+    const std::filesystem::path firstCoverPath = firstTag.coverPath();
+    const bool firstPathPresent = Expect(!firstCoverPath.empty(), "first cover read should export a cache path");
+    const bool firstExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "first cached cover should exist");
+    ec.clear();
+    const bool firstUnderDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "first cached cover should stay under export dir");
+    const bool onePngAfterFirst = Expect(CountPngFiles(coverExportDir) == 1, "first cover read should create one PNG");
+    const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool firstMtimeOk = Expect(!ec, "first cached cover mtime should be readable");
+    ec.clear();
+
+    const MusicTag secondTag = TagReader::Read(sampleBPath, coverExportDir);
+    const bool secondPathSame = Expect(secondTag.coverPath() == firstCoverPath, "same embedded image in another file should reuse cache path");
+    const bool onePngAfterSecond = Expect(CountPngFiles(coverExportDir) == 1, "second same-image read should not create another PNG");
+    const auto secondMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool secondMtimeOk = Expect(!ec && secondMtime == firstMtime, "second same-image read should not rewrite cached PNG");
+    ec.clear();
+
+    const MusicTag thirdTag = TagReader::Read(sampleAPath, coverExportDir);
+    const bool thirdPathSame = Expect(thirdTag.coverPath() == firstCoverPath, "repeat read should reuse cache path");
+    const bool onePngAfterThird = Expect(CountPngFiles(coverExportDir) == 1, "repeat read should keep one PNG");
+    const auto thirdMtime = std::filesystem::last_write_time(firstCoverPath, ec);
+    const bool thirdMtimeOk = Expect(!ec && thirdMtime == firstMtime, "repeat read should not rewrite cached PNG");
+    ec.clear();
+
+    const std::string stdoutLike =
+        "TR-AUDIT-034 cover-cache-reuse coverPath=" + firstCoverPath.string() + "\n"
+        "TR-AUDIT-034 same-image-no-rewrite pngFiles=1\n"
+        "TR-AUDIT-034 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-034\n"
+        "marker=cover-cache-reuse\n"
+        "marker=same-image-no-rewrite\n"
+        "sampleA=" + sampleAPath.string() + "\n" +
+        "sampleB=" + sampleBPath.string() + "\n" +
+        "coverExportDir=" + coverExportDir.string() + "\n" +
+        "coverPath=" + firstCoverPath.string() + "\n" +
+        "pngFilesAfterThird=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "first_output.txt", DescribeTag(firstTag)) &&
+                            WriteTextFile(evidenceRoot / "second_output.txt", DescribeTag(secondTag)) &&
+                            WriteTextFile(evidenceRoot / "third_output.txt", DescribeTag(thirdTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    const bool passed = firstPathPresent && firstExists && firstUnderDir && onePngAfterFirst && firstMtimeOk &&
+                        secondPathSame && onePngAfterSecond && secondMtimeOk &&
+                        thirdPathSame && onePngAfterThird && thirdMtimeOk;
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-034 cover-cache-reuse coverPath=" << firstCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-034 same-image-no-rewrite pngFiles=1\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit035()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-035";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.mp3";
+    const std::filesystem::path samplePath = evidenceRoot / "ape-malformed-local-field.mp3";
+    if (!GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+
+    const std::vector<std::uint8_t> itemBytes = Concat({
+        BuildApeItems({ApeItem{"Title", ApeTextValue("Good Title")}}),
+        std::vector<std::uint8_t>{0x20, 0x00, 0x00, 0x00, 0, 0, 0, 0, 'A', 'l', 'b', 'u', 'm', 0, 'b', 'a', 'd'},
+    });
+    const std::uint32_t itemCount = 2;
+    const std::uint32_t tagSize = 32 + static_cast<std::uint32_t>(itemBytes.size());
+    std::vector<std::uint8_t> apeTag = BuildApeHeader(tagSize, itemCount);
+    apeTag.insert(apeTag.end(), itemBytes.begin(), itemBytes.end());
+    const std::vector<std::uint8_t> apeFooter = BuildApeFooter(tagSize, itemCount, 0x80000000);
+    apeTag.insert(apeTag.end(), apeFooter.begin(), apeFooter.end());
+
+    std::vector<std::uint8_t> sampleBytes = ReadBinaryFile(basePath);
+    if (sampleBytes.empty())
+    {
+        return false;
+    }
+    sampleBytes.insert(sampleBytes.end(), apeTag.begin(), apeTag.end());
+    if (!WriteBinaryFile(samplePath, sampleBytes))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(samplePath);
+    bool passed = true;
+    passed = Expect(tag.title() == "Good Title", "valid APE item before malformed local field should be preserved") && passed;
+    passed = Expect(tag.album().empty(), "malformed APE item should be skipped instead of producing album") && passed;
+    passed = Expect(tag.artist().empty(), "malformed APE item should not pollute unrelated fields") && passed;
+    passed = Expect(tag.coverPath().empty(), "malformed local field sample should not produce cover side effects") && passed;
+    passed = Expect(tag.lyrics().empty(), "malformed local field sample should not produce lyrics side effects") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-035 malformed-local-field-skipped title=Good Title\n"
+        "TR-AUDIT-035 partial-success album=\n"
+        "TR-AUDIT-035 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-035\n"
+        "marker=malformed-local-field-skipped\n"
+        "marker=partial-success\n"
+        "sample=" + samplePath.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "album=" + std::string(tag.album()) + "\n" +
+        "itemCount=2\n"
+        "malformedValueSize=32\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-035 malformed-local-field-skipped title=Good Title\n";
+        std::cout << "TR-AUDIT-035 partial-success album=\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -4594,6 +4974,50 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-031")
     {
         if (!RunTrAudit031())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-032")
+    {
+        if (!RunTrAudit032())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-033")
+    {
+        if (!RunTrAudit033())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-034")
+    {
+        if (!RunTrAudit034())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-035")
+    {
+        if (!RunTrAudit035())
         {
             return 1;
         }

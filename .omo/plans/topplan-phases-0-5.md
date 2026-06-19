@@ -135,7 +135,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 > Implementation + Test = ONE task. Never separate.
 > EVERY task MUST have: Agent Profile + Parallelization + QA Scenarios.
 
-- [ ] 1. 锁定现有 parser 与回归基线
+- [x] 1. 锁定现有 parser 与回归基线
 
   **What to do**: 阅读并记录当前 `ID3`、`Vorbis`、`FLAC`、`Ogg Vorbis`、`MP4`、`APE` 的字段、歌词、封面、fallback 优先级与资源上限；在 `test/regression/regression_tests.cpp` 中新增阶段 0 基线 case，覆盖 APE-over-ID3、ID3v2-over-ID3v1 fallback、封面 cache reuse、malformed 局部跳过。
   **Must NOT do**: 不重构 parser；不改变已有字段优先级；不删除 `TR-AUDIT-001` 到 `TR-AUDIT-031`。
