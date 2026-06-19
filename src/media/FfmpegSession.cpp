@@ -17,6 +17,7 @@ extern "C"
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <new>
 #include <stdexcept>
 #include <system_error>
@@ -182,15 +183,16 @@ AVIOContext *CreateAvioContext(int fd, std::uintmax_t fileSize)
     {
         throw std::bad_alloc();
     }
+    std::unique_ptr<std::uint8_t, decltype(&av_free)> bufferGuard(buffer, av_free);
 
     auto *state = new FfmpegAvioState{fd, fileSize, 0};
     AVIOContext *avioContext = avio_alloc_context(buffer, kAvioBufferSize, 0, state, ReadPacketFromFd, nullptr, SeekFd);
     if (avioContext == nullptr)
     {
         delete state;
-        av_free(buffer);
         throw std::runtime_error("failed to allocate FFmpeg AVIO context");
     }
+    bufferGuard.release();
     return avioContext;
 }
 
