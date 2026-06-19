@@ -78,3 +78,11 @@
 - AIFF native chunks map `NAME` to title, `AUTH` to artist, and `ANNO`/`(c) `/`COMT` to internal `RawMetadata::comment`; public API shape remains unchanged because `MusicTag` has no comment accessor.
 - Nonstandard AIFF `ID3 ` chunks reuse `ReadID3v2MetadataFromBytes()`; embedded ID3v2 metadata is primary and native AIFF fields only fill missing values.
 - Added `TR-AUDIT-043`, `TR-AUDIT-044`, and `TR-AUDIT-045` covering native-only fields, AIFC magic, ID3/native merge, big-endian chunk sizes, odd padding, truncated `COMT`, bad magic, bad FORM bounds, and oversized native chunks.
+
+## 2026-06-19 Task 9: DSD metadata pointer and compatibility boundaries
+- Added `src/formats/dsd/DsdParser.*`; DSF metadata validates byte magic `DSD ` and uses the DSF header metadata pointer to locate an embedded ID3v2 payload through `ReadID3v2MetadataFromBytes()`.
+- DSF pointer `0`, pointer beyond the declared DSF file size, malformed header size, and oversized metadata payloads are parser-local empty metadata outcomes rather than top-level failures.
+- DFF/DSDIFF metadata validates byte magic `FRM8` plus form marker `DSD `, then walks the bounded FRM8 chunk tree for `ID3 ` or `DI3v` payloads and reuses the ID3v2 in-memory parser.
+- DFF `ID3 ` and `DI3v` are compatibility-only nonstandard payload paths; this is not a claim that DSDIFF has official standard metadata tags.
+- DXD remains a boundary case only: no dedicated DXD parser or support claim was added; actual RIFF/FLAC/DSF magic remains handled by those existing container paths, otherwise metadata stays empty/unknown.
+- Added `TR-AUDIT-046`, `TR-AUDIT-047`, and `TR-AUDIT-048` for DSF pointer success/local-empty cases, DFF compatibility chunks/no-ID3 empty behavior, and DXD no-standalone-parser behavior.

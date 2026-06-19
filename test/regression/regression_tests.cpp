@@ -2,6 +2,7 @@
 #include "core/TagFormat.hpp"
 #include "formats/aiff/AiffParser.hpp"
 #include "formats/common/BoundedReader.hpp"
+#include "formats/dsd/DsdParser.hpp"
 #include "formats/riff/RiffParser.hpp"
 #include "media/ContainerDetector.hpp"
 
@@ -48,7 +49,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 45> kTestCases{{
+constexpr std::array<TestCase, 48> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -94,6 +95,9 @@ constexpr std::array<TestCase, 45> kTestCases{{
     {"TR-AUDIT-043", true},
     {"TR-AUDIT-044", true},
     {"TR-AUDIT-045", true},
+    {"TR-AUDIT-046", true},
+    {"TR-AUDIT-047", true},
+    {"TR-AUDIT-048", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -236,6 +240,14 @@ void AppendU32LE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
 void AppendU64LE(std::vector<std::uint8_t> &bytes, std::uint64_t value)
 {
     for (int i = 0; i < 8; ++i)
+    {
+        bytes.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
+    }
+}
+
+void AppendU64BE(std::vector<std::uint8_t> &bytes, std::uint64_t value)
+{
+    for (int i = 7; i >= 0; --i)
     {
         bytes.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
     }
@@ -850,6 +862,75 @@ std::vector<std::uint8_t> Id3v23Tag(const std::vector<std::uint8_t> &frames)
     return bytes;
 }
 
+std::vector<std::uint8_t> DsfFile(const std::vector<std::uint8_t> &metadata, std::uint64_t metadataPointer)
+{
+    constexpr std::uint64_t kDsfHeaderBytes = 28;
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, "DSD ");
+    AppendU64LE(bytes, kDsfHeaderBytes);
+    const std::uint64_t fileSize = metadataPointer == 0 ? kDsfHeaderBytes : metadataPointer + metadata.size();
+    AppendU64LE(bytes, fileSize);
+    AppendU64LE(bytes, metadataPointer);
+    if (metadataPointer > bytes.size())
+    {
+        bytes.resize(static_cast<std::size_t>(metadataPointer), 0);
+    }
+    bytes.insert(bytes.end(), metadata.begin(), metadata.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> DsfFileWithDeclaredPointer(const std::vector<std::uint8_t> &metadata, std::uint64_t metadataPointer, std::uint64_t declaredFileSize)
+{
+    constexpr std::uint64_t kDsfHeaderBytes = 28;
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, "DSD ");
+    AppendU64LE(bytes, kDsfHeaderBytes);
+    AppendU64LE(bytes, declaredFileSize);
+    AppendU64LE(bytes, metadataPointer);
+    bytes.insert(bytes.end(), metadata.begin(), metadata.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> DffChunk(std::string_view chunkId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, chunkId);
+    AppendU64BE(bytes, static_cast<std::uint64_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    if ((payload.size() % 2) != 0)
+    {
+        bytes.push_back(0);
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> DffPropChunk(std::string_view propertyType, const std::vector<std::vector<std::uint8_t>> &children)
+{
+    std::vector<std::uint8_t> payload;
+    AppendBytes(payload, propertyType);
+    for (const std::vector<std::uint8_t> &child : children)
+    {
+        payload.insert(payload.end(), child.begin(), child.end());
+    }
+    return DffChunk("PROP", payload);
+}
+
+std::vector<std::uint8_t> DffFile(const std::vector<std::vector<std::uint8_t>> &chunks)
+{
+    std::vector<std::uint8_t> payload;
+    AppendBytes(payload, "DSD ");
+    for (const std::vector<std::uint8_t> &chunk : chunks)
+    {
+        payload.insert(payload.end(), chunk.begin(), chunk.end());
+    }
+
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, "FRM8");
+    AppendU64BE(bytes, static_cast<std::uint64_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 std::vector<std::uint8_t> RiffChunk(std::string_view chunkId, const std::vector<std::uint8_t> &payload)
 {
     std::vector<std::uint8_t> bytes;
@@ -1041,6 +1122,49 @@ bool ReadAiffRawMetadataForTest(const std::filesystem::path &path, const std::fi
     (void)coverExportDir;
     (void)rawMetadata;
     std::cerr << "AIFF internal RawMetadata assertions require POSIX FileInput\n";
+    return false;
+#endif
+}
+
+bool ReadDsdRawMetadataForTest(const std::filesystem::path &path,
+                               const std::filesystem::path &coverExportDir,
+                               bool dsf,
+                               tagreader_core::RawMetadata &rawMetadata)
+{
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    std::error_code ec;
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open DSD sample for internal parser assertion: " << path.string() << '\n';
+        return false;
+    }
+    tagreader_core::ReadContext context;
+    context.filePath = path;
+    context.coverExportDir = coverExportDir;
+    context.fileSize = std::filesystem::file_size(path, ec);
+    if (ec)
+    {
+        std::cerr << "failed to size DSD sample for internal parser assertion: " << ec.message() << '\n';
+        ::close(fd);
+        return false;
+    }
+    context.input = tagreader_io::FileInput(fd);
+    if (dsf)
+    {
+        tagreader_dsd::ReadDsfMetadata(context, rawMetadata);
+    }
+    else
+    {
+        tagreader_dsd::ReadDffMetadata(context, rawMetadata);
+    }
+    return true;
+#else
+    (void)path;
+    (void)coverExportDir;
+    (void)dsf;
+    (void)rawMetadata;
+    std::cerr << "DSD internal RawMetadata assertions require POSIX FileInput\n";
     return false;
 #endif
 }
@@ -6338,6 +6462,227 @@ bool RunTrAudit045()
     return passed;
 }
 
+bool RunTrAudit046()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-046";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> id3Tag = Id3v23Tag(Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("DSF Pointer Title")),
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("DSF Pointer Artist")),
+    }));
+    const std::filesystem::path validPath = evidenceRoot / "valid-pointer.dsf";
+    const std::filesystem::path zeroPath = evidenceRoot / "zero-pointer.dsf";
+    const std::filesystem::path outOfBoundsPath = evidenceRoot / "out-of-bounds-pointer.dsf";
+    if (!WriteBinaryFile(validPath, DsfFile(id3Tag, 64)) ||
+        !WriteBinaryFile(zeroPath, DsfFile(id3Tag, 0)) ||
+        !WriteBinaryFile(outOfBoundsPath, DsfFileWithDeclaredPointer(id3Tag, 128, 28)))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata validRaw{};
+    tagreader_core::RawMetadata zeroRaw{};
+    tagreader_core::RawMetadata outOfBoundsRaw{};
+    if (!ReadDsdRawMetadataForTest(validPath, evidenceRoot / "covers", true, validRaw) ||
+        !ReadDsdRawMetadataForTest(zeroPath, evidenceRoot / "covers", true, zeroRaw) ||
+        !ReadDsdRawMetadataForTest(outOfBoundsPath, evidenceRoot / "covers", true, outOfBoundsRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(validRaw.title == "DSF Pointer Title", "DSF metadata pointer should locate embedded ID3 TIT2") && passed;
+    passed = Expect(validRaw.artist == "DSF Pointer Artist", "DSF metadata pointer should locate embedded ID3 TPE1") && passed;
+    passed = Expect(zeroRaw.title.empty() && zeroRaw.artist.empty(), "DSF metadata pointer 0 should be local empty metadata") && passed;
+    passed = Expect(outOfBoundsRaw.title.empty() && outOfBoundsRaw.artist.empty(), "DSF out-of-bounds metadata pointer should be local empty metadata") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-046 dsf-pointer-id3 title=DSF Pointer Title artist=DSF Pointer Artist\n"
+        "TR-AUDIT-046 dsf-pointer-empty zero out-of-bounds\n"
+        "TR-AUDIT-046 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-046\n"
+        "marker=dsf-metadata-pointer-id3\n"
+        "marker=dsf-pointer-local-empty\n"
+        "validSample=" + validPath.string() + "\n" +
+        "zeroPointerSample=" + zeroPath.string() + "\n" +
+        "outOfBoundsSample=" + outOfBoundsPath.string() + "\n" +
+        "validTitle=" + validRaw.title + "\n" +
+        "validArtist=" + validRaw.artist + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-046 dsf-pointer-id3 title=DSF Pointer Title artist=DSF Pointer Artist\n";
+        std::cout << "TR-AUDIT-046 dsf-pointer-empty zero out-of-bounds\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit047()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-047";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::vector<std::uint8_t> id3ChunkTag = Id3v23Tag(Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("DFF ID3 Chunk Title")),
+    }));
+    const std::vector<std::uint8_t> di3vChunkTag = Id3v23Tag(Concat({
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("DFF DI3v Chunk Artist")),
+    }));
+    const std::filesystem::path noId3Path = evidenceRoot / "no-id3.dff";
+    const std::filesystem::path id3Path = evidenceRoot / "compat-id3.dff";
+    const std::filesystem::path di3vPath = evidenceRoot / "compat-di3v-nested.dff";
+    if (!WriteBinaryFile(noId3Path, DffFile({DffChunk("FVER", Bytes("\x01\x05\x00\x00"))})) ||
+        !WriteBinaryFile(id3Path, DffFile({DffChunk("ID3 ", id3ChunkTag)})) ||
+        !WriteBinaryFile(di3vPath, DffFile({DffPropChunk("SND ", {DffChunk("DI3v", di3vChunkTag)})})))
+    {
+        return false;
+    }
+
+    tagreader_core::RawMetadata noId3Raw{};
+    tagreader_core::RawMetadata id3Raw{};
+    tagreader_core::RawMetadata di3vRaw{};
+    if (!ReadDsdRawMetadataForTest(noId3Path, evidenceRoot / "covers", false, noId3Raw) ||
+        !ReadDsdRawMetadataForTest(id3Path, evidenceRoot / "covers", false, id3Raw) ||
+        !ReadDsdRawMetadataForTest(di3vPath, evidenceRoot / "covers", false, di3vRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(noId3Raw.title.empty() && noId3Raw.artist.empty(), "DFF without nonstandard ID3 should produce empty metadata") && passed;
+    passed = Expect(id3Raw.title == "DFF ID3 Chunk Title", "DFF compatibility ID3 chunk should parse ID3 title") && passed;
+    passed = Expect(di3vRaw.artist == "DFF DI3v Chunk Artist", "DFF compatibility DI3v chunk should parse nested ID3 artist") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-047 dff-compat-id3 title=DFF ID3 Chunk Title\n"
+        "TR-AUDIT-047 dff-compat-di3v artist=DFF DI3v Chunk Artist\n"
+        "TR-AUDIT-047 dff-no-standard-tags-empty\n"
+        "TR-AUDIT-047 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-047\n"
+        "marker=dff-compatibility-only-id3\n"
+        "marker=dff-no-official-metadata-claim\n"
+        "noId3Sample=" + noId3Path.string() + "\n" +
+        "id3Sample=" + id3Path.string() + "\n" +
+        "di3vSample=" + di3vPath.string() + "\n" +
+        "id3Title=" + id3Raw.title + "\n" +
+        "di3vArtist=" + di3vRaw.artist + "\n" +
+        "note=DFF ID3 and DI3v chunks are compatibility-only nonstandard payloads, not official DSDIFF metadata support.\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-047 dff-compat-id3 title=DFF ID3 Chunk Title\n";
+        std::cout << "TR-AUDIT-047 dff-compat-di3v artist=DFF DI3v Chunk Artist\n";
+        std::cout << "TR-AUDIT-047 dff-no-standard-tags-empty\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit048()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-048";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path fakeDxdPath = evidenceRoot / "extension-only.dxd";
+    const std::filesystem::path riffDxdPath = evidenceRoot / "riff-magic.dxd";
+    const std::filesystem::path dsfDxdPath = evidenceRoot / "dsf-magic.dxd";
+    const std::vector<std::uint8_t> dsfId3Tag = Id3v23Tag(Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("DSF Magic On DXD Suffix")),
+    }));
+    if (!WriteBinaryFile(fakeDxdPath, Bytes("DXD extension only has no parser magic")) ||
+        !WriteBinaryFile(riffDxdPath, Concat({Bytes("RIFF"), std::vector<std::uint8_t>{4, 0, 0, 0}, Bytes("WAVE")})) ||
+        !WriteBinaryFile(dsfDxdPath, DsfFile(dsfId3Tag, 64)))
+    {
+        return false;
+    }
+
+    const std::optional<tagreader_core::TagFormat> fakeFormat = DetectTagFormatForTest(fakeDxdPath, "dxd");
+    const std::optional<tagreader_core::TagFormat> riffFormat = DetectTagFormatForTest(riffDxdPath, "dxd");
+    const std::optional<tagreader_core::TagFormat> dsfFormat = DetectTagFormatForTest(dsfDxdPath, "dxd");
+    tagreader_core::RawMetadata dsfRaw{};
+    if (!ReadDsdRawMetadataForTest(dsfDxdPath, evidenceRoot / "covers", true, dsfRaw))
+    {
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(fakeFormat.has_value() && *fakeFormat == tagreader_core::TagFormat::Unknown, "DXD extension/container name alone should not select a standalone parser") && passed;
+    passed = Expect(riffFormat.has_value() && *riffFormat == tagreader_core::TagFormat::RiffWav, "DXD-suffixed RIFF magic should remain handled by RIFF/WAV") && passed;
+    passed = Expect(dsfFormat.has_value() && *dsfFormat == tagreader_core::TagFormat::Dsf, "DXD-suffixed DSF magic should remain handled by DSF") && passed;
+    passed = Expect(dsfRaw.title == "DSF Magic On DXD Suffix", "DSF magic on DXD suffix should use DSF parser, not a DXD parser") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-048 dxd-extension-only-unknown\n"
+        "TR-AUDIT-048 dxd-real-container-magic riff dsf\n"
+        "TR-AUDIT-048 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-048\n"
+        "marker=dxd-no-standalone-parser\n"
+        "marker=dxd-real-container-magic-only\n"
+        "fakeDxdSample=" + fakeDxdPath.string() + "\n" +
+        "riffDxdSample=" + riffDxdPath.string() + "\n" +
+        "dsfDxdSample=" + dsfDxdPath.string() + "\n" +
+        "dsfTitle=" + dsfRaw.title + "\n" +
+        "note=DXD has no dedicated metadata parser; actual RIFF/FLAC/DSF magic or empty metadata remains the boundary.\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-048 dxd-extension-only-unknown\n";
+        std::cout << "TR-AUDIT-048 dxd-real-container-magic riff dsf\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -6835,6 +7180,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-045")
     {
         if (!RunTrAudit045())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-046")
+    {
+        if (!RunTrAudit046())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-047")
+    {
+        if (!RunTrAudit047())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-048")
+    {
+        if (!RunTrAudit048())
         {
             return 1;
         }

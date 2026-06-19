@@ -456,7 +456,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `解析 AIFF 元数据` | Files: [`src/formats/aiff/*`, CMakeLists, dispatch, tests]
 
-- [ ] 9. 新增 DSF metadata pointer、DFF ID3 兼容与 DXD 边界
+- [x] 9. 新增 DSF metadata pointer、DFF ID3 兼容与 DXD 边界
 
   **What to do**: 新增 `src/formats/dsd/` parser：DSF 按 `DSD ` header 的 metadata pointer 定位 ID3v2；DFF/DSDIFF 在 `FRM8` chunk tree 中兼容查找非标准 `ID3 ` 或 `DI3v` payload；DXD 不作为独立标签容器，只按实际 magic 走 WAV/FLAC/DSF 路径或返回无 metadata。
   **Must NOT do**: 不宣称 DFF 有官方标准标签；不新增 DXD 专属 metadata parser。
