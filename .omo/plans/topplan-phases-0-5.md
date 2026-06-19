@@ -176,7 +176,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `锁定现有解析器回归基线` | Files: [`test/regression/regression_tests.cpp`, sample generator files if needed]
 
-- [ ] 2. 扩展 `TagFormat` / `DetectedContainer` 分发模型
+- [x] 2. 扩展 `TagFormat` / `DetectedContainer` 分发模型
 
   **What to do**: 在 `src/core/TagFormat.hpp`、`src/core/ReadContext.hpp`、`src/media/ContainerDetector.cpp`、`src/core/TagPipeline.cpp` 中规划并实现新格式枚举/容器枚举与分发占位：OggOpus、RiffWav、Aiff、Dsf、Dff、Asf、Matroska，以及可复用 raw tag 来源。保持 `DetectTagFormat()` 是唯一标签检测入口，`ContainerFromTagFormat()` 只映射 `TagFormat` 到 `DetectedContainer`。
   **Must NOT do**: 不新增 `DetectContainer()`；不修改 `TagReader.hpp` public API；不把 CUE 放进任何 public enum/API。
@@ -216,7 +216,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `扩展标签分发模型` | Files: [`src/core/TagFormat.hpp`, `src/core/ReadContext.hpp`, `src/media/ContainerDetector.cpp`, `src/core/TagPipeline.cpp`, tests]
 
-- [ ] 3. 新增共享 bounded binary reader 约定
+- [x] 3. 新增共享 bounded binary reader 约定
 
   **What to do**: 新增 `src/formats/common/BoundedReader.hpp` 与 `src/formats/common/BoundedReader.cpp`，命名空间使用 `tagreader_core::formats`，提供 `ReadRangeAt(ReadContext&, std::uint64_t offset, std::uint64_t size, std::uint64_t parentEnd)`、little/big-endian integer helpers、bounded cursor 和 padding helper，供 RIFF/IFF/ASF/Matroska 等容器 parser 使用；确保所有读取检查溢出、父范围、子 payload 上限和 padding，不污染 `ReadContext::input` 状态。
   **Must NOT do**: 不把所有旧 parser 全量迁移；只提供新格式使用的最小共享 helper。

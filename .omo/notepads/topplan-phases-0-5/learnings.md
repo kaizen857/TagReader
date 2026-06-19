@@ -25,3 +25,17 @@
 - Verification passed: `./build/TagReaderRegressionTests --list` listed continuous `TR-AUDIT-001` through `TR-AUDIT-035`.
 - Verification passed: `./build/TagReaderRegressionTests TR-AUDIT-032`; `TR-AUDIT-033`; `TR-AUDIT-034`; `TR-AUDIT-035`.
 - Notable finding: all four new samples used existing synthetic/ffmpeg-backed helpers; no binary seeds or helper scripts were added, and no ffmpeg sample generation was skipped in this run.
+
+## 2026-06-19 Task 3: shared bounded binary reader
+- Added `src/formats/common/BoundedReader.hpp` and `src/formats/common/BoundedReader.cpp` in namespace `tagreader_core::formats`; no existing parser was migrated.
+- Helper API now covers `ReadRangeAt(ReadContext&, offset, size, parentEnd[, maxSize])`, `MakeBoundedRange`, `MakeBoundedChunkRange`, little/big-endian integer readers, and `BoundedCursor` local reads/skips.
+- `ReadRangeAt` validates parent end against `ReadContext::fileSize`, rejects integer overflow and caller max-size excess before allocation, and wraps the existing absolute-offset `pread` reader with input `clear()` calls.
+- Added `TR-AUDIT-036` synthetic regression coverage for valid nested ranges, overflow rejection, padding overflow rejection, parent-range rejection, max-size rejection, and cursor overread/overskip rejection.
+- Verification passed: `cmake -S . -B build`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-036`; `lsp_diagnostics` on `BoundedReader.hpp`, `BoundedReader.cpp`, and `regression_tests.cpp`.
+
+## 2026-06-19 Task 2: dispatch model expansion
+- Modified internal dispatch only: `TagFormat` now represents planned OggOpus, RiffWav, Aiff, Dsf, Dff, Asf, Matroska, plus reusable raw tag source placeholders `RawId3v2`, `RawVorbisComment`, `RawMp4Ilst`, and `RawApeV2`.
+- Modified `DetectedContainer` with matching planned containers and `RawTagSource`; `ContainerFromTagFormat()` maps all new values without adding a separate `DetectContainer()` step.
+- `DetectTagFormat()` keeps APE footer priority before ID3, then checks leading raw signatures for ID3/FLAC/Ogg/MP4/RIFF/AIFF/DSF/DFF/ASF/Matroska and FFmpeg container-name fallbacks for planned containers.
+- `ReadMetadata()` and `ReadLyrics()` explicitly leave not-yet-implemented planned enum paths empty, so probeable files can still return media info without fabricating metadata or calling missing parsers.
+- Public `TagReader::Read()` API, CUE/album APIs, and Task 3 bounded-reader files were not touched.

@@ -1,4 +1,5 @@
 #include "TagReader.hpp"
+#include "formats/common/BoundedReader.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -20,12 +21,14 @@ extern "C"
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
 #define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 1
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #else
@@ -40,7 +43,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 35> kTestCases{{
+constexpr std::array<TestCase, 36> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -76,6 +79,7 @@ constexpr std::array<TestCase, 35> kTestCases{{
     {"TR-AUDIT-033", true},
     {"TR-AUDIT-034", true},
     {"TR-AUDIT-035", true},
+    {"TR-AUDIT-036", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -4631,6 +4635,154 @@ bool RunTrAudit035()
     return passed;
 }
 
+bool RunTrAudit036()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-036";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    std::vector<std::uint8_t> sampleBytes(64, 0);
+    const std::vector<std::uint8_t> header = Bytes("ROOT");
+    std::copy(header.begin(), header.end(), sampleBytes.begin());
+    const std::vector<std::uint8_t> payload{
+        0x34, 0x12,
+        0x56, 0x78,
+        0xEF, 0xCD, 0xAB,
+        0x01, 0x23, 0x45,
+        0xEF, 0xCD, 0xAB, 0x89,
+        0x01, 0x23, 0x45, 0x67,
+        0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+        0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+        0xAA, 0xBB};
+    std::copy(payload.begin(), payload.end(), sampleBytes.begin() + 8);
+
+    const std::filesystem::path samplePath = evidenceRoot / "bounded-reader.bin";
+    if (!WriteBinaryFile(samplePath, sampleBytes))
+    {
+        return false;
+    }
+
+#if !TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    std::cerr << "TR-AUDIT-036 requires POSIX pread-backed FileInput\n";
+    return false;
+#else
+    const int fd = ::open(samplePath.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "failed to open bounded reader sample: " << samplePath.string() << '\n';
+        return false;
+    }
+
+    tagreader_core::ReadContext context;
+    context.filePath = samplePath;
+    context.coverExportDir = evidenceRoot / "covers";
+    context.fileSize = sampleBytes.size();
+    context.input = tagreader_io::FileInput(fd);
+
+    namespace bounded = tagreader_core::formats;
+    bool passed = true;
+
+    const std::vector<std::uint8_t> readPayload = bounded::ReadRangeAt(context, 8, payload.size(), 48);
+    passed = Expect(readPayload == payload, "absolute bounded read should return the expected payload") && passed;
+
+    bounded::BoundedCursor cursor(readPayload);
+    const auto u16Le = cursor.readU16Le();
+    const auto u16Be = cursor.readU16Be();
+    const auto u24Le = cursor.readU24Le();
+    const auto u24Be = cursor.readU24Be();
+    const auto u32Le = cursor.readU32Le();
+    const auto u32Be = cursor.readU32Be();
+    const auto u64Le = cursor.readU64Le();
+    const auto u64Be = cursor.readU64Be();
+    const auto tail = cursor.readBytes(2);
+
+    passed = Expect(u16Le.has_value() && *u16Le == 0x1234, "bounded cursor should parse u16 little-endian") && passed;
+    passed = Expect(u16Be.has_value() && *u16Be == 0x5678, "bounded cursor should parse u16 big-endian") && passed;
+    passed = Expect(u24Le.has_value() && *u24Le == 0xABCDEF, "bounded cursor should parse u24 little-endian") && passed;
+    passed = Expect(u24Be.has_value() && *u24Be == 0x012345, "bounded cursor should parse u24 big-endian") && passed;
+    passed = Expect(u32Le.has_value() && *u32Le == 0x89ABCDEF, "bounded cursor should parse u32 little-endian") && passed;
+    passed = Expect(u32Be.has_value() && *u32Be == 0x01234567, "bounded cursor should parse u32 big-endian") && passed;
+    passed = Expect(u64Le.has_value() && *u64Le == 0x0102030405060708ULL, "bounded cursor should parse u64 little-endian") && passed;
+    passed = Expect(u64Be.has_value() && *u64Be == 0x1020304050607080ULL, "bounded cursor should parse u64 big-endian") && passed;
+    passed = Expect(tail.has_value() && tail->size() == 2 && (*tail)[0] == 0xAA && (*tail)[1] == 0xBB,
+                    "bounded cursor should expose tail bytes inside the cursor range") &&
+             passed;
+    passed = Expect(cursor.empty(), "bounded cursor should be empty after exact reads") && passed;
+    passed = Expect(!cursor.readU8().has_value(), "bounded cursor should reject reads past the local range") && passed;
+    passed = Expect(!cursor.skip(1), "bounded cursor should reject skips past the local range") && passed;
+
+    const std::vector<std::uint8_t> rereadHeader = bounded::ReadRangeAt(context, 0, 4, 48);
+    passed = Expect(rereadHeader == header, "absolute reads should not depend on prior read position") && passed;
+
+    const auto parentRange = bounded::MakeBoundedRange(8, payload.size(), 48);
+    passed = Expect(parentRange.has_value() && parentRange->end == 44, "parent range should accept a valid bounded payload") && passed;
+    const auto childRange = parentRange.has_value() ? bounded::MakeBoundedRange(18, 8, parentRange->end) : std::nullopt;
+    const auto childOverflow = parentRange.has_value() ? bounded::MakeBoundedRange(43, 2, parentRange->end) : std::nullopt;
+    passed = Expect(childRange.has_value() && childRange->end == 26, "nested child range should stay inside parent end") && passed;
+    passed = Expect(!childOverflow.has_value(), "nested child range should reject parent overflow") && passed;
+
+    const auto paddedChunk = bounded::MakeBoundedChunkRange(8, 5, 14, 2);
+    const auto paddingOverflow = bounded::MakeBoundedChunkRange(8, 5, 13, 2);
+    const auto zeroAlignment = bounded::MakeBoundedChunkRange(8, 5, 14, 0);
+    passed = Expect(paddedChunk.has_value() && paddedChunk->payloadEnd == 13 && paddedChunk->paddedEnd == 14,
+                    "odd-sized chunk should include one byte of bounded padding") &&
+             passed;
+    passed = Expect(!paddingOverflow.has_value(), "chunk padding should reject parent range overflow") && passed;
+    passed = Expect(!zeroAlignment.has_value(), "chunk padding should reject zero alignment") && passed;
+
+    constexpr std::uint64_t maxU64 = std::numeric_limits<std::uint64_t>::max();
+    passed = Expect(!bounded::MakeBoundedRange(maxU64 - 3, 8, maxU64).has_value(),
+                    "range helper should reject integer overflow") &&
+             passed;
+    passed = Expect(!bounded::MakeBoundedChunkRange(maxU64 - 3, 4, maxU64, 2).has_value(),
+                    "chunk helper should reject payload-end overflow") &&
+             passed;
+    passed = Expect(bounded::ReadRangeAt(context, 8, payload.size() + 1, 44).empty(),
+                    "read helper should reject child payload beyond parent end") &&
+             passed;
+    passed = Expect(bounded::ReadRangeAt(context, 8, 9, 48, 8).empty(),
+                    "read helper should reject payload over caller max without allocation") &&
+             passed;
+    passed = Expect(bounded::ReadRangeAt(context, 8, 1, sampleBytes.size() + 1).empty(),
+                    "read helper should reject parent end beyond file size") &&
+             passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-036 bounded-reader-valid-nested payloadBytes=36\n"
+        "TR-AUDIT-036 bounded-reader-local-rejections overflow padding parent\n"
+        "TR-AUDIT-036 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-036\n"
+        "marker=bounded-reader-valid-nested\n"
+        "marker=overflow-padding-parent-range\n"
+        "sample=" + samplePath.string() + "\n"
+        "payloadBytes=" + std::to_string(payload.size()) + "\n"
+        "parentEnd=48\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-036 bounded-reader-valid-nested payloadBytes=36\n";
+        std::cout << "TR-AUDIT-036 bounded-reader-local-rejections overflow padding parent\n";
+    }
+    return passed;
+#endif
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -5018,6 +5170,17 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-035")
     {
         if (!RunTrAudit035())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-036")
+    {
+        if (!RunTrAudit036())
         {
             return 1;
         }

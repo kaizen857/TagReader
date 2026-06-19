@@ -65,6 +65,7 @@ add_library(TagReaderCore STATIC
     src/formats/id3/Id3Frames.cpp
     src/formats/vorbis/VorbisCommentParser.cpp
     src/formats/flac/FlacParser.cpp
+    src/formats/common/BoundedReader.cpp
     src/formats/ogg-vorbis/OggVorbisParser.cpp
     src/formats/mp4/Mp4AtomReader.cpp
     src/formats/mp4/Mp4Parser.cpp
@@ -124,6 +125,11 @@ add_executable(TagReaderRegressionTests
 )
 
 tagreader_enable_sanitizers(TagReaderRegressionTests)
+
+target_include_directories(TagReaderRegressionTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 target_link_libraries(TagReaderRegressionTests
     PRIVATE
