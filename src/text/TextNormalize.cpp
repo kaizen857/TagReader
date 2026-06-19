@@ -194,6 +194,7 @@ void NormalizeMetadata(RawMetadata &metadata)
     normalize(metadata.album);
     normalize(metadata.albumArtist);
     normalize(metadata.composer);
+    normalize(metadata.comment);
 }
 
 void NormalizeLyrics(RawLyrics &lyrics)

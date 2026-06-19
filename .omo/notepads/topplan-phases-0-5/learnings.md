@@ -64,3 +64,11 @@
 - Verification passed: `lsp_diagnostics` on `OpusParser.hpp`, `OpusParser.cpp`, `TagPipeline.cpp`, and `regression_tests.cpp`; `cmake --build build`; `./build/TagReaderRegressionTests TR-AUDIT-039`.
 - Debug finding: replacing the real second Opus packet with another `OpusHead` makes FFmpeg reject the whole file before parser dispatch; the regression now uses an OpusTags page sequence gap to exercise parser-local wrong-order rejection while preserving audio probe.
 - No ffmpeg-backed sample was skipped in the passing `TR-AUDIT-039` run.
+
+## 2026-06-19 Task 7: RIFF/WAV LIST/INFO and embedded ID3
+- Added `src/formats/riff/RiffParser.*`; it validates `RIFF`/`WAVE` magic from bytes, walks little-endian RIFF chunks with even-byte padding, skips malformed/truncated local chunks, and bounds LIST/INFO plus embedded ID3 chunk reads at 16 MiB.
+- Added an ID3v2 in-memory metadata entry point so RIFF `id3 `/`ID3 ` chunks reuse existing ID3v2 frame parsing semantics without changing public `TagReader::Read()`.
+- RIFF INFO maps `INAM`, `IART`, `IPRD`/`IALB`, `ICRD`, `IGNR`, and `ICMT`/`COMM` into `RawMetadata`; comment remains internal because `MusicTag` has no public comment accessor.
+- Merge behavior is ID3-primary: embedded ID3v2 fields populate first, then LIST/INFO fills only missing metadata.
+- Added `TR-AUDIT-040`, `TR-AUDIT-041`, and `TR-AUDIT-042` for INFO-only WAV, INFO+embedded ID3 conflict/fallback, odd padding, malformed RIFF size, truncated child chunk, and oversized LIST local-failure coverage.
+- Verification fix: `TR-AUDIT-040` now directly constructs an internal `ReadContext` for the INFO-only WAV and calls `tagreader_riff::ReadRiffWavMetadata()` to assert `RawMetadata::comment == "WAV INFO Comment"`, avoiding public `MusicTag` API drift because there is no comment accessor.

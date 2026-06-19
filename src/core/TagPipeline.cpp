@@ -5,6 +5,7 @@
 #include "formats/mp4/Mp4Parser.hpp"
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
 #include "formats/opus/OpusParser.hpp"
+#include "formats/riff/RiffParser.hpp"
 #include "formats/ape/ApeParser.hpp"
 #include "media/ContainerDetector.hpp"
 #include "media/FfmpegSession.hpp"
@@ -415,6 +416,9 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                                 { tagreader_opus::ReadOggOpusMetadata(context, metadata); });
         break;
     case TagFormat::RiffWav:
+        ignoreMalformedMetadata([&]()
+                                { tagreader_riff::ReadRiffWavMetadata(context, metadata); });
+        break;
     case TagFormat::Aiff:
     case TagFormat::Dsf:
     case TagFormat::Dff:

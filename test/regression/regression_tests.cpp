@@ -1,6 +1,7 @@
 #include "TagReader.hpp"
 #include "core/TagFormat.hpp"
 #include "formats/common/BoundedReader.hpp"
+#include "formats/riff/RiffParser.hpp"
 #include "media/ContainerDetector.hpp"
 
 #ifdef __cplusplus
@@ -46,7 +47,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 39> kTestCases{{
+constexpr std::array<TestCase, 42> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -86,6 +87,9 @@ constexpr std::array<TestCase, 39> kTestCases{{
     {"TR-AUDIT-037", true},
     {"TR-AUDIT-038", true},
     {"TR-AUDIT-039", true},
+    {"TR-AUDIT-040", true},
+    {"TR-AUDIT-041", true},
+    {"TR-AUDIT-042", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -545,6 +549,24 @@ bool GenerateOggOpusSample(const std::filesystem::path &path)
     return true;
 }
 
+bool GenerateBaseWav(const std::filesystem::path &path)
+{
+    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    {
+        std::cerr << "ffmpeg CLI not found; WAV RIFF regression cases require an audio-backed WAV sample\n";
+        return false;
+    }
+
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a pcm_s16le \"" + path.string() + "\"";
+    if (!CommandSucceeds(command))
+    {
+        std::cerr << "failed to generate base WAV sample with ffmpeg\n";
+        return false;
+    }
+
+    return true;
+}
+
 bool GenerateFlacSample(const std::filesystem::path &path)
 {
     if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
@@ -822,6 +844,74 @@ std::vector<std::uint8_t> Id3v23Tag(const std::vector<std::uint8_t> &frames)
     AppendSyncSafe32(bytes, static_cast<std::uint32_t>(frames.size()));
     bytes.insert(bytes.end(), frames.begin(), frames.end());
     return bytes;
+}
+
+std::vector<std::uint8_t> RiffChunk(std::string_view chunkId, const std::vector<std::uint8_t> &payload)
+{
+    std::vector<std::uint8_t> bytes;
+    AppendBytes(bytes, chunkId);
+    AppendU32LE(bytes, static_cast<std::uint32_t>(payload.size()));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    if ((payload.size() % 2) != 0)
+    {
+        bytes.push_back(0);
+    }
+    return bytes;
+}
+
+std::vector<std::uint8_t> RiffInfoField(std::string_view fieldId, std::string_view value)
+{
+    std::vector<std::uint8_t> payload;
+    AppendBytes(payload, value);
+    payload.push_back(0);
+    return RiffChunk(fieldId, payload);
+}
+
+std::vector<std::uint8_t> RiffInfoList(const std::vector<std::vector<std::uint8_t>> &fields)
+{
+    std::vector<std::uint8_t> payload;
+    AppendBytes(payload, "INFO");
+    for (const std::vector<std::uint8_t> &field : fields)
+    {
+        payload.insert(payload.end(), field.begin(), field.end());
+    }
+    return RiffChunk("LIST", payload);
+}
+
+bool AppendRiffChunks(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, const std::vector<std::vector<std::uint8_t>> &chunks)
+{
+    std::vector<std::uint8_t> bytes = ReadBinaryFile(basePath);
+    if (bytes.size() < 12 || std::string_view(reinterpret_cast<const char *>(bytes.data()), 4) != "RIFF" ||
+        std::string_view(reinterpret_cast<const char *>(bytes.data() + 8), 4) != "WAVE")
+    {
+        std::cerr << "failed to read base WAV sample: " << basePath.string() << '\n';
+        return false;
+    }
+
+    for (const std::vector<std::uint8_t> &chunk : chunks)
+    {
+        bytes.insert(bytes.end(), chunk.begin(), chunk.end());
+    }
+    const std::uint32_t riffSize = static_cast<std::uint32_t>(bytes.size() - 8);
+    bytes[4] = static_cast<std::uint8_t>(riffSize & 0xFF);
+    bytes[5] = static_cast<std::uint8_t>((riffSize >> 8) & 0xFF);
+    bytes[6] = static_cast<std::uint8_t>((riffSize >> 16) & 0xFF);
+    bytes[7] = static_cast<std::uint8_t>((riffSize >> 24) & 0xFF);
+    return WriteBinaryFile(outputPath, bytes);
+}
+
+bool PatchRiffSize(const std::filesystem::path &inputPath, const std::filesystem::path &outputPath, std::uint32_t riffSize)
+{
+    std::vector<std::uint8_t> bytes = ReadBinaryFile(inputPath);
+    if (bytes.size() < 12)
+    {
+        return false;
+    }
+    bytes[4] = static_cast<std::uint8_t>(riffSize & 0xFF);
+    bytes[5] = static_cast<std::uint8_t>((riffSize >> 8) & 0xFF);
+    bytes[6] = static_cast<std::uint8_t>((riffSize >> 16) & 0xFF);
+    bytes[7] = static_cast<std::uint8_t>((riffSize >> 24) & 0xFF);
+    return WriteBinaryFile(outputPath, bytes);
 }
 
 std::vector<std::uint8_t> Id3v24Tag(std::uint8_t flags, const std::vector<std::uint8_t> &payload)
@@ -5633,6 +5723,254 @@ bool RunTrAudit039()
     return passed;
 }
 
+bool RunTrAudit040()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-040";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.wav";
+    const std::filesystem::path infoPath = evidenceRoot / "info-only.wav";
+    const std::vector<std::uint8_t> infoList = RiffInfoList({
+        RiffInfoField("INAM", "WAV INFO Title"),
+        RiffInfoField("IART", "WAV INFO Artist"),
+        RiffInfoField("IPRD", "WAV INFO Album"),
+        RiffInfoField("ICRD", "2024-06-19"),
+        RiffInfoField("IGNR", "WAV INFO Genre"),
+        RiffInfoField("ICMT", "WAV INFO Comment"),
+    });
+    if (!GenerateBaseWav(basePath) || !AppendRiffChunks(basePath, infoPath, {infoList}))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(infoPath);
+    tagreader_core::RawMetadata rawMetadata{};
+#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+    const int infoFd = ::open(infoPath.c_str(), O_RDONLY);
+    if (infoFd < 0)
+    {
+        std::cerr << "failed to open WAV INFO sample for internal parser assertion: " << infoPath.string() << '\n';
+        return false;
+    }
+    tagreader_core::ReadContext infoContext;
+    infoContext.filePath = infoPath;
+    infoContext.coverExportDir = evidenceRoot / "covers";
+    infoContext.fileSize = std::filesystem::file_size(infoPath, ec);
+    ec.clear();
+    infoContext.input = tagreader_io::FileInput(infoFd);
+    tagreader_riff::ReadRiffWavMetadata(infoContext, rawMetadata);
+#else
+    std::cerr << "TR-AUDIT-040 requires POSIX FileInput for internal RawMetadata comment assertion\n";
+    return false;
+#endif
+    bool passed = true;
+    passed = Expect(tag.title() == "WAV INFO Title", "WAV INFO INAM should parse title") && passed;
+    passed = Expect(tag.artist() == "WAV INFO Artist", "WAV INFO IART should parse artist") && passed;
+    passed = Expect(tag.album() == "WAV INFO Album", "WAV INFO IPRD should parse album") && passed;
+    passed = Expect(tag.year() == 2024, "WAV INFO ICRD should parse year") && passed;
+    passed = Expect(tag.genre() == "WAV INFO Genre", "WAV INFO IGNR should parse genre") && passed;
+    passed = Expect(rawMetadata.comment == "WAV INFO Comment", "WAV INFO ICMT should parse into RawMetadata comment") && passed;
+    passed = Expect(tag.sampleRate() > 0 && tag.channels() > 0, "WAV INFO sample should still return media info") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-040 riff-info-fields title=WAV INFO Title artist=WAV INFO Artist album=WAV INFO Album year=2024 genre=WAV INFO Genre\n"
+        "TR-AUDIT-040 riff-info-comment comment=WAV INFO Comment\n"
+        "TR-AUDIT-040 riff-magic-wave-validated\n"
+        "TR-AUDIT-040 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-040\n"
+        "marker=riff-list-info\n"
+        "sample=" + infoPath.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "album=" + std::string(tag.album()) + "\n" +
+        "year=" + std::to_string(tag.year()) + "\n" +
+        "genre=" + std::string(tag.genre()) + "\n" +
+        "rawComment=" + rawMetadata.comment + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-040 riff-info-fields title=WAV INFO Title artist=WAV INFO Artist album=WAV INFO Album year=2024 genre=WAV INFO Genre\n";
+        std::cout << "TR-AUDIT-040 riff-info-comment comment=WAV INFO Comment\n";
+        std::cout << "TR-AUDIT-040 riff-magic-wave-validated\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit041()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-041";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.wav";
+    const std::filesystem::path mergedPath = evidenceRoot / "info-plus-id3.wav";
+    const std::vector<std::uint8_t> infoList = RiffInfoList({
+        RiffInfoField("INAM", "INFO Losing Title"),
+        RiffInfoField("IART", "INFO Losing Artist"),
+        RiffInfoField("IPRD", "INFO Fill Album"),
+        RiffInfoField("ICRD", "2018"),
+        RiffInfoField("IGNR", "INFO Fill Genre"),
+    });
+    const std::vector<std::uint8_t> id3Tag = Id3v23Tag(Concat({
+        Id3v23Frame("TIT2", Id3Latin1TextPayload("Embedded ID3 Title")),
+        Id3v23Frame("TPE1", Id3Latin1TextPayload("Embedded ID3 Artist")),
+    }));
+    if (!GenerateBaseWav(basePath) || !AppendRiffChunks(basePath, mergedPath, {infoList, RiffChunk("id3 ", id3Tag)}))
+    {
+        return false;
+    }
+
+    const MusicTag tag = TagReader::Read(mergedPath);
+    bool passed = true;
+    passed = Expect(tag.title() == "Embedded ID3 Title", "embedded ID3 TIT2 should win over INFO INAM") && passed;
+    passed = Expect(tag.artist() == "Embedded ID3 Artist", "embedded ID3 TPE1 should win over INFO IART") && passed;
+    passed = Expect(tag.album() == "INFO Fill Album", "INFO album should fill missing embedded ID3 album") && passed;
+    passed = Expect(tag.year() == 2018, "INFO year should fill missing embedded ID3 year") && passed;
+    passed = Expect(tag.genre() == "INFO Fill Genre", "INFO genre should fill missing embedded ID3 genre") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-041 embedded-id3-wins title=Embedded ID3 Title artist=Embedded ID3 Artist\n"
+        "TR-AUDIT-041 info-fallback album=INFO Fill Album year=2018 genre=INFO Fill Genre\n"
+        "TR-AUDIT-041 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-041\n"
+        "marker=wav-embedded-id3-primary\n"
+        "marker=riff-info-fallback\n"
+        "sample=" + mergedPath.string() + "\n" +
+        "title=" + std::string(tag.title()) + "\n" +
+        "artist=" + std::string(tag.artist()) + "\n" +
+        "album=" + std::string(tag.album()) + "\n" +
+        "year=" + std::to_string(tag.year()) + "\n" +
+        "genre=" + std::string(tag.genre()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "tag_output.txt", DescribeTag(tag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-041 embedded-id3-wins title=Embedded ID3 Title artist=Embedded ID3 Artist\n";
+        std::cout << "TR-AUDIT-041 info-fallback album=INFO Fill Album year=2018 genre=INFO Fill Genre\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit042()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-042";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    const std::filesystem::path basePath = evidenceRoot / "base.wav";
+    const std::filesystem::path validOddPath = evidenceRoot / "valid-odd-padding.wav";
+    const std::filesystem::path truncatedPath = evidenceRoot / "truncated-child.wav";
+    const std::filesystem::path malformedSizePath = evidenceRoot / "malformed-riff-size.wav";
+    const std::filesystem::path oversizedListPath = evidenceRoot / "oversized-list.wav";
+
+    const std::vector<std::uint8_t> validOddInfo = RiffInfoList({RiffInfoField("INAM", "Odd")});
+    std::vector<std::uint8_t> truncatedListPayload;
+    AppendBytes(truncatedListPayload, "INFO");
+    AppendBytes(truncatedListPayload, "IART");
+    AppendU32LE(truncatedListPayload, 32);
+    AppendBytes(truncatedListPayload, "bad");
+    const std::vector<std::uint8_t> truncatedList = RiffChunk("LIST", truncatedListPayload);
+    std::vector<std::uint8_t> oversizedPayload(static_cast<std::size_t>(16ULL * 1024ULL * 1024ULL + 1ULL), 0);
+    std::copy_n("INFO", 4, oversizedPayload.begin());
+    const std::vector<std::uint8_t> oversizedList = RiffChunk("LIST", oversizedPayload);
+
+    if (!GenerateBaseWav(basePath) ||
+        !AppendRiffChunks(basePath, validOddPath, {validOddInfo}) ||
+        !AppendRiffChunks(basePath, truncatedPath, {truncatedList}) ||
+        !PatchRiffSize(basePath, malformedSizePath, 0xFFFFFFFFU) ||
+        !AppendRiffChunks(basePath, oversizedListPath, {oversizedList}))
+    {
+        return false;
+    }
+
+    const MusicTag validOddTag = TagReader::Read(validOddPath);
+    const MusicTag truncatedTag = TagReader::Read(truncatedPath);
+    const MusicTag malformedSizeTag = TagReader::Read(malformedSizePath);
+    const MusicTag oversizedListTag = TagReader::Read(oversizedListPath);
+
+    bool passed = true;
+    passed = Expect(validOddTag.title() == "Odd", "odd-sized INFO field should parse with RIFF padding") && passed;
+    passed = Expect(truncatedTag.title().empty() && truncatedTag.artist().empty(), "truncated INFO child should be local empty metadata") && passed;
+    passed = Expect(malformedSizeTag.title().empty(), "malformed RIFF size should not crash or fabricate metadata") && passed;
+    passed = Expect(oversizedListTag.title().empty(), "oversized LIST should be skipped locally") && passed;
+    passed = Expect(validOddTag.sampleRate() > 0 && truncatedTag.sampleRate() > 0 && malformedSizeTag.sampleRate() > 0 && oversizedListTag.sampleRate() > 0,
+                    "malformed metadata WAV samples should still return media info") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-042 riff-odd-padding title=Odd\n"
+        "TR-AUDIT-042 riff-malformed-local-empty truncated-size oversized-list\n"
+        "TR-AUDIT-042 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-042\n"
+        "marker=riff-odd-padding\n"
+        "marker=riff-malformed-local-empty\n"
+        "validOddSample=" + validOddPath.string() + "\n" +
+        "truncatedSample=" + truncatedPath.string() + "\n" +
+        "malformedSizeSample=" + malformedSizePath.string() + "\n" +
+        "oversizedListSample=" + oversizedListPath.string() + "\n" +
+        "oversizedListBytes=" + std::to_string(oversizedPayload.size()) + "\n";
+
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "valid_odd_output.txt", DescribeTag(validOddTag)) &&
+                            WriteTextFile(evidenceRoot / "truncated_output.txt", DescribeTag(truncatedTag)) &&
+                            WriteTextFile(evidenceRoot / "malformed_size_output.txt", DescribeTag(malformedSizeTag)) &&
+                            WriteTextFile(evidenceRoot / "oversized_list_output.txt", DescribeTag(oversizedListTag)) &&
+                            WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-042 riff-odd-padding title=Odd\n";
+        std::cout << "TR-AUDIT-042 riff-malformed-local-empty truncated-size oversized-list\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -6064,6 +6402,39 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-039")
     {
         if (!RunTrAudit039())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-040")
+    {
+        if (!RunTrAudit040())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-041")
+    {
+        if (!RunTrAudit041())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-042")
+    {
+        if (!RunTrAudit042())
         {
             return 1;
         }

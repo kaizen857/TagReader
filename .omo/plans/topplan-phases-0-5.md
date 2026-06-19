@@ -376,7 +376,7 @@ Wave 6: Task 14 CUE readiness audit and docs guardrails, then Final Verification
 
   **Commit**: `解析 OpusTags 元数据` | Files: [`src/formats/opus/*` or Ogg family files, CMakeLists, tests]
 
-- [ ] 7. 新增 RIFF/WAV `LIST/INFO` 与内嵌 ID3v2 提取
+- [x] 7. 新增 RIFF/WAV `LIST/INFO` 与内嵌 ID3v2 提取
 
   **What to do**: 新增 `src/formats/riff/` 或 `src/formats/wav/` parser，解析 `RIFF`/`WAVE` 小端 chunk tree；读取 `LIST`/`INFO` 中 `INAM`、`IART`、`IPRD`、`ICRD`、`IGNR`、`ICMT` 等原生字段；定位 `id3 ` / `ID3 ` chunk 并复用 ID3v2 parser；字段冲突规则：ID3v2 优先，RIFF INFO 补缺。
   **Must NOT do**: 不把 RIFF `id3 ` 当官方必有标准；不依赖文件扩展名跳过 magic 检查。

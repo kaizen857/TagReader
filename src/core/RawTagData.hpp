@@ -29,6 +29,7 @@ struct RawMetadata
     std::string album;
     std::string albumArtist;
     std::string composer;
+    std::string comment;
     uint16_t year{};
     uint16_t trackNumber{};
     uint16_t discNumber{};

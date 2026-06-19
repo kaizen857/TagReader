@@ -106,6 +106,28 @@ void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
     ReadID3v23Or24Frames(context, metadata, tagView.bytes, tagView.versionMajor, tagView.tagUnsync, tagView.cursor, tagView.limit);
 }
 
+void ReadID3v2MetadataFromBytes(ReadContext &context, const std::vector<uint8_t> &bytes, RawMetadata &metadata)
+{
+    Id3TagView tagView{};
+    if (!ReadId3TagBytesFromBytes(bytes, tagView))
+    {
+        return;
+    }
+
+    if (tagView.versionMajor == 2)
+    {
+        if (!Id3v22TagFlagsAreSupported(tagView.flags))
+        {
+            return;
+        }
+
+        ReadID3v22Frames(context, metadata, tagView.bytes, tagView.cursor);
+        return;
+    }
+
+    ReadID3v23Or24Frames(context, metadata, tagView.bytes, tagView.versionMajor, tagView.tagUnsync, tagView.cursor, tagView.limit);
+}
+
 
 void ReadID3Lyrics(ReadContext &context, RawLyrics &lyrics)
 {

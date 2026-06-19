@@ -860,6 +860,71 @@ bool ReadId3TagBytes(ReadContext &context, Id3TagView &tagView)
     return true;
 }
 
+bool ReadId3TagBytesFromBytes(std::span<const uint8_t> bytes, Id3TagView &tagView)
+{
+    tagView = {};
+    if (bytes.size() < 10 || std::memcmp(bytes.data(), "ID3", 3) != 0)
+    {
+        return false;
+    }
+
+    const uint8_t versionMajor = bytes[3];
+    const uint8_t flags = bytes[5];
+    if (versionMajor < 2 || versionMajor > 4)
+    {
+        return false;
+    }
+    if (!IsValidSyncSafe32(bytes.data() + 6))
+    {
+        return false;
+    }
+
+    const uint32_t tagSize = ReadSyncSafe32(bytes.data() + 6);
+    if (tagSize > kMaxId3TagBytes || tagSize > bytes.size() - 10)
+    {
+        return false;
+    }
+
+    std::vector<uint8_t> tagBytes(bytes.begin() + 10, bytes.begin() + 10 + static_cast<std::ptrdiff_t>(tagSize));
+    const bool tagUnsync = (flags & 0x80) != 0;
+
+    std::size_t cursor = 0;
+    std::size_t frameLimit = tagBytes.size();
+    if (!PrepareId3v24FrameRegion(tagBytes, versionMajor, flags, cursor, frameLimit))
+    {
+        return false;
+    }
+
+    if (versionMajor < 4 && tagUnsync)
+    {
+        tagBytes = RemoveId3Unsynchronization(std::move(tagBytes));
+        frameLimit = tagBytes.size();
+    }
+
+    if (versionMajor >= 3 && (flags & 0x40) != 0)
+    {
+        if (versionMajor == 3)
+        {
+            if (!PrepareId3v23ExtendedHeader(tagBytes, frameLimit, cursor))
+            {
+                return false;
+            }
+        }
+        else if (versionMajor != 4)
+        {
+            return false;
+        }
+    }
+
+    tagView.versionMajor = versionMajor;
+    tagView.flags = flags;
+    tagView.tagUnsync = versionMajor == 4 && tagUnsync;
+    tagView.cursor = cursor;
+    tagView.limit = frameLimit;
+    tagView.bytes = std::move(tagBytes);
+    return true;
+}
+
 void ReadID3v22Frames(ReadContext &context, RawMetadata &metadata, const std::vector<uint8_t> &tagBytes, std::size_t cursor)
 {
     while (cursor + 6 <= tagBytes.size())
