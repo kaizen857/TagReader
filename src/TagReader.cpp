@@ -10,3 +10,16 @@ MusicTag TagReader::Read(const std::filesystem::path &filePath, const std::files
 {
     return tagreader_core::ReadTag(filePath, coverExportDir);
 }
+
+std::vector<MusicTag> TagReader::ReadCueSheet(const std::filesystem::path &filePath)
+{
+    (void)filePath;
+    return {};
+}
+
+std::vector<MusicTag> TagReader::ReadCueSheet(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir)
+{
+    (void)filePath;
+    (void)coverExportDir;
+    return {};
+}

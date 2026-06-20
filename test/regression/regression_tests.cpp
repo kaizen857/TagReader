@@ -172,10 +172,22 @@ concept ReadPathAndCoverDirReturnsBatch = requires(const std::filesystem::path &
     { T::Read(path, coverExportDir) } -> std::same_as<std::vector<MusicTag>>;
 };
 
+template <typename T>
+concept ReadCuePathReturnsBatch = requires(const std::filesystem::path &path) {
+    { T::ReadCueSheet(path) } -> std::same_as<std::vector<MusicTag>>;
+};
+
+template <typename T>
+concept ReadCuePathAndCoverDirReturnsBatch = requires(const std::filesystem::path &path, const std::filesystem::path &coverExportDir) {
+    { T::ReadCueSheet(path, coverExportDir) } -> std::same_as<std::vector<MusicTag>>;
+};
+
 static_assert(!HasReadCueMember<TagReader>);
 static_assert(!HasReadAlbumMember<TagReader>);
 static_assert(ReadPathReturnsMusicTag<TagReader>);
 static_assert(ReadPathAndCoverDirReturnsMusicTag<TagReader>);
+static_assert(ReadCuePathReturnsBatch<TagReader>);
+static_assert(ReadCuePathAndCoverDirReturnsBatch<TagReader>);
 static_assert(!ReadPathReturnsBatch<TagReader>);
 static_assert(!ReadPathAndCoverDirReturnsBatch<TagReader>);
 
