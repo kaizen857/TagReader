@@ -95,6 +95,8 @@ add_library(TagReaderCore STATIC
     src/formats/mp4/Mp4AtomReader.cpp
     src/formats/mp4/Mp4Parser.cpp
     src/formats/ape/ApeParser.cpp
+    src/formats/cue/CueReader.cpp
+    src/formats/cue/CueTextLoader.cpp
 )
 
 tagreader_enable_sanitizers(TagReaderCore)

@@ -103,6 +103,14 @@ target_link_libraries(TagReaderCueCatch2Tests
         TagReaderCore
 )
 
+target_include_directories(TagReaderCueCatch2Tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/formats/cue
+)
+
 tagreader_enable_sanitizers(TagReaderCueCatch2Tests)
 
 catch_discover_tests(TagReaderCueCatch2Tests)

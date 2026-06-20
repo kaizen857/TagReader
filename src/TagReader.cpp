@@ -1,5 +1,6 @@
 #include "TagReader.hpp"
 #include "core/TagPipeline.hpp"
+#include "formats/cue/CueReader.hpp"
 
 MusicTag TagReader::Read(const std::filesystem::path &filePath)
 {
@@ -13,13 +14,10 @@ MusicTag TagReader::Read(const std::filesystem::path &filePath, const std::files
 
 std::vector<MusicTag> TagReader::ReadCueSheet(const std::filesystem::path &filePath)
 {
-    (void)filePath;
-    return {};
+    return tagreader_cue::ReadCueSheet(filePath);
 }
 
 std::vector<MusicTag> TagReader::ReadCueSheet(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir)
 {
-    (void)filePath;
-    (void)coverExportDir;
-    return {};
+    return tagreader_cue::ReadCueSheet(filePath, coverExportDir);
 }
