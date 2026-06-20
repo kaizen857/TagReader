@@ -1,12 +1,13 @@
 #include "formats/cue/CueReader.hpp"
 #include "formats/cue/CuePathResolver.hpp"
 #include "formats/cue/CueParser.hpp"
+#include "formats/cue/CueTiming.hpp"
 #include "formats/cue/CueTextLoader.hpp"
 
 #include "core/TagPipeline.hpp"
 
 #include <cctype>
-#include <limits>
+#include <iterator>
 #include <optional>
 #include <string_view>
 
@@ -128,13 +129,20 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
         }
 
         const MusicTag audioTag = tagreader_core::ReadTag(resolution.resolvedPath, coverExportDir);
+        std::vector<MusicTag> fileTags;
+        fileTags.reserve(file.tracks.size());
         for (const auto &track : file.tracks)
         {
             MusicTag cueTag = audioTag;
             ApplyCueMetadata(parsedSheet.global, file, track, cueTag);
             cueTag.setFilePath(resolution.resolvedPath);
-            tags.push_back(std::move(cueTag));
+            fileTags.push_back(std::move(cueTag));
         }
+        if (!ApplyCueTiming(file, fileTags))
+        {
+            return {};
+        }
+        tags.insert(tags.end(), std::make_move_iterator(fileTags.begin()), std::make_move_iterator(fileTags.end()));
     }
 
     return tags;

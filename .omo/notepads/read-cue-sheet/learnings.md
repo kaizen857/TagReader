@@ -17,3 +17,6 @@ Focused CUE encoding tests now cover plain UTF-8, UTF-8 BOM, UTF-16LE/BE BOM, La
 - TODO 5 已提交为原子提交，后续 task 6 继续只在音频映射层展开。
 - TODO 6 先在 `CueReader.cpp` 里做最小映射：`ReadTag()` 负责音频字段，CUE 只覆盖 `title/artist/composer/album/albumArtist/genre/year/discNumber/trackNumber`；普通 `Read()` 路径保持不变。
 - 映射测试单独放到 `cue_mapping_catch2_tests.cpp`，覆盖 track/album 覆盖、audio field 保留、以及普通 `Read()` 非回归三条用例。
+- TODO 7 的时间层要按 75fps 从 `INDEX 01` 推导 offset/duration；同文件内 duration 只依赖下一轨的 offset，最后一轨才回退到音频总时长，且 backward/invalid frame/overflow 直接让 `ReadCueSheet()` 失败。
+- 时间测试单独放到 `cue_timing_catch2_tests.cpp`，覆盖 frame→microseconds、multi-track duration、multi-file 独立、以及非法/backward/overflow 时间拒绝。
+- `CueReader.cpp` 的时间逻辑已拆到 `CueTiming.*`，保持 reader 负责编排、helper 负责时序计算；这样便于后续 task 8 在同一输出上叠加封面 fallback。
