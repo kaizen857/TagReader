@@ -91,6 +91,22 @@ tagreader_enable_sanitizers(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
 catch_discover_tests(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
+add_executable(TagReaderCueCatch2Tests
+    regression/catch2_regression_support.cpp
+    regression/catch2_sample_support.cpp
+    regression/cue_catch2_tests.cpp
+)
+
+target_link_libraries(TagReaderCueCatch2Tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        TagReaderCore
+)
+
+tagreader_enable_sanitizers(TagReaderCueCatch2Tests)
+
+catch_discover_tests(TagReaderCueCatch2Tests)
+
 add_executable(TagReaderLyricsNormalizeComplexityCatch2Tests
     catch2/lyrics_normalize_complexity_catch2_tests.cpp
 )

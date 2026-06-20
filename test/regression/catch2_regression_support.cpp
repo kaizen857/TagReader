@@ -38,6 +38,27 @@ bool WriteBinaryFile(const std::filesystem::path &path, const std::vector<std::u
     return output.good();
 }
 
+bool WriteTextFile(const std::filesystem::path &path, std::string_view text)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec)
+    {
+        std::cerr << "failed to create directory for " << path.string() << ": " << ec.message() << '\n';
+        return false;
+    }
+
+    std::ofstream output(path, std::ios::out | std::ios::trunc);
+    if (!output)
+    {
+        std::cerr << "failed to open text file for write: " << path.string() << '\n';
+        return false;
+    }
+
+    output << text;
+    return output.good();
+}
+
 std::vector<std::uint8_t> ReadBinaryFile(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);
@@ -90,6 +111,11 @@ std::uint32_t ReadU24BE(const std::vector<std::uint8_t> &bytes, std::size_t offs
 std::vector<std::uint8_t> Bytes(std::string_view text)
 {
     return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
+std::filesystem::path TemporaryArtifactRoot(std::string_view caseName)
+{
+    return std::filesystem::temp_directory_path() / "tagreader_catch2_artifacts" / std::string(caseName);
 }
 
 bool PrepareCleanDirectory(const std::filesystem::path &path)
