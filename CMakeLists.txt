@@ -11,6 +11,9 @@ option(TAGREADER_ENABLE_SANITIZERS "Enable ASAN/UBSAN" OFF)
 option(TAGREADER_ENABLE_FUZZING "Enable fuzz targets" OFF)
 option(TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS "Force-disable Iconv for explicit no-iconv policy tests" OFF)
 option(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV "Allow Latin-1 fallback when building without Iconv" OFF)
+option(TAGREADER_USE_SYSTEM_CATCH2 "Prefer a system-installed Catch2 package" ON)
+
+include(CTest)
 
 set(TAGREADER_SANITIZER_COMPILE_OPTIONS
     -O1
@@ -47,6 +50,21 @@ endif()
 
 if(NOT Iconv_FOUND AND NOT TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
     message(FATAL_ERROR "Iconv is required unless TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON is set explicitly")
+endif()
+
+include(FetchContent)
+
+if(TAGREADER_USE_SYSTEM_CATCH2)
+    find_package(Catch2 3 CONFIG QUIET)
+endif()
+
+if(NOT Catch2_FOUND)
+    set(CATCH2_VERSION 3.7.1)
+    FetchContent_Declare(
+        Catch2
+        URL https://github.com/catchorg/Catch2/archive/refs/tags/v${CATCH2_VERSION}.tar.gz
+    )
+    FetchContent_MakeAvailable(Catch2)
 endif()
 
 # 3. 库目标
@@ -115,72 +133,6 @@ target_link_libraries(TagReaderTest
 # 5. 如果需要默认构建测试程序
 set_target_properties(TagReaderTest PROPERTIES OUTPUT_NAME "TagReaderTest")
 
-# 6. 安全 smoke 测试程序
-add_executable(TagReaderSecuritySmoke
-    test/security/security_smoke.cpp
-)
-
-tagreader_enable_sanitizers(TagReaderSecuritySmoke)
-
-target_link_libraries(TagReaderSecuritySmoke
-    PRIVATE
-        TagReaderCore
-)
-
-add_executable(TagReaderRegressionTests
-    test/regression/regression_tests.cpp
-)
-
-tagreader_enable_sanitizers(TagReaderRegressionTests)
-
-target_include_directories(TagReaderRegressionTests
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(TagReaderRegressionTests
-    PRIVATE
-        TagReaderCore
-)
-
-add_executable(TagReaderFlacMalformedMetadataTests
-    test/regression/flac_malformed_metadata_tests.cpp
-)
-
-tagreader_enable_sanitizers(TagReaderFlacMalformedMetadataTests)
-
-target_link_libraries(TagReaderFlacMalformedMetadataTests
-    PRIVATE
-        TagReaderCore
-)
-
-add_executable(TagReaderDefaultCoverExportDirectoryTests
-    test/regression/default_cover_export_directory_tests.cpp
-)
-
-tagreader_enable_sanitizers(TagReaderDefaultCoverExportDirectoryTests)
-
-target_link_libraries(TagReaderDefaultCoverExportDirectoryTests
-    PRIVATE
-        TagReaderCore
-)
-
-add_executable(TagReaderLyricsNormalizeComplexityTests
-    test/regression/lyrics_normalize_complexity_tests.cpp
-)
-
-tagreader_enable_sanitizers(TagReaderLyricsNormalizeComplexityTests)
-
-target_include_directories(TagReaderLyricsNormalizeComplexityTests
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(TagReaderLyricsNormalizeComplexityTests
-    PRIVATE
-        TagReaderCore
-)
-
 if(TAGREADER_ENABLE_FUZZING)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(WARNING "TAGREADER_ENABLE_FUZZING requires Clang libFuzzer support; TagReaderFuzz will not be built")
@@ -200,3 +152,5 @@ if(TAGREADER_ENABLE_FUZZING)
         )
     endif()
 endif()
+
+add_subdirectory(test)

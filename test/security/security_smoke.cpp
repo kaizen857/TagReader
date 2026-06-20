@@ -11,18 +11,22 @@ extern "C"
 
 #include <exception>
 #include <filesystem>
-#include <future>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace
 {
+constexpr int kSkipReturnCode = 77;
+
 void PrintUsage(std::string_view program)
 {
-    std::cerr << "usage: " << program << " <cover-export-dir> <audio-file-path> [audio-file-path ...]\n";
+    std::cerr << "usage: " << program << " <cover-export-dir> <audio-file-path | sample-dir> [audio-file-path ...]\n";
 }
 
 void PrintTagSummary(const std::filesystem::path &samplePath, const MusicTag &tag)
@@ -72,6 +76,54 @@ bool RunPollutedCoverCacheSmoke(const std::filesystem::path &samplePath, const s
 
     std::cerr << "cover cache polluted entry was accepted for " << coverPath.string() << '\n';
     return false;
+}
+
+std::filesystem::path SampleCoverExportDir(const std::filesystem::path &coverExportDir, const std::filesystem::path &samplePath)
+{
+    return coverExportDir / samplePath.filename();
+}
+
+std::vector<std::filesystem::path> LoadSmokeSamplesFromManifest(const std::filesystem::path &sampleDir)
+{
+    const std::filesystem::path manifestPath = sampleDir / "MANIFEST.txt";
+    std::ifstream manifest(manifestPath);
+    if (!manifest)
+    {
+        throw std::runtime_error("missing security sample manifest: " + manifestPath.string());
+    }
+
+    enum class Section
+    {
+        None,
+        SmokeSamples,
+        Other,
+    };
+
+    Section currentSection = Section::None;
+    std::vector<std::filesystem::path> samples;
+    for (std::string line; std::getline(manifest, line);)
+    {
+        if (line == "## smoke_samples")
+        {
+            currentSection = Section::SmokeSamples;
+            continue;
+        }
+        if (!line.empty() && line.starts_with("## "))
+        {
+            currentSection = Section::Other;
+            continue;
+        }
+        if (line.empty() || line.starts_with("#"))
+        {
+            continue;
+        }
+        if (currentSection == Section::SmokeSamples)
+        {
+            samples.emplace_back(line);
+        }
+    }
+
+    return samples;
 }
 
 bool RunCoverCacheSmoke(const std::filesystem::path &samplePath, const std::filesystem::path &coverExportDir, const MusicTag &firstTag)
@@ -143,6 +195,11 @@ bool RunCoverCacheSmoke(const std::filesystem::path &samplePath, const std::file
 
     return true;
 }
+
+std::filesystem::path SampleCoverPath(const std::filesystem::path &coverExportDir, const std::filesystem::path &samplePath)
+{
+    return coverExportDir / samplePath.filename() / "4b" / "5c5c92cec3b23e6a294fc0eea43234ef5126c5a64f4c6c531ac8430ab0b844.png";
+}
 } // namespace
 
 int main(int argc, char **argv)
@@ -157,16 +214,48 @@ int main(int argc, char **argv)
 
     const std::filesystem::path coverExportDir = argv[1];
     (void)coverExportDir;
+    std::vector<std::filesystem::path> samplePaths;
+    if (argc == 3 && std::filesystem::is_directory(argv[2]))
+    {
+        samplePaths = LoadSmokeSamplesFromManifest(argv[2]);
+        if (samplePaths.empty())
+        {
+            std::cout << "security smoke skipped: no smoke samples were generated under " << argv[2] << '\n';
+            return kSkipReturnCode;
+        }
+    }
+    else
+    {
+        for (int i = 2; i < argc; ++i)
+        {
+            samplePaths.emplace_back(argv[i]);
+        }
+    }
 
     bool hasFailure = false;
-    for (int i = 2; i < argc; ++i)
+    for (const std::filesystem::path &samplePath : samplePaths)
     {
-        const std::filesystem::path samplePath = argv[i];
+        const std::filesystem::path sampleCoverExportDir = SampleCoverExportDir(coverExportDir, samplePath);
+        std::error_code ec;
+        std::filesystem::remove_all(sampleCoverExportDir, ec);
+        if (ec)
+        {
+            hasFailure = true;
+            std::cerr << "failed to reset cover export directory for " << samplePath.string() << ": " << ec.message() << '\n';
+            continue;
+        }
+        std::filesystem::create_directories(sampleCoverExportDir, ec);
+        if (ec)
+        {
+            hasFailure = true;
+            std::cerr << "failed to prepare cover export directory for " << samplePath.string() << ": " << ec.message() << '\n';
+            continue;
+        }
         try
         {
-            const MusicTag tag = TagReader::Read(samplePath, coverExportDir);
+            const MusicTag tag = TagReader::Read(samplePath, sampleCoverExportDir);
             PrintTagSummary(samplePath, tag);
-            if (!RunCoverCacheSmoke(samplePath, coverExportDir, tag))
+            if (!RunCoverCacheSmoke(samplePath, sampleCoverExportDir, tag))
             {
                 hasFailure = true;
             }

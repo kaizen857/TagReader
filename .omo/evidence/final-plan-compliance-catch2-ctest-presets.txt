@@ -1,0 +1,5 @@
+F1 APPROVE
+- Todo 0..9 都有对应 `.omo/evidence/task-*.txt`，且每步都记录了可验证命令与结果。
+- Todo 5/6/7 的 parity 证据先于 Todo 8 的旧 runner 删除证据；删除时机符合“先等价、后删除”。
+- 现场 `ctest --test-dir build/default -N` 仍列出 `TR-AUDIT-001..056`，且它们保持 CTest-addressable。
+- 额外确认当前 `ctest -N` 共有 68 个测试，包含 `TR-AUDIT-001..056`、security setup/smoke 与前置 Catch2 测试。

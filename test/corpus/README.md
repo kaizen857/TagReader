@@ -10,6 +10,10 @@ python3 test/corpus/generate_corpus.py
 
 默认输出目录：`/tmp/opencode/tagreader_fuzz_corpus`。
 
+如果要先确认测试入口，再跑：`cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`。
+
+`clangd` 读取的编译数据库是 `build/default/compile_commands.json`。
+
 实际生成类别与 seed 主题：
 
 - `id3`：ID3v2.2/v2.3/v2.4 dispatch、未知大帧跳过、ID3v2.4 tag/frame unsync、footer/extended header、APIC unsync、公开 API 多字段组合，以及歌词行数和 LRC timestamp DoS 样本。

@@ -1,0 +1,21 @@
+TODO 2 evidence
+
+Config:
+- Command: `cmake --preset default`
+- Result: success
+- Note: Catch2 fallback fetched and built via fixed `FetchContent` version 3.7.1 after `find_package(Catch2 3 CONFIG QUIET)` did not resolve in the environment.
+
+Build:
+- Command: `cmake --build --preset default`
+- Result: success
+- Note: `TagReaderCatch2SmokeTests` built successfully and `TagReaderRegressionTests` remained buildable.
+
+CTest list:
+- Command: `ctest --test-dir build/default -N`
+- Result:
+  - `Test #1: Catch2 smoke test compiles and runs`
+
+Old runner list:
+- Command: `./build/default/TagReaderRegressionTests --list`
+- Result: success
+- Note: `TR-AUDIT-001` through `TR-AUDIT-056` still list normally.

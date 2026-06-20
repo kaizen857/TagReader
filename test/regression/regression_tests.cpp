@@ -3426,7 +3426,7 @@ bool RunTrAudit028()
 {
     constexpr std::string_view kCaseId = "TR-AUDIT-028";
     const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
-    const std::filesystem::path defaultExportDir = std::filesystem::temp_directory_path() / "tagreader-covers";
+    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
     const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
     std::error_code ec;
     std::filesystem::remove_all(evidenceRoot, ec);
@@ -8318,6 +8318,7 @@ int RunCase(const TestCase &testCase)
 }
 }
 
+#if !defined(TAGREADER_REGRESSION_TESTS_NO_MAIN)
 int main(int argc, char **argv)
 {
     av_log_set_level(AV_LOG_QUIET);
@@ -8357,3 +8358,4 @@ int main(int argc, char **argv)
 
     return 1;
 }
+#endif

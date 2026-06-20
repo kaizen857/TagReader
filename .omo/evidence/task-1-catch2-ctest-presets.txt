@@ -1,0 +1,16 @@
+Task 1 evidence: preset/CTest/clangd foundation
+
+Commands to run:
+- `cmake --preset default`
+- `cmake --build --preset default`
+- `test -f build/default/compile_commands.json`
+- `cmake --preset sanitize`
+- `cmake --preset fuzz`
+
+Expected outcome:
+- `default` and `sanitize` configure under `build/default` and `build/sanitize` with `CMAKE_EXPORT_COMPILE_COMMANDS=ON`
+- `build/default/compile_commands.json` exists after default configure
+- `fuzz` configures under `build/fuzz`
+
+Notes:
+- `fuzz` is configuration-only for this task; any later compile failure caused by missing libFuzzer/toolchain support should be recorded as a warning, not treated as a scope failure.

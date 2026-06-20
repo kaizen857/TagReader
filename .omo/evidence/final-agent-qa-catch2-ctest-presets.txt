@@ -1,0 +1,10 @@
+F3 APPROVE
+
+- `cmake --preset default` ✅ configured successfully; only a CMake dev warning about `FetchContent`/`CMP0135`.
+- `cmake --build --preset default` ✅ built successfully.
+- `ctest --preset default --output-on-failure` ✅ 68/68 tests passed.
+- `ctest --test-dir build/default -R TR-AUDIT-001 --output-on-failure` ✅ passed.
+- `ctest --test-dir build/default -R TR-AUDIT-056 --output-on-failure` ✅ passed.
+- `cmake --build --preset sanitize` ✅ built successfully.
+- `cmake --preset fuzz` ✅ configured, but warned `TAGREADER_ENABLE_FUZZING requires Clang libFuzzer support`; `TagReaderFuzz` will not be built.
+- `ctest --test-dir build/fuzz -N` ⚠️ confirmed fuzz preset exists, but no `TagReaderFuzz` binary is present in this environment; fuzz smoke is unsupported here.

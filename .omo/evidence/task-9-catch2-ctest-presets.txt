@@ -1,0 +1,7 @@
+Task 9 evidence
+
+- 文案核对目标：`AGENTS.md`、`docs/DESIGN.md`、`test/corpus/README.md` 已对齐 Catch2 / CTest / CMakePresets 现状。
+- 需要明确的事实：默认命令是 `cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`；`sanitize` / `fuzz` 通过 preset 维护；`clangd` 使用 `build/default/compile_commands.json`。
+- 预期验证：`ctest --preset default --output-on-failure` 与 `cmake --build --preset sanitize`。
+- 负向检查使用安全 shell 形式：`pattern='没有.*单元测试框架|不要用 \`ctest\`|build-sanitize|build-fuzz'; rg -n "$pattern" AGENTS.md docs/DESIGN.md test/corpus/README.md`。
+- 负向检查结果：`no-match`（退出码 1 按预期转义为通过）。

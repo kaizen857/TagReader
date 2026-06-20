@@ -1,0 +1,21 @@
+TODO 4 evidence
+
+Build:
+- `cmake --build build/default --target TagReaderFlacMalformedMetadataCatch2Tests TagReaderDefaultCoverExportDirectoryCatch2Tests TagReaderFlacMalformedMetadataTests TagReaderDefaultCoverExportDirectoryTests` — success
+
+Old runners:
+- `./build/default/TagReaderFlacMalformedMetadataTests` — success
+- `./build/default/TagReaderDefaultCoverExportDirectoryTests` — success
+
+Catch2 via CTest:
+- `ctest --test-dir build/default -R "FlacMalformed|DefaultCover" --output-on-failure` — partial success
+- `FlacMalformed` cases passed; `DefaultCover` cases fail because generated sample still begins with an invalid `ID3` header in `/tmp/tagreader_default_cover_export_directory_catch2/.../cover-policy.mp3`.
+
+Git status:
+- `git status --short` — workspace contains intended migration files plus pre-existing `.omo` drift.
+
+Final pass:
+- `cmake --build build/default --target TagReaderDefaultCoverExportDirectoryCatch2Tests` — success
+- `./build/default/TagReaderFlacMalformedMetadataTests` — success
+- `./build/default/TagReaderDefaultCoverExportDirectoryTests` — success
+- `ctest --test-dir build/default -R "FlacMalformed|DefaultCover" --output-on-failure` — success

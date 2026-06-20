@@ -1,3 +1,7 @@
-- 先冻结当前脏工作树边界，再开始迁移测试框架。
-- 后续迁移提交只允许通过精确文件列表或明确排除 `.omo` 的方式 stage。
-- `.omo` 旧删除状态不进入测试迁移提交，除非先被独立清理并确认。
+- 继续沿用“双路径”策略：旧 `TagReaderRegressionTests` 保留，Catch2 目标并行新增，直到后续 wave 完成前不删除旧 runner。
+- `regression_tests.cpp` 作为实现源保留，Catch2 目标通过 `TAGREADER_REGRESSION_TESTS_NO_MAIN` 只屏蔽入口，不拆动 `RunCase()` 的语义面。
+- 后续 `032..056` 也应按同样模式拆成独立 Catch2 包装文件，避免再改旧 runner 分发逻辑。
+- `032..056` 使用独立 `TagReaderTrAudit032056Catch2Tests` 目标，和 `001..031` 分开注册，便于 `ctest -N`/逐案对照和后续删除旧 runner 的切分。
+- security 相关测试采用 `TagReaderSecurityGenerateSamples` + `TagReaderSecuritySmoke` 的双测试结构；fuzz 只保留 bounded smoke，默认 `ctest` 不注册无界 fuzz 运行。
+- 旧 `TagReaderRegressionTests`/专项 legacy runner 已退场，后续只允许通过 Catch2/CTest 维护 `TR-AUDIT-*` 覆盖，不再恢复根级重复注册。
+- 文档主叙述也要跟着这个决策走，默认命令以 preset 为准，clangd 说明统一指向 `build/default/compile_commands.json`。

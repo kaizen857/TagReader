@@ -2,25 +2,24 @@
 
 ## 当前定位
 
-- TagReader 是一个 C++23 轻量音乐元数据读取库，支持 ID3v1/v2、Vorbis Comment（FLAC/Ogg Vorbis）、MP4 atom（ilst）和 APEv2 标签格式。
+- TagReader 是一个 C++23 轻量音乐元数据读取库，支持 ID3v1/v2、Vorbis Comment（FLAC/Ogg Vorbis/Opus）、MP4 atom（ilst）、APEv2、RIFF/WAV、AIFF/AIFC、DSF、DFF、ASF/WMA 和 Matroska/WebM/MKA 标签格式。
 - 对外 facade 保持单一读取入口：`TagReader::Read(path)`。
 - 另一个重载 `TagReader::Read(path, coverExportDir)` 接收调用方提供的封面导出路径。
-- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> `ValidateCoverExportDir()` -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
+- `Read()` 的主流程是 `ValidatePath()` -> `OpenContext()` -> 封面目录校验/硬化 -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> `ReadLyrics()` -> `BuildMusicTag()`。
 - `ContainerFromTagFormat()` 直接将 `TagFormat` 映射为 `DetectedContainer` 并写入 `context.detectedContainer`，不再有独立的 `DetectContainer()` 步骤。
 - `ReadMetadata()` 入口处和每个 catch 分支均调用 `context.input.clear()` 恢复流状态；`ReadLyrics()` 入口处也执行 `clear()`。
 - ID3v2→ID3v1 回退路径和 Ape→ID3 回退路径中，各 parser 调用之间插入 `context.input.clear()` 防止流状态级联污染。
-- `MusicTag` 是最终返回对象；解析中间状态保存在内部的 `RawMediaInfo`、`RawMetadata`、`RawLyrics` 等结构中。
-- 写入 `MusicTag` 的文本字段必须是 UTF-8。
+- `MusicTag` 是最终返回对象；解析中间状态保存在内部的 `RawMediaInfo`、`RawMetadata`、`RawLyrics` 等结构中，最后由 `NormalizeMetadata()` / `NormalizeLyrics()` 规范化为 UTF-8 文本。
 
 ## 能力矩阵
 
 ### 当前完整支持
 
-- 当前代码完整处理的标签格式族是：`ID3v1`、`ID3v2.2/v2.3/v2.4`、`FLAC Vorbis Comment`、`Ogg Vorbis Comment`、`MP4 ilst`、`APEv2`。
+- 当前代码完整处理的标签格式族是：`ID3v1`、`ID3v2.2/v2.3/v2.4`、`FLAC Vorbis Comment`、`Ogg Vorbis Comment`、`Ogg OpusTags`、`MP4 ilst`、`APEv2`、`RIFF/WAV`、`AIFF/AIFC`、`DSF`、`DFF`、`ASF/WMA`、`Matroska/WebM/MKA`。
 - `TagFormat::VorbisComment` 目前作为 FLAC Vorbis Comment 分支处理，实际走 `ReadFlacMetadata()` 和 `ReadFlacLyrics()`；`TagFormat::Flac` 也是同一条 Vorbis Comment 解析路径。
 - `ID3` 分支覆盖常规文本字段、歌词和封面帧，常规字段包括 `title`、`artist`、`album`、`albumArtist`、`composer`、`genre`、`year`、`track`、`disc`。
 - `FLAC Vorbis Comment` 分支同样覆盖上述常规字段，并可解析 `PICTURE` 封面块和歌词相关字段。
-- `Ogg Vorbis Comment` 当前只从 Vorbis comment packet 读元数据和歌词，不存在 Ogg 封面导出路径。
+- `Ogg Vorbis Comment` 当前从 Vorbis comment packet 读元数据和歌词，封面导出路径仍只来自已有内嵌图片来源，不把 Ogg 说成独立封面格式。
 - `MP4 ilst` 分支覆盖常规字段、`©lyr` 歌词和 `covr` 封面，歌词也支持 iTunes freeform `----` 中 `com.apple.iTunes` / `lyrics` 项。
 - `APEv2` 分支覆盖常规字段、歌词和 `COVER ART (FRONT/BACK)` 二进制封面项。
 - 封面导出只支持已有格式里能解析出的内嵌图片来源，具体证据是 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)`；导出后按 content-addressed PNG 缓存复用。
@@ -30,9 +29,9 @@
 
 ### 检测可达
 
-- `DetectTagFormat()` 当前能探测到的容器和标签来源，已经覆盖 `ID3v1`、`ID3v2`、`FLAC`、`Ogg Vorbis`、`MP4`、`APEv2`，以及由 `ReadMetadata()`/`ReadLyrics()` 复用的 `RawId3v2`、`RawVorbisComment`、`RawMp4Ilst`、`RawApeV2` 路径。
+- `DetectTagFormat()` 当前能探测到的容器和标签来源，已经覆盖 `ID3v1`、`ID3v2`、`FLAC`、`Ogg Vorbis`、`MP4`、`APEv2`、`WAV`、`AIFF`、`DSF`、`DFF`、`ASF`、`Matroska`，以及由 `ReadMetadata()`/`ReadLyrics()` 复用的 `RawId3v2`、`RawVorbisComment`、`RawMp4Ilst`、`RawApeV2` 路径。
 - 对已经能探测到但尚未完整实现的容器，文档只允许把它们写成“检测可达”或“路径预留”，不能写成当前完整支持。
-- `WAV`、`AIFF`、`DSF`、`DFF`、`ASF`、`Matroska` 的解析已经在任务 7 到 11 中落地，文档里应继续把它们标为当前已支持的具体边界，而不是泛化成所有同类格式都自动支持。
+- `WAV`、`AIFF`、`DSF`、`DFF`、`ASF`、`Matroska` 的解析已经落地，文档里应继续把它们标为当前已支持的具体边界，而不是泛化成所有同类格式都自动支持。
 
 ### 目标能力
 
@@ -151,8 +150,10 @@
 
 ## 构建与测试资产
 
-- 普通构建命令是 `cmake -S . -B build` 和 `cmake --build build`。
-- 构建目标包括静态库 `TagReaderCore`、人工验收程序 `TagReaderTest`、安全 smoke 程序 `TagReaderSecuritySmoke`、回归测试程序 `TagReaderRegressionTests`。
-- `TagReaderTest` 是字段打印程序，不是单元测试框架；`TagReaderRegressionTests` 对应各 TR-AUDIT 项的回归验证。
+- 默认入口是 `cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`。
+- `clangd` 使用 `build/default/compile_commands.json`。
+- `sanitize` 和 `fuzz` 也通过 preset 维护，分别对应 `cmake --preset sanitize` / `cmake --build --preset sanitize` 和 `cmake --preset fuzz` / `cmake --build --preset fuzz`。
+- 构建目标包括静态库 `TagReaderCore`、人工验收程序 `TagReaderTest`、安全 smoke 程序 `TagReaderSecuritySmoke`，以及由 CTest 发现的 Catch2 回归目标。
+- `TagReaderTest` 仍是字段打印程序，不是单元测试入口；单元与回归验证现在由 Catch2 目标经 CTest 运行，`TR-AUDIT-001..056` 都能通过 CTest 入口地址到。
 - fuzz corpus 由 `python3 test/corpus/generate_corpus.py` 生成，默认输出 `/tmp/opencode/tagreader_fuzz_corpus`；仓库不提交二进制 seed。
-- 仓库当前没有配置 CI workflow、lint、formatter 或单元测试框架。
+- 仓库当前没有配置 CI workflow、lint 或 formatter。

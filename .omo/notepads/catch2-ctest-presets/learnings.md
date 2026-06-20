@@ -1,3 +1,7 @@
-- 当前工作树在 Todo 0 之前已经存在大量 `.omo` 删除状态，并且还夹杂着 `AGENTS.md`、`docs/DESIGN.md`、`test/*`、`topPlan.md` 等非 `.omo` 改动。
-- 迁移提交必须采用显式 pathspec 白名单，不能用 `git add .` 或 `git add -A`，否则会把旧 `.omo` 删除一起卷入。
-- 如果后续确实要处理 `.omo` 删除，应该单独做 cleanup commit，和 Catch2/CTest 迁移拆开。
+- 前半段迁移可以直接复用旧 `regression_tests.cpp` 的实现，只把 `main()` 用编译开关包起来，Catch2 目标通过 include 旧实现获得 `RunTrAudit001..031()`。
+- 新 Catch2 文件只负责 `TEST_CASE` 包装，case 名必须保留原始 `TR-AUDIT-xxx`，这样 `ctest -R` 和旧 runner 输出能一一对照。
+- `TR-AUDIT-028` 暴露了默认封面目录假设差异：测试里要跟随 `ExpectedDefaultCoverExportDir()`，不能硬编码 `temp_directory_path()/tagreader-covers`。
+- 后半段 `032..056` 继续沿用同一薄包装模式，不再拆分旧实现；每个新增 Catch2 文件只承担 case 列表和原始 ID 透传，避免把格式覆盖逻辑搬出 `regression_tests.cpp`。
+- `TagReaderSecurityGenerateSamples` 可以直接作为 CTest 里的 setup test；`TagReaderSecuritySmoke` 读取 `MANIFEST.txt` 后再按样本驱动，避免把样本列表写死在 CLI 参数里。
+- 本次收口后，`TagReaderSecuritySmoke` 仍作为 manual CLI 保留，但注册点已下沉到 `test/CMakeLists.txt`，根 `CMakeLists.txt` 只保留库、`TagReaderTest` 和可选 fuzz 入口。
+- 文档层面需要同步 `build/default/compile_commands.json` 这个 clangd 事实，否则默认 preset 改名后，说明会和编辑器配置脱节。

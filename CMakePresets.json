@@ -1,0 +1,70 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/default",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "sanitize",
+      "displayName": "Sanitize",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "TAGREADER_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "Fuzz",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/fuzz",
+      "cacheVariables": {
+        "TAGREADER_ENABLE_FUZZING": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

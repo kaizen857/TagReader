@@ -1,0 +1,22 @@
+Task 3 evidence log
+
+- Old runner: `./build/default/TagReaderLyricsNormalizeComplexityTests`
+- New Catch2 entry: `ctest --test-dir build/default -R LyricsNormalize --output-on-failure`
+- CTest inventory: `ctest --test-dir build/default -N`
+
+Migration pattern
+
+- Keep the legacy executable as a direct `main()`-based comparator.
+- Add a separate Catch2 target for the same semantic checks.
+- Make each semantic check its own `TEST_CASE` with `LyricsNormalize` in the test name/tags so `ctest -R LyricsNormalize` can discover it.
+
+Notes for reuse
+
+- This pattern avoids touching `src/` and keeps the legacy binary runnable during migration.
+- For later Todo 4/5/6 migrations, copy the same “legacy runner + Catch2 sibling target” split first, then delete the old runner only after parity is proven.
+
+Verification results
+
+- `./build/default/TagReaderLyricsNormalizeComplexityTests` → PASS
+- `ctest --test-dir build/default -R LyricsNormalize --output-on-failure` → PASS (3/3)
+- `ctest --test-dir build/default -N` → shows `LyricsNormalize preserves semantics`, `LyricsNormalize keeps the lyric line cap`, `LyricsNormalize scales conservatively for same timestamps`

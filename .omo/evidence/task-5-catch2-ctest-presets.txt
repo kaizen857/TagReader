@@ -1,0 +1,20 @@
+TODO 5: TR-AUDIT-001..031 Catch2 migration evidence
+
+Scope:
+- Migrated TR-AUDIT-001..031 into Catch2 while keeping TagReaderRegressionTests intact.
+- Did not touch TR-AUDIT-032..056.
+
+Build:
+- `cmake -S . -B build/default` succeeded.
+- `cmake --build build/default --target TagReaderRegressionTests TagReaderTrAudit001031Catch2Tests` succeeded.
+
+Discovery:
+- `./build/default/TagReaderRegressionTests --list` lists TR-AUDIT-001..056, including 001..031.
+- `ctest --test-dir build/default -N` shows TR-AUDIT-001..031 as Catch2/CTest tests #11..#41.
+
+Per-case comparison:
+- `./build/default/TagReaderRegressionTests TR-AUDIT-001..031` exit 0.
+- `ctest --test-dir build/default -R ^TR-AUDIT-001..031$ --output-on-failure` exit 0.
+
+Notes:
+- TR-AUDIT-028 was aligned to `ExpectedDefaultCoverExportDir()` so it matches current default-cover behavior.

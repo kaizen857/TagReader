@@ -3,7 +3,7 @@
 - 当前目录就是项目根目录；不要扫描、读取或推断上级目录内容。
 - 面向用户的回答和文档修改使用中文；面向用户的仓库文档除 `AGENTS.md` 外放在 `docs/`。
 - `README.md` 只有标题；查事实优先看 `CMakeLists.txt`、`docs/DESIGN.md`、公共头文件、`src/` 和 `test/`。若文档和代码冲突，信代码和构建脚本。
-- 仓库没有 CI、lint、formatter、单元测试框架、repo-local OpenCode 配置或编辑器规则；不要声称跑过这些检查。
+- 仓库没有 CI、lint、formatter、repo-local OpenCode 配置或编辑器规则；单元测试已切到 Catch2 + CTest + CMakePresets，不要再沿用旧测试说法，也不要要求用可执行程序替代 `ctest`。
 - 这是 C++23 项目（`CMAKE_CXX_STANDARD 23` 且 required）；不要把实现降到 C++17/C++20 写法。
 
 ## 入口与架构边界
@@ -32,11 +32,10 @@
 ## 构建与验证
 
 - 依赖由 `pkg-config` 查找 FFmpeg（`libavformat`、`libavcodec`、`libavutil`、`libswscale`）；`Iconv` 默认必需，除非显式 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON`。
-- 普通构建：`cmake -S . -B build`，再 `cmake --build build`；仓库没有 `enable_testing()`/`add_test()`，不要用 `ctest` 代替可执行程序验证。
-- Sanitizer 构建：`cmake -S . -B build-sanitize -DTAGREADER_ENABLE_SANITIZERS=ON`，再 `cmake --build build-sanitize`；ASAN/UBSAN 只对 Clang/GNU 配置。
-- Fuzz 构建：`cmake -S . -B build-fuzz -DTAGREADER_ENABLE_FUZZING=ON`，再 `cmake --build build-fuzz`；`TagReaderFuzz` 只在 Clang/libFuzzer 下生成，可用 `TAGREADER_FUZZ_ROOT` 改 fuzz 临时目录。
-- 构建目标包括 `TagReaderCore`、`TagReaderTest`、`TagReaderSecuritySmoke`、`TagReaderRegressionTests`、`TagReaderFlacMalformedMetadataTests`、`TagReaderDefaultCoverExportDirectoryTests`、`TagReaderLyricsNormalizeComplexityTests`；fuzz 构建才有 `TagReaderFuzz`。
-- 常用运行：`./build/TagReaderTest <audio-file-path> [cover-export-dir]`；`./build/TagReaderSecuritySmoke <cover-export-dir> <audio-file-path> [...]`；`./build/TagReaderRegressionTests --list|<TR-AUDIT-case-id>`（当前 `TR-AUDIT-001` 到 `TR-AUDIT-054` 都已实现）。
+- 默认构建与测试入口：`cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`；`clangd` 读取 `build/default/compile_commands.json`。
+- Sanitizer / fuzz 入口：`cmake --preset sanitize`、`cmake --build --preset sanitize`、`cmake --preset fuzz`、`cmake --build --preset fuzz`；`TagReaderFuzz` 只在 Clang/libFuzzer 下生成，可用 `TAGREADER_FUZZ_ROOT` 改 fuzz 临时目录。
+- 构建目标包括 `TagReaderCore`、`TagReaderTest`、`TagReaderSecuritySmoke` 和 Catch2/CTest 注册的回归测试目标；`TagReaderTest` 仍是人工验收 CLI，`TagReaderSecuritySmoke` 仍是 CLI 但由 CTest 包装，fuzz 构建才有 `TagReaderFuzz`。
+- 常用运行：`./build/default/TagReaderTest <audio-file-path> [cover-export-dir]`；`./build/default/TagReaderSecuritySmoke <cover-export-dir> [sample-dir]`；`ctest -N -R '^TR-AUDIT-0(0[1-9]|[1-4][0-9]|5[0-6])$'` 可查看 `TR-AUDIT-001..056` 的 CTest 入口。
 - 多数回归 case 和样本脚本会现场调用 `ffmpeg` CLI；缺失或 codec 不可用时相关 case 可能跳过或失败，不要误判为 CMake 链接 FFmpeg 库问题。
 - Fuzz corpus：`python3 test/corpus/generate_corpus.py [--out-dir DIR]`，默认输出 `/tmp/opencode/tagreader_fuzz_corpus`，仓库不提交二进制 seed。
 - Security smoke 样本：`python3 test/security/generate_samples.py`，默认输出 `/tmp/opencode/tagreader_security_samples`；脚本会调用 `ffmpeg` CLI，缺失时跳过音频样本。

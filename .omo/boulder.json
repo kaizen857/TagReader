@@ -22,9 +22,9 @@
       "work_id": "catch2-ctest-presets-051f512e",
       "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/catch2-ctest-presets.md",
       "plan_name": "catch2-ctest-presets",
-      "status": "active",
+      "status": "completed",
       "started_at": "2026-06-20T01:40:04.590Z",
-      "updated_at": "2026-06-20T01:46:06.031Z",
+      "updated_at": "2026-06-20T04:43:09.219Z",
       "session_ids": [
         "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
       ],
@@ -43,14 +43,159 @@
           "updated_at": "2026-06-20T01:46:06.032Z",
           "started_at": "2026-06-20T01:46:06.032Z",
           "status": "running"
+        },
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "建立 Presets、CTest 与 clangd 编译数据库基础",
+          "session_id": "opencode:ses_11d46a6efffewwUxJ9GFAvUGZ1",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T01:55:57.937Z",
+          "started_at": "2026-06-20T01:55:57.937Z",
+          "status": "running"
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "集成 Catch2 v3 依赖与 CTest 发现骨架",
+          "session_id": "opencode:ses_11d3e76d8ffeYWqwbTpM7SlA77",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T02:06:39.191Z",
+          "started_at": "2026-06-20T02:06:39.191Z",
+          "status": "running"
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "迁移 FLAC malformed 与默认封面目录专项测试",
+          "session_id": "opencode:ses_11d3454baffenYYREHTCIaHGvD",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-20T02:43:48.532Z",
+          "status": "running",
+          "updated_at": "2026-06-20T02:51:52.997Z"
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "迁移歌词规范化复杂度测试作为 Catch2 样板",
+          "session_id": "opencode:ses_11d3455f5ffeN1D0JfnH1AUY2e",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T02:45:26.284Z",
+          "started_at": "2026-06-20T02:45:26.284Z",
+          "status": "running"
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "迁移 `TR-AUDIT-001..031` 到 Catch2 并保持旧 runner 对照",
+          "session_id": "opencode:ses_11d0d290effeOcV2srA3AgiSnM",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T03:03:39.274Z",
+          "started_at": "2026-06-20T03:03:39.274Z",
+          "status": "running"
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "迁移 `TR-AUDIT-032..056` 到 Catch2 并保持新增格式覆盖",
+          "session_id": "opencode:ses_11d02343affe5OaIcmWYQkRvnL",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T03:11:25.053Z",
+          "started_at": "2026-06-20T03:11:25.053Z",
+          "status": "running"
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "将 security smoke、样本生成和 fuzz preset 纳入 CTest 工作流",
+          "session_id": "opencode:ses_11cfb7295ffeRKrOrtyf4VIrPU",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T03:30:14.904Z",
+          "started_at": "2026-06-20T03:30:14.904Z",
+          "status": "running"
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "删除旧自建测试 runner 与根 CMake 测试堆叠",
+          "session_id": "opencode:ses_11ce9acf6ffeFI7txs2imz5pIg",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T03:41:25.551Z",
+          "started_at": "2026-06-20T03:41:25.551Z",
+          "status": "running"
+        },
+        "todo:9": {
+          "task_key": "todo:9",
+          "task_label": "9",
+          "task_title": "更新文档、AGENTS 指令与最终迁移验收",
+          "session_id": "opencode:ses_11ce00cf8ffezqKLWEZ5ywUGav",
+          "agent": "Sisyphus-Junior",
+          "category": "",
+          "started_at": "2026-06-20T03:50:38.070Z",
+          "status": "running",
+          "updated_at": "2026-06-20T03:53:49.646Z"
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope fidelity",
+          "session_id": "opencode:ses_11cd4bcf9ffeqeVxhAFWbuAllk",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-06-20T04:31:11.357Z",
+          "started_at": "2026-06-20T04:31:11.357Z",
+          "status": "running"
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code quality review",
+          "session_id": "opencode:ses_11cd4beafffeVco4oa2N590wBX",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-06-20T04:31:42.540Z",
+          "started_at": "2026-06-20T04:31:42.540Z",
+          "status": "running"
+        },
+        "final-wave:f3": {
+          "task_key": "final-wave:f3",
+          "task_label": "F3",
+          "task_title": "Real manual QA",
+          "session_id": "opencode:ses_11cd4bd4bffeNSgLKwuh4aIJtR",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-06-20T04:32:06.799Z",
+          "started_at": "2026-06-20T04:32:06.799Z",
+          "status": "running"
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_11cd4bfc3ffemTrs4BqoLqFNPE",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-06-20T04:40:09.137Z",
+          "started_at": "2026-06-20T04:40:09.137Z",
+          "status": "running"
         }
-      }
+      },
+      "ended_at": "2026-06-20T04:43:09.219Z",
+      "elapsed_ms": 10984629
     }
   },
   "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/catch2-ctest-presets.md",
   "started_at": "2026-06-20T01:40:04.590Z",
-  "status": "active",
-  "updated_at": "2026-06-20T01:46:06.031Z",
+  "status": "completed",
+  "updated_at": "2026-06-20T04:43:09.219Z",
   "session_ids": [
     "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
   ],
@@ -69,7 +214,152 @@
       "updated_at": "2026-06-20T01:46:06.032Z",
       "started_at": "2026-06-20T01:46:06.032Z",
       "status": "running"
+    },
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "建立 Presets、CTest 与 clangd 编译数据库基础",
+      "session_id": "opencode:ses_11d46a6efffewwUxJ9GFAvUGZ1",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T01:55:57.937Z",
+      "started_at": "2026-06-20T01:55:57.937Z",
+      "status": "running"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "集成 Catch2 v3 依赖与 CTest 发现骨架",
+      "session_id": "opencode:ses_11d3e76d8ffeYWqwbTpM7SlA77",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T02:06:39.191Z",
+      "started_at": "2026-06-20T02:06:39.191Z",
+      "status": "running"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "迁移 FLAC malformed 与默认封面目录专项测试",
+      "session_id": "opencode:ses_11d3454baffenYYREHTCIaHGvD",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "started_at": "2026-06-20T02:43:48.532Z",
+      "status": "running",
+      "updated_at": "2026-06-20T02:51:52.997Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "迁移歌词规范化复杂度测试作为 Catch2 样板",
+      "session_id": "opencode:ses_11d3455f5ffeN1D0JfnH1AUY2e",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T02:45:26.284Z",
+      "started_at": "2026-06-20T02:45:26.284Z",
+      "status": "running"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "迁移 `TR-AUDIT-001..031` 到 Catch2 并保持旧 runner 对照",
+      "session_id": "opencode:ses_11d0d290effeOcV2srA3AgiSnM",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T03:03:39.274Z",
+      "started_at": "2026-06-20T03:03:39.274Z",
+      "status": "running"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "迁移 `TR-AUDIT-032..056` 到 Catch2 并保持新增格式覆盖",
+      "session_id": "opencode:ses_11d02343affe5OaIcmWYQkRvnL",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T03:11:25.053Z",
+      "started_at": "2026-06-20T03:11:25.053Z",
+      "status": "running"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "将 security smoke、样本生成和 fuzz preset 纳入 CTest 工作流",
+      "session_id": "opencode:ses_11cfb7295ffeRKrOrtyf4VIrPU",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T03:30:14.904Z",
+      "started_at": "2026-06-20T03:30:14.904Z",
+      "status": "running"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "删除旧自建测试 runner 与根 CMake 测试堆叠",
+      "session_id": "opencode:ses_11ce9acf6ffeFI7txs2imz5pIg",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-20T03:41:25.551Z",
+      "started_at": "2026-06-20T03:41:25.551Z",
+      "status": "running"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "更新文档、AGENTS 指令与最终迁移验收",
+      "session_id": "opencode:ses_11ce00cf8ffezqKLWEZ5ywUGav",
+      "agent": "Sisyphus-Junior",
+      "category": "",
+      "started_at": "2026-06-20T03:50:38.070Z",
+      "status": "running",
+      "updated_at": "2026-06-20T03:53:49.646Z"
+    },
+    "final-wave:f4": {
+      "task_key": "final-wave:f4",
+      "task_label": "F4",
+      "task_title": "Scope fidelity",
+      "session_id": "opencode:ses_11cd4bcf9ffeqeVxhAFWbuAllk",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-06-20T04:31:11.357Z",
+      "started_at": "2026-06-20T04:31:11.357Z",
+      "status": "running"
+    },
+    "final-wave:f2": {
+      "task_key": "final-wave:f2",
+      "task_label": "F2",
+      "task_title": "Code quality review",
+      "session_id": "opencode:ses_11cd4beafffeVco4oa2N590wBX",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-06-20T04:31:42.540Z",
+      "started_at": "2026-06-20T04:31:42.540Z",
+      "status": "running"
+    },
+    "final-wave:f3": {
+      "task_key": "final-wave:f3",
+      "task_label": "F3",
+      "task_title": "Real manual QA",
+      "session_id": "opencode:ses_11cd4bd4bffeNSgLKwuh4aIJtR",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-06-20T04:32:06.799Z",
+      "started_at": "2026-06-20T04:32:06.799Z",
+      "status": "running"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan compliance audit",
+      "session_id": "opencode:ses_11cd4bfc3ffemTrs4BqoLqFNPE",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-06-20T04:40:09.137Z",
+      "started_at": "2026-06-20T04:40:09.137Z",
+      "status": "running"
     }
   },
-  "agent": "atlas"
+  "agent": "atlas",
+  "ended_at": "2026-06-20T04:43:09.219Z",
+  "elapsed_ms": 10984629
 }

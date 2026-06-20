@@ -1,17 +1,11 @@
+#include "flac_malformed_metadata_support.hpp"
+
 #include "TagReader.hpp"
+#include "catch2_regression_support.hpp"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 #include <libavutil/log.h>
-#ifdef __cplusplus
-}
-#endif
 
-#include <array>
 #include <cstdint>
-#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -20,100 +14,23 @@ extern "C"
 #include <string_view>
 #include <vector>
 
+namespace flac_malformed_test
+{
 namespace
 {
-bool CommandSucceeds(const std::string &command)
-{
-    return std::system(command.c_str()) == 0;
-}
-
-bool WriteBinaryFile(const std::filesystem::path &path, const std::vector<std::uint8_t> &bytes)
-{
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec)
-    {
-        std::cerr << "failed to create directory for " << path.string() << ": " << ec.message() << '\n';
-        return false;
-    }
-
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output)
-    {
-        std::cerr << "failed to open file for write: " << path.string() << '\n';
-        return false;
-    }
-    output.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!output.good())
-    {
-        std::cerr << "failed to write file: " << path.string() << '\n';
-        return false;
-    }
-    return true;
-}
-
-std::vector<std::uint8_t> ReadBinaryFile(const std::filesystem::path &path)
-{
-    std::ifstream input(path, std::ios::binary);
-    if (!input)
-    {
-        return {};
-    }
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-}
-
-void AppendBytes(std::vector<std::uint8_t> &bytes, std::string_view text)
-{
-    bytes.insert(bytes.end(), text.begin(), text.end());
-}
-
-void AppendU24BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
-{
-    bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
-}
-
-void AppendU32BE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
-{
-    bytes.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
-}
-
-void AppendU32LE(std::vector<std::uint8_t> &bytes, std::uint32_t value)
-{
-    bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
-    bytes.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
-}
-
-std::uint32_t ReadU24BE(const std::vector<std::uint8_t> &bytes, std::size_t offset)
-{
-    return (static_cast<std::uint32_t>(bytes[offset]) << 16) |
-           (static_cast<std::uint32_t>(bytes[offset + 1]) << 8) |
-           static_cast<std::uint32_t>(bytes[offset + 2]);
-}
-
-std::vector<std::uint8_t> Bytes(std::string_view text)
-{
-    return std::vector<std::uint8_t>(text.begin(), text.end());
-}
+using tagreader_test_support::AppendBytes;
+using tagreader_test_support::AppendU24BE;
+using tagreader_test_support::AppendU32BE;
+using tagreader_test_support::AppendU32LE;
+using tagreader_test_support::Bytes;
+using tagreader_test_support::HasFfmpeg;
+using tagreader_test_support::PrepareCleanDirectory;
+using tagreader_test_support::ReadBinaryFile;
+using tagreader_test_support::WriteBinaryFile;
 
 std::vector<std::uint8_t> OneByOnePng()
 {
-    return {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
-        0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99,
-        0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
-        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
+    return {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0, 0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
 }
 
 std::vector<std::uint8_t> VorbisCommentPayload(std::initializer_list<std::string_view> comments)
@@ -166,19 +83,14 @@ bool GenerateFlacSample(const std::filesystem::path &path)
         return false;
     }
 
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!HasFfmpeg())
     {
-        std::cerr << "ffmpeg CLI not found; FLAC malformed metadata test requires generated audio\n";
+        std::cerr << "ffmpeg CLI not found; FlacMalformed Catch2 tests require generated audio\n";
         return false;
     }
 
     const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a flac \"" + path.string() + "\"";
-    if (!CommandSucceeds(command))
-    {
-        std::cerr << "failed to generate base FLAC sample with ffmpeg\n";
-        return false;
-    }
-    return true;
+    return tagreader_test_support::CommandSucceeds(command);
 }
 
 bool AppendFlacMetadataBlock(std::vector<std::uint8_t> &output, std::uint8_t blockType, bool lastBlock, const std::vector<std::uint8_t> &payload)
@@ -214,7 +126,7 @@ bool ReplaceMetadataTail(const std::filesystem::path &basePath,
     {
         const bool lastBlock = (data[cursor] & 0x80) != 0;
         const std::uint8_t blockType = data[cursor] & 0x7F;
-        const std::uint32_t blockSize = ReadU24BE(data, cursor + 1);
+        const std::uint32_t blockSize = tagreader_test_support::ReadU24BE(data, cursor + 1);
         const std::size_t blockPayload = cursor + 4;
         const std::size_t blockEnd = blockPayload + blockSize;
         if (blockEnd > data.size())
@@ -266,33 +178,39 @@ bool Expect(bool condition, std::string_view message)
     }
     return true;
 }
+}
 
-bool LaterValidVorbisBlockSurvives(const std::filesystem::path &root)
+std::filesystem::path MakeCaseRoot(std::string_view caseName)
+{
+    return std::filesystem::temp_directory_path() / "tagreader_flac_malformed_metadata_catch2" / std::string(caseName);
+}
+
+bool PrepareCaseRoot(const std::filesystem::path &root)
+{
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    ec.clear();
+    std::filesystem::create_directories(root, ec);
+    return !ec;
+}
+
+bool RunLaterValidVorbisBlockSurvives(const std::filesystem::path &root)
 {
     const std::filesystem::path basePath = root / "base.flac";
     const std::filesystem::path samplePath = root / "malformed-then-valid.flac";
     const std::filesystem::path coverExportDir = root / "covers-valid-title";
 
-    if (!GenerateFlacSample(basePath) ||
-        !ReplaceMetadataTail(basePath,
-                             samplePath,
-                             {{4, MalformedVorbisCommentPayload()},
-                              {4, VorbisCommentPayload({"TITLE=later-valid-flac-title", "ARTIST=later-valid-flac-artist"})}}))
+    if (!GenerateFlacSample(basePath) || !ReplaceMetadataTail(basePath, samplePath, {{4, MalformedVorbisCommentPayload()}, {4, VorbisCommentPayload({"TITLE=later-valid-flac-title", "ARTIST=later-valid-flac-artist"})}}))
     {
         return false;
     }
 
     const MusicTag tag = TagReader::Read(samplePath, coverExportDir);
-    const bool titleOk = Expect(tag.title() == "later-valid-flac-title", "later valid FLAC Vorbis comment block should provide title");
-    const bool artistOk = Expect(tag.artist() == "later-valid-flac-artist", "later valid FLAC Vorbis comment block should provide artist");
-    if (titleOk && artistOk)
-    {
-        std::cout << "later-valid-vorbis title=" << tag.title() << " artist=" << tag.artist() << '\n';
-    }
-    return titleOk && artistOk;
+    return Expect(tag.title() == "later-valid-flac-title", "later valid FLAC Vorbis comment block should provide title") &&
+           Expect(tag.artist() == "later-valid-flac-artist", "later valid FLAC Vorbis comment block should provide artist");
 }
 
-bool FlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root)
+bool RunFlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root)
 {
     constexpr std::string_view kOneByOnePngSha256 = "4ff6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5";
     const std::filesystem::path basePath = root / "base-picture.flac";
@@ -300,20 +218,14 @@ bool FlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root)
     const std::filesystem::path coverExportDir = root / "covers-picture";
     const std::filesystem::path expectedCoverPath = coverExportDir / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
 
-    if (!GenerateFlacSample(basePath) ||
-        !ReplaceMetadataTail(basePath, samplePath, {{6, FlacPicturePayload(OneByOnePng())}}))
+    if (!GenerateFlacSample(basePath) || !ReplaceMetadataTail(basePath, samplePath, {{6, FlacPicturePayload(OneByOnePng())}}))
     {
         return false;
     }
 
     std::error_code ec;
     std::filesystem::create_directories(expectedCoverPath.parent_path(), ec);
-    if (ec)
-    {
-        std::cerr << "failed to create polluted cover cache directory: " << ec.message() << '\n';
-        return false;
-    }
-    if (!WriteBinaryFile(expectedCoverPath, Bytes("polluted cover cache entry")))
+    if (ec || !WriteBinaryFile(expectedCoverPath, Bytes("polluted cover cache entry")))
     {
         return false;
     }
@@ -328,38 +240,6 @@ bool FlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root)
         error = ex.what();
     }
 
-    const bool propagated = error.find("cover cache") != std::string::npos && error.find(expectedCoverPath.string()) != std::string::npos;
-    const bool propagatedOk = Expect(propagated, "FLAC PICTURE cover cache failure should propagate to caller");
-    if (propagatedOk)
-    {
-        std::cout << "picture-cover-cache-propagated error=" << error << '\n';
-    }
-    return propagatedOk;
+    return Expect(error.find("cover cache") != std::string::npos && error.find(expectedCoverPath.string()) != std::string::npos, "FLAC PICTURE cover cache failure should propagate to caller");
 }
-}
-
-int main()
-{
-    av_log_set_level(AV_LOG_QUIET);
-
-    const std::filesystem::path root = std::filesystem::temp_directory_path() / "tagreader_flac_malformed_metadata_tests";
-    std::error_code ec;
-    std::filesystem::remove_all(root, ec);
-    ec.clear();
-    std::filesystem::create_directories(root, ec);
-    if (ec)
-    {
-        std::cerr << "failed to create temp root: " << ec.message() << '\n';
-        return 1;
-    }
-
-    const bool laterValidOk = LaterValidVorbisBlockSurvives(root / "later-valid");
-    const bool pictureErrorOk = FlacPictureCoverCacheFailurePropagates(root / "picture-error");
-    if (!laterValidOk || !pictureErrorOk)
-    {
-        return 1;
-    }
-
-    std::cout << "TagReaderFlacMalformedMetadataTests PASS\n";
-    return 0;
 }

@@ -1,0 +1,5 @@
+- Security sample generation now lives in CTest as `TagReaderSecurityGenerateSamples`, and `TagReaderSecuritySmoke` reads the generated manifest instead of hard-coded argv sample lists.
+- `TagReaderSecuritySmoke` resets a per-sample cover export subdirectory before reading, so polluted cache files from one run do not leak into later samples or later `ctest` invocations.
+- Fuzz gating stays explicit: default `ctest` does not register an unbounded fuzz loop, and `TagReaderFuzzBoundedSmoke` is only added when `TagReaderFuzz` is built in the fuzz preset.
+- 默认文档应写成 “preset + ctest” 流程，而不是手动拼 `build/` 路径，否则后续默认二进制目录变化时还要再修一次说明。
+- 负向文案核对时不要把反引号直接塞进未转义的 shell 字符串；应先落到变量再喂给 `rg`，否则会把命令替换误判成文档问题。

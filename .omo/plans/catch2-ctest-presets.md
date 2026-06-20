@@ -80,7 +80,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `git status --short | tee .omo/evidence/task-0-catch2-ctest-presets.txt` 并确认 worker 记录旧改动处理决策。Failure: Bash `git diff --name-status -- .omo | tee .omo/evidence/task-0-catch2-ctest-presets-error.txt`；若仍有 `.omo` 旧删除，则不得继续 Todo 1，除非已有用户确认的独立 cleanup commit/排除策略记录在 evidence 中。
   Commit: Optional | chore(meta): isolate existing omo cleanup state
 
-- [ ] 1. 建立 Presets、CTest 与 clangd 编译数据库基础
+- [x] 1. 建立 Presets、CTest 与 clangd 编译数据库基础
   What to do / Must NOT do: 新增 `CMakePresets.json`，把 `default`、`sanitize`、`fuzz` 的 `binaryDir` 固定到 `${sourceDir}/build/default`、`${sourceDir}/build/sanitize`、`${sourceDir}/build/fuzz`；default/sanitize 均设置 `CMAKE_EXPORT_COMPILE_COMMANDS=ON`；新增 `.clangd`，让 clangd 使用 `build/default` 的 compilation database；根 `CMakeLists.txt` 加入 `include(CTest)` 和 `BUILD_TESTING` 入口，但暂时不删除任何旧测试目标。不得把 build 目录放回根级 `build-sanitize` 或 `build-fuzz`。
   Parallelization: Wave 1 | Blocked by: 0 | Blocks: 2,3,4,5,6,7,8,9
   References (executor has NO interview context - be exhaustive): `CMakeLists.txt:1`, `CMakeLists.txt:10`, `CMakeLists.txt:103`, `AGENTS.md:35`, `AGENTS.md:37`
@@ -88,7 +88,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `cmake --preset default && cmake --build --preset default && test -f build/default/compile_commands.json`，Evidence `.omo/evidence/task-1-catch2-ctest-presets.txt`。Failure: Bash `! test -d build-sanitize && ! test -d build-fuzz && rg -n "CompilationDatabase: build/default|CMAKE_EXPORT_COMPILE_COMMANDS" .clangd CMakePresets.json`，Evidence `.omo/evidence/task-1-catch2-ctest-presets-error.txt`。
   Commit: Y | build(test): add CMake presets and compile database config
 
-- [ ] 2. 集成 Catch2 v3 依赖与 CTest 发现骨架
+- [x] 2. 集成 Catch2 v3 依赖与 CTest 发现骨架
   What to do / Must NOT do: 添加 Catch2 v3 获取逻辑：优先 `find_package(Catch2 3 CONFIG QUIET)`，找不到时 `FetchContent` 拉取固定 v3 release；新增 `test/CMakeLists.txt`，通过 `add_subdirectory(test)` 或等价方式从根 CMake 接入；创建最小 Catch2 smoke 测试目标并使用 `include(Catch)` / `catch_discover_tests()` 注册到 CTest。不得删除旧 `TagReaderRegressionTests` 等目标。
   Parallelization: Wave 1 | Blocked by: 1 | Blocks: 3,4,5,6,7,8,9
   References (executor has NO interview context - be exhaustive): `CMakeLists.txt:41`, `CMakeLists.txt:103`, `test/regression/lyrics_normalize_complexity_tests.cpp:19`, `test/regression/regression_tests.cpp:134`
@@ -96,7 +96,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `ctest --test-dir build/default -N | tee .omo/evidence/task-2-catch2-ctest-presets.txt`。Failure: Bash `./build/default/TagReaderRegressionTests --list >/tmp/opencode/old-regression-list.txt && rg -n "Catch2|catch_discover_tests|FetchContent|find_package\(Catch2" CMakeLists.txt test/CMakeLists.txt`，Evidence `.omo/evidence/task-2-catch2-ctest-presets-error.txt`。
   Commit: Y | test: integrate Catch2 and CTest discovery
 
-- [ ] 3. 迁移歌词规范化复杂度测试作为 Catch2 样板
+- [x] 3. 迁移歌词规范化复杂度测试作为 Catch2 样板
   What to do / Must NOT do: 将 `test/regression/lyrics_normalize_complexity_tests.cpp` 的三个语义检查迁移为 Catch2 `TEST_CASE`，保留旧 executable 作为对照；使用 Catch2 assertions 替代本文件自定义 `Expect()`；CTest 必须可按测试名或 label 运行该专项测试。不得改变 `src/text/TextNormalize.cpp` 行为。
   Parallelization: Wave 2 | Blocked by: 2 | Blocks: 5,6,7,8,9
   References (executor has NO interview context - be exhaustive): `test/regression/lyrics_normalize_complexity_tests.cpp:17`, `test/regression/lyrics_normalize_complexity_tests.cpp:66`, `test/regression/lyrics_normalize_complexity_tests.cpp:99`, `test/regression/lyrics_normalize_complexity_tests.cpp:121`, `CMakeLists.txt:168`
@@ -104,7 +104,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `./build/default/TagReaderLyricsNormalizeComplexityTests && ctest --test-dir build/default -R LyricsNormalize --output-on-failure`，Evidence `.omo/evidence/task-3-catch2-ctest-presets.txt`。Failure: Bash `ctest --test-dir build/default -R LyricsNormalize --output-on-failure --repeat until-fail:2`，Evidence `.omo/evidence/task-3-catch2-ctest-presets-error.txt`。
   Commit: Y | test: migrate lyrics normalization regression to Catch2
 
-- [ ] 4. 迁移 FLAC malformed 与默认封面目录专项测试
+- [x] 4. 迁移 FLAC malformed 与默认封面目录专项测试
   What to do / Must NOT do: 将 `flac_malformed_metadata_tests.cpp` 和 `default_cover_export_directory_tests.cpp` 的场景迁移为 Catch2 tests；保留旧 executables 做并行对照；将 ffmpeg 缺失时的行为转为明确 skip 或 failure 规则，不能把未运行误报为通过；需要使用独立临时目录或 CTest properties 避免 cover cache 并发污染。不得提交生成音频样本。
   Parallelization: Wave 2 | Blocked by: 2 | Blocks: 5,6,7,8,9
   References (executor has NO interview context - be exhaustive): `test/regression/flac_malformed_metadata_tests.cpp:25`, `test/regression/flac_malformed_metadata_tests.cpp:159`, `test/regression/flac_malformed_metadata_tests.cpp:260`, `test/regression/default_cover_export_directory_tests.cpp:33`, `test/regression/default_cover_export_directory_tests.cpp:138`, `test/regression/default_cover_export_directory_tests.cpp:425`, `CMakeLists.txt:146`, `CMakeLists.txt:157`
@@ -112,7 +112,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `./build/default/TagReaderFlacMalformedMetadataTests && ./build/default/TagReaderDefaultCoverExportDirectoryTests && ctest --test-dir build/default -R "FlacMalformed|DefaultCover" --output-on-failure`，Evidence `.omo/evidence/task-4-catch2-ctest-presets.txt`。Failure: Bash `git status --short | tee .omo/evidence/task-4-catch2-ctest-presets-error.txt && ! git status --short | rg "test/.+\.(flac|mp3|png|wav)$"`。
   Commit: Y | test: migrate specialty regression tests to Catch2
 
-- [ ] 5. 迁移 `TR-AUDIT-001..031` 到 Catch2 并保持旧 runner 对照
+- [x] 5. 迁移 `TR-AUDIT-001..031` 到 Catch2 并保持旧 runner 对照
   What to do / Must NOT do: 把 `RunTrAudit001()` 到 `RunTrAudit031()` 迁移到 Catch2 测试文件或分组文件；每个测试名必须包含原始 `TR-AUDIT-xxx`；可复用旧 helper，但不得通过调用旧 runner binary 来伪造覆盖；旧 `TagReaderRegressionTests` 保留并作为对照。不得删除 `--list` runner 或 `RunCase()`。
   Parallelization: Wave 3 | Blocked by: 3,4 | Blocks: 8,9
   References (executor has NO interview context - be exhaustive): `test/regression/regression_tests.cpp:55`, `test/regression/regression_tests.cpp:119`, `test/regression/regression_tests.cpp:2497`, `test/regression/regression_tests.cpp:5298`, `test/regression/regression_tests.cpp:8321`
@@ -120,7 +120,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash loop `for n in $(seq -f "%03g" 1 31); do ./build/default/TagReaderRegressionTests TR-AUDIT-$n && ctest --test-dir build/default -R TR-AUDIT-$n --output-on-failure || exit 1; done`，Evidence `.omo/evidence/task-5-catch2-ctest-presets.txt`。Failure: Bash `ctest --test-dir build/default -N | tee /tmp/opencode/ctest-list.txt && for n in $(seq -f "%03g" 1 31); do rg "TR-AUDIT-$n" /tmp/opencode/ctest-list.txt >/dev/null || exit 1; done`，Evidence `.omo/evidence/task-5-catch2-ctest-presets-error.txt`。
   Commit: Y | test: migrate legacy audit regressions to Catch2
 
-- [ ] 6. 迁移 `TR-AUDIT-032..056` 到 Catch2 并保持新增格式覆盖
+- [x] 6. 迁移 `TR-AUDIT-032..056` 到 Catch2 并保持新增格式覆盖
   What to do / Must NOT do: 把 `RunTrAudit032()` 到 `RunTrAudit056()` 迁移到 Catch2，保持 Ogg/Opus/RIFF/AIFF/DSD/ASF/Matroska/CUE guard 等新增格式测试语义；每个 CTest case 名必须含原 id；旧 runner 仍保留作为对照。不得降低任何资源上限、malformed、cover cache、API absence guard 的断言强度。
   Parallelization: Wave 3 | Blocked by: 3,4 | Blocks: 8,9
   References (executor has NO interview context - be exhaustive): `test/regression/regression_tests.cpp:5474`, `test/regression/regression_tests.cpp:5806`, `test/regression/regression_tests.cpp:6094`, `test/regression/regression_tests.cpp:6249`, `test/regression/regression_tests.cpp:6356`, `test/regression/regression_tests.cpp:7061`, `test/regression/regression_tests.cpp:7314`, `test/regression/regression_tests.cpp:7560`, `test/regression/regression_tests.cpp:7638`
@@ -128,7 +128,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash loop `for n in $(seq -f "%03g" 32 56); do ./build/default/TagReaderRegressionTests TR-AUDIT-$n && ctest --test-dir build/default -R TR-AUDIT-$n --output-on-failure || exit 1; done`，Evidence `.omo/evidence/task-6-catch2-ctest-presets.txt`。Failure: Bash `ctest --test-dir build/default -R TR-AUDIT-056 --output-on-failure && ! rg -n "ReadCue|ReadAlbum|std::vector<MusicTag>" include src`，Evidence `.omo/evidence/task-6-catch2-ctest-presets-error.txt`。
   Commit: Y | test: migrate extended audit regressions to Catch2
 
-- [ ] 7. 将 security smoke、样本生成和 fuzz preset 纳入 CTest 工作流
+- [x] 7. 将 security smoke、样本生成和 fuzz preset 纳入 CTest 工作流
   What to do / Must NOT do: 将 `test/security/generate_samples.py` 注册为 CTest setup 或显式 test；让 security smoke 通过 CTest 使用 generated sample directory 和 cover export directory；必要时保留 `TagReaderSecuritySmoke` CLI 但由 CTest 包装运行；将 fuzz corpus generation 和短 runs fuzz smoke 只挂到 `fuzz` preset 或 label，不进入 default `ctest`。使用 `RESOURCE_LOCK` 或独立目录避免 cover cache 并发污染。不得让缺失 ffmpeg/libFuzzer 的环境误报 full fuzz pass。
   Parallelization: Wave 4 | Blocked by: 3,4 | Blocks: 8,9
   References (executor has NO interview context - be exhaustive): `test/security/security_smoke.cpp:23`, `test/security/security_smoke.cpp:42`, `test/security/security_smoke.cpp:77`, `test/security/security_smoke.cpp:148`, `test/security/generate_samples.py:646`, `test/corpus/generate_corpus.py`, `test/fuzz/tagreader_fuzz.cpp`, `CMakeLists.txt:184`
@@ -136,7 +136,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `ctest --test-dir build/default -L security --output-on-failure`，Evidence `.omo/evidence/task-7-catch2-ctest-presets.txt`。Failure: Bash `ctest --test-dir build/default -N | tee /tmp/opencode/default-ctest-list.txt && ! rg "TagReaderFuzz|-runs=" /tmp/opencode/default-ctest-list.txt`，Evidence `.omo/evidence/task-7-catch2-ctest-presets-error.txt`。
   Commit: Y | test: register security smoke and fuzz presets
 
-- [ ] 8. 删除旧自建测试 runner 与根 CMake 测试堆叠
+- [x] 8. 删除旧自建测试 runner 与根 CMake 测试堆叠
   What to do / Must NOT do: 在新 Catch2/CTest 全部通过后，删除旧的 `TagReaderRegressionTests` 自建 runner 入口和已经迁移的旧 specialty executable targets；整理 `test/regression/` 文件结构，避免同时维护重复测试；根 `CMakeLists.txt` 不再直接堆叠测试 executable，测试目标归入 `test/CMakeLists.txt`；保留 `TagReaderTest` manual CLI 和必要的 `TagReaderSecuritySmoke` CLI（若 CTest 仍包装使用）。不得删除新 Catch2 覆盖或 `TR-AUDIT-*` 可追踪名称。
   Parallelization: Wave 5 | Blocked by: 5,6,7 | Blocks: 9
   References (executor has NO interview context - be exhaustive): `CMakeLists.txt:103`, `CMakeLists.txt:119`, `CMakeLists.txt:130`, `CMakeLists.txt:146`, `CMakeLists.txt:157`, `CMakeLists.txt:168`, `test/main.cpp:50`, `test/regression/regression_tests.cpp:8321`
@@ -144,7 +144,7 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
   QA scenarios (name the exact tool + invocation): Happy: Bash `cmake --preset default && cmake --build --preset default && ctest --test-dir build/default --output-on-failure`，Evidence `.omo/evidence/task-8-catch2-ctest-presets.txt`。Failure: Bash `ctest --test-dir build/default -N | tee /tmp/opencode/final-ctest-list.txt && for n in $(seq -f "%03g" 1 56); do rg "TR-AUDIT-$n" /tmp/opencode/final-ctest-list.txt >/dev/null || exit 1; done`，Evidence `.omo/evidence/task-8-catch2-ctest-presets-error.txt`。
   Commit: Y | test: remove legacy custom test runners
 
-- [ ] 9. 更新文档、AGENTS 指令与最终迁移验收
+- [x] 9. 更新文档、AGENTS 指令与最终迁移验收
   What to do / Must NOT do: 更新 `AGENTS.md`、`docs/DESIGN.md`、`test/corpus/README.md`，把旧“没有单元测试框架/不要用 ctest”描述改为 Catch2/CTest/Presets 事实；记录新命令：`cmake --preset default`、`cmake --build --preset default`、`ctest --preset default`，以及 sanitize/fuzz preset；说明 clangd 使用 `build/default/compile_commands.json`；最终运行普通、sanitize、fuzz 可用性验证。不得声称存在 CI、lint 或 formatter，除非同时实现。
   Parallelization: Wave 5 | Blocked by: 8 | Blocks: Final verification
   References (executor has NO interview context - be exhaustive): `AGENTS.md:35`, `AGENTS.md:37`, `AGENTS.md:38`, `AGENTS.md:39`, `docs/DESIGN.md:152`, `docs/DESIGN.md:158`, `test/corpus/README.md`
@@ -154,10 +154,10 @@ Your next move: 可以直接 `$start-work` 执行该计划，或先要求我运�
 
 ## Final verification wave
 > Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
-- [ ] F1. Plan compliance audit
-- [ ] F2. Code quality review
-- [ ] F3. Real manual QA
-- [ ] F4. Scope fidelity
+- [x] F1. Plan compliance audit
+- [x] F2. Code quality review
+- [x] F3. Real manual QA
+- [x] F4. Scope fidelity
 
 F1 Plan compliance audit must verify every todo was completed in order, old runner deletion happened only after parity evidence, and all `TR-AUDIT-001..056` remain CTest-addressable. Evidence: `.omo/evidence/final-plan-compliance-catch2-ctest-presets.txt`.
 

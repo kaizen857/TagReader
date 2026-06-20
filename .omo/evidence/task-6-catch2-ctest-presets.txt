@@ -1,0 +1,6 @@
+1. Scope: migrated TR-AUDIT-032..056 to Catch2 with thin wrappers, keeping `regression_tests.cpp` and old runner intact.
+2. Pattern: reused `TAGREADER_REGRESSION_TESTS_NO_MAIN` + one `TEST_CASE` per case; original `TR-AUDIT-xxx` names preserved for CTest parity.
+3. Verification target: old runner and `ctest --test-dir build/default -R TR-AUDIT-xxx --output-on-failure` both pass for each `032..056`.
+4. Special guard: `TR-AUDIT-056` remains the forbidden-API coverage case, expressed only through the existing regression logic.
+5. Evidence note: confirm all 25 cases (`032..056`) appear in `ctest -N` before Todo 8 removes the legacy runner.
+6. Verified: `ctest --test-dir build/default -N` listed `TR-AUDIT-032` through `TR-AUDIT-056`; the loop `for n in $(seq -f "%03g" 32 56); do ./build/default/TagReaderRegressionTests TR-AUDIT-$n && ctest --test-dir build/default -R TR-AUDIT-$n --output-on-failure || exit 1; done` passed; `ctest --test-dir build/default -R TR-AUDIT-056 --output-on-failure` passed.

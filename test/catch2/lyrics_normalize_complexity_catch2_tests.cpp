@@ -1,12 +1,13 @@
-#include "text/TextNormalize.hpp"
+#include "src/text/TextNormalize.hpp"
 
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <iostream>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace
@@ -15,16 +16,6 @@ using tagreader_core::RawLyrics;
 using tagreader_text::NormalizeLyrics;
 
 constexpr std::size_t kExpectedLyricLineCap = 20000;
-
-bool Expect(bool condition, std::string_view message)
-{
-    if (!condition)
-    {
-        std::cerr << "expectation failed: " << message << '\n';
-        return false;
-    }
-    return true;
-}
 
 std::string PaddedIndex(std::size_t value)
 {
@@ -55,15 +46,12 @@ std::chrono::nanoseconds TimeNormalizeSameTimestampUniqueLyrics(std::size_t line
     const auto start = std::chrono::steady_clock::now();
     NormalizeLyrics(lyrics);
     const auto elapsed = std::chrono::steady_clock::now() - start;
-    if (lyrics.timedLines.size() != lineCount)
-    {
-        std::cerr << "unexpected deduplication for unique same-timestamp lines: expected " << lineCount
-                  << " got " << lyrics.timedLines.size() << '\n';
-    }
+    REQUIRE(lyrics.timedLines.size() == lineCount);
     return std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed);
 }
+}
 
-bool SemanticsArePreserved()
+TEST_CASE("LyricsNormalize preserves semantics", "[LyricsNormalize][lyrics-normalize]")
 {
     RawLyrics lyrics{};
     lyrics.text = "  plain lyric text  ";
@@ -79,24 +67,19 @@ bool SemanticsArePreserved()
 
     NormalizeLyrics(lyrics);
 
-    bool ok = true;
-    ok &= Expect(lyrics.text == "plain lyric text", "plain lyrics should be trimmed and preserved");
-    ok &= Expect(lyrics.timedLines.size() == 4, "empty, invalid, and duplicate timed lines should be removed");
-    if (lyrics.timedLines.size() == 4)
-    {
-        ok &= Expect(lyrics.timedLines[0].first == std::chrono::milliseconds(200) && lyrics.timedLines[0].second == "alpha",
-                     "first normalized timed line should be 200ms alpha");
-        ok &= Expect(lyrics.timedLines[1].first == std::chrono::milliseconds(200) && lyrics.timedLines[1].second == "beta",
-                     "same timestamp with different text should remain");
-        ok &= Expect(lyrics.timedLines[2].first == std::chrono::milliseconds(300) && lyrics.timedLines[2].second == "alpha",
-                     "same text at a different timestamp should remain");
-        ok &= Expect(lyrics.timedLines[3].first == std::chrono::milliseconds(500) && lyrics.timedLines[3].second == "same text",
-                     "later trimmed timed line should remain sorted by timestamp");
-    }
-    return ok;
+    REQUIRE(lyrics.text == "plain lyric text");
+    REQUIRE(lyrics.timedLines.size() == 4);
+    REQUIRE(lyrics.timedLines[0].first == std::chrono::milliseconds(200));
+    REQUIRE(lyrics.timedLines[0].second == "alpha");
+    REQUIRE(lyrics.timedLines[1].first == std::chrono::milliseconds(200));
+    REQUIRE(lyrics.timedLines[1].second == "beta");
+    REQUIRE(lyrics.timedLines[2].first == std::chrono::milliseconds(300));
+    REQUIRE(lyrics.timedLines[2].second == "alpha");
+    REQUIRE(lyrics.timedLines[3].first == std::chrono::milliseconds(500));
+    REQUIRE(lyrics.timedLines[3].second == "same text");
 }
 
-bool LyricLineCapStillApplies()
+TEST_CASE("LyricsNormalize keeps the lyric line cap", "[LyricsNormalize][lyrics-normalize]")
 {
     RawLyrics lyrics{};
     lyrics.timedLines.reserve(kExpectedLyricLineCap + 5);
@@ -108,17 +91,12 @@ bool LyricLineCapStillApplies()
 
     NormalizeLyrics(lyrics);
 
-    bool ok = true;
-    ok &= Expect(lyrics.timedLines.size() == kExpectedLyricLineCap, "timed lyric normalization should keep the 20000 line cap");
-    if (lyrics.timedLines.size() == kExpectedLyricLineCap)
-    {
-        ok &= Expect(lyrics.timedLines.front().second == "cap line 0000000000", "cap should preserve the first retained line");
-        ok &= Expect(lyrics.timedLines.back().second == "cap line 0000019999", "cap should discard lines after the first 20000 entries");
-    }
-    return ok;
+    REQUIRE(lyrics.timedLines.size() == kExpectedLyricLineCap);
+    REQUIRE(lyrics.timedLines.front().second == "cap line 0000000000");
+    REQUIRE(lyrics.timedLines.back().second == "cap line 0000019999");
 }
 
-bool SameTimestampDedupScalesConservatively()
+TEST_CASE("LyricsNormalize scales conservatively for same timestamps", "[LyricsNormalize][lyrics-normalize]")
 {
     constexpr std::size_t kSmallLineCount = 2048;
     constexpr std::size_t kLargeLineCount = 8192;
@@ -138,23 +116,6 @@ bool SameTimestampDedupScalesConservatively()
             << kLargeLineCount << " lines took " << large.count() << "ns, ratio=" << ratio
             << ", expected ratio below " << kMaxExpectedRatio;
 
-    std::cout << "same-timestamp scaling small_ns=" << small.count()
-              << " large_ns=" << large.count()
-              << " ratio=" << ratio << '\n';
-    return Expect(std::isfinite(ratio) && ratio < kMaxExpectedRatio, message.str());
-}
-}
-
-int main()
-{
-    const bool semanticsOk = SemanticsArePreserved();
-    const bool capOk = LyricLineCapStillApplies();
-    const bool complexityOk = SameTimestampDedupScalesConservatively();
-    if (!semanticsOk || !capOk || !complexityOk)
-    {
-        return 1;
-    }
-
-    std::cout << "TagReaderLyricsNormalizeComplexityTests PASS\n";
-    return 0;
+    REQUIRE(std::isfinite(ratio));
+    REQUIRE(ratio < kMaxExpectedRatio);
 }

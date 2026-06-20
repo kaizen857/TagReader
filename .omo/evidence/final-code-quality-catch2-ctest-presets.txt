@@ -1,0 +1,6 @@
+F2 APPROVE
+- `CMakeLists.txt` keeps the root layer focused: core library, manual `TagReaderTest`, optional fuzz target, then `add_subdirectory(test)`; no test logic leaks into parser/library targets.
+- `test/CMakeLists.txt` is thin and maintainable: Catch2 smoke/regression targets are isolated, `catch_discover_tests()` is used only for Catch2 binaries, and CTest fixtures/locks handle security/fuzz runs without custom runner internals.
+- Generated sample/corpus paths stay repo-external: `test/security/generate_samples.py` defaults to `/tmp/opencode/tagreader_security_samples`, `test/corpus/generate_corpus.py` defaults to `/tmp/opencode/tagreader_fuzz_corpus`, and the CMake tests consume binary-dir staging paths instead of in-repo generated seeds.
+- The regression/support files only build samples and helper primitives; they do not alter `TagReader::Read()` or parser behavior for test convenience, and the evidence path checks still validate cover export hardening rather than bypass it.
+- `test/security/security_smoke.cpp` and the regression helpers exercise public API paths from the outside; no suspicious coupling to old runner internals showed up in the reviewed files.

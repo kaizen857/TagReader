@@ -1,0 +1,5 @@
+F4 APPROVE
+- `include/TagReader.hpp` 里 `TagReader` 的 public API 只有 `Read(path)` 和 `Read(path, coverExportDir)` 两个重载，没有额外 drift。
+- `.clangd` 明确指向 `build/default`，与 `CMakePresets.json` 的 `default` preset / `CMAKE_EXPORT_COMPILE_COMMANDS=ON` 一致。
+- `AGENTS.md`、`docs/DESIGN.md`、`test/corpus/README.md` 只推荐 `cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`，未残留根级 `build-sanitize` / `build-fuzz` 作为推荐入口。
+- `git status --short` 未显示生成样本或 build 输出被跟踪；当前可见的是已有的 `.omo` 漂移和本次测试迁移相关变更，不是新增生成物。

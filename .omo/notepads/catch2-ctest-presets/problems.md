@@ -1,0 +1,6 @@
+- 目前 `test/CMakeLists.txt` 已经有多个 Catch2 目标，后续波次继续增加时要保持“每个专项一个薄包装文件 + 一个共享 support 层”的模式，避免列表失控。
+- `TR-AUDIT-028` 说明仍有少量 case 需要按当前实现重新校准默认路径，不应假设历史硬编码路径长期有效。
+- 本次 `032..056` 没有新增 support 层，因为它们直接复用 `regression_tests.cpp` 里的生成/断言辅助；只有 wrapper 和 CMake 注册需要变更。
+- security smoke 的共享 cover 根目录会把污染测试和后续样本耦合在一起；必须按样本拆分子目录并在读取前重置。
+- 目前最大的剩余风险是 `TR-AUDIT-*` 仍依赖 `regression_tests.cpp` 的单文件实现；若后续再删旧入口，先确认 Catch2 包装没有引入重复链接或编号漂移。
+- 文档风险已经从“缺少测试说明”转成“说明滞后”，最容易漏掉的是 preset 路径和 clangd 的编译数据库位置。
