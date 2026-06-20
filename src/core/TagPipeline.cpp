@@ -82,7 +82,7 @@ private:
     throw std::runtime_error("cover export default directory is not private: " + coverExportDir.string() + ": " + reason);
 }
 
-std::filesystem::path DefaultCoverExportDir()
+std::filesystem::path DefaultCoverExportDirImpl()
 {
     const char *runtimeDir = std::getenv("XDG_RUNTIME_DIR");
     if (runtimeDir != nullptr && runtimeDir[0] != '\0')
@@ -151,7 +151,7 @@ void ValidatePath(const std::filesystem::path &filePath)
     }
 }
 
-void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
+void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
 {
     std::error_code ec;
     const std::filesystem::file_status rootStatus = std::filesystem::symlink_status(coverExportDir, ec);
@@ -322,10 +322,10 @@ void HardenDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
 #endif
 }
 
-void ValidateDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
+void ValidateDefaultCoverExportDirImpl(const std::filesystem::path &coverExportDir)
 {
     HardenDefaultCoverExportDir(coverExportDir);
-    ValidateCoverExportDir(coverExportDir);
+    ValidateCoverExportDirImpl(coverExportDir);
 }
 
 RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
@@ -587,6 +587,22 @@ MusicTag BuildMusicTag(const ReadContext &context, const RawMediaInfo &mediaInfo
 
     return tag;
 }
+
+} // namespace
+
+std::filesystem::path DefaultCoverExportDir()
+{
+    return DefaultCoverExportDirImpl();
+}
+
+void ValidateCoverExportDir(const std::filesystem::path &coverExportDir)
+{
+    ValidateCoverExportDirImpl(coverExportDir);
+}
+
+void ValidateDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
+{
+    ValidateDefaultCoverExportDirImpl(coverExportDir);
 }
 
 MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir)

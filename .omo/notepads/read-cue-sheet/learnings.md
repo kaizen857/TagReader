@@ -20,3 +20,6 @@ Focused CUE encoding tests now cover plain UTF-8, UTF-8 BOM, UTF-16LE/BE BOM, La
 - TODO 7 的时间层要按 75fps 从 `INDEX 01` 推导 offset/duration；同文件内 duration 只依赖下一轨的 offset，最后一轨才回退到音频总时长，且 backward/invalid frame/overflow 直接让 `ReadCueSheet()` 失败。
 - 时间测试单独放到 `cue_timing_catch2_tests.cpp`，覆盖 frame→microseconds、multi-track duration、multi-file 独立、以及非法/backward/overflow 时间拒绝。
 - `CueReader.cpp` 的时间逻辑已拆到 `CueTiming.*`，保持 reader 负责编排、helper 负责时序计算；这样便于后续 task 8 在同一输出上叠加封面 fallback。
+- TODO 8 已完成：`CueReader.cpp` 现在只在 audio `ReadTag()` 没有 `coverPath` 时才扫描同目录 sidecar 图片，优先级按 `cover/front/folder/album/artwork`，并继续复用 `tagreader_cover::WriteCoverAsPng()` 的 content-addressed 导出语义。
+- focused CTest `cue read falls back to same-directory cover priority when audio lacks embedded cover` 和 `cue read keeps embedded cover over same-directory fallback` 都通过；默认全量 `cmake --preset default && cmake --build --preset default && ctest --preset default --output-on-failure` 也已通过。
+- 手工 CLI QA：`/tmp/opencode/cue_cover_cli /tmp/tagreader_catch2_artifacts/cue_cover_fallback/album.cue /tmp/tagreader_catch2_artifacts/cue_cover_fallback/cli-export` 输出 `/tmp/tagreader_catch2_artifacts/cue_cover_fallback/cli-export/c8/7eb9e0718a4d20a2a07b5f49fd97f323ca356879233e998892ab72a8c67266.png`，确认外部封面落入调用方导出目录。

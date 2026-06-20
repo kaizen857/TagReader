@@ -1,6 +1,7 @@
 #include "catch2_regression_support.hpp"
 #include "catch2_sample_support.hpp"
 #include "TagReader.hpp"
+#include "../../src/cover/CoverCache.hpp"
 #include "../../src/formats/cue/CueParser.hpp"
 #include "../../src/formats/cue/CueTextLoader.hpp"
 
@@ -27,6 +28,16 @@ bool EnsureCleanRoot(const std::filesystem::path &root)
 bool WriteBytes(const std::filesystem::path &path, const std::vector<std::uint8_t> &bytes)
 {
     return tagreader_test_support::WriteBinaryFile(path, bytes);
+}
+
+bool WriteCoverImage(const std::filesystem::path &path, bool jpeg)
+{
+    return WriteBytes(path, jpeg ? tagreader_test_support::OneByOneJpeg() : tagreader_test_support::OneByOnePng());
+}
+
+bool ExpectPathEqual(const std::filesystem::path &left, const std::filesystem::path &right)
+{
+    return std::filesystem::weakly_canonical(left) == std::filesystem::weakly_canonical(right);
 }
 
 std::vector<std::uint8_t> Utf8Bytes(std::string_view text)
@@ -251,4 +262,47 @@ TEST_CASE("cue parser rejects invalid index values", "[cue][parser][invalid]")
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:00:75\n").has_value());
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:60:00\n").has_value());
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 999999999999:00:00\n").has_value());
+}
+
+TEST_CASE("cue read falls back to same-directory cover priority when audio lacks embedded cover", "[cue][cover]")
+{
+    const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("cue_cover_fallback");
+    REQUIRE(EnsureCleanRoot(root));
+
+    const std::filesystem::path audioPath = root / "audio.mp3";
+    const std::filesystem::path cuePath = root / "album.cue";
+    REQUIRE(tagreader_test_support::GenerateBaseMp3(audioPath));
+    REQUIRE(WriteCoverImage(root / "folder.png", false));
+    REQUIRE(WriteCoverImage(root / "cover.jpg", true));
+    REQUIRE(WriteBytes(cuePath, Utf8Bytes("TITLE \"Album\"\nPERFORMER \"Artist\"\nFILE \"audio.mp3\" MP3\n  TRACK 01 AUDIO\n    TITLE \"Song\"\n    INDEX 01 00:00:00\n")));
+
+    const std::vector<MusicTag> tags = TagReader::ReadCueSheet(cuePath, root / "export");
+    REQUIRE(tags.size() == 1);
+    REQUIRE(!tags.front().coverPath().empty());
+    INFO(tags.front().coverPath().string());
+    const std::vector<std::uint8_t> expectedCoverBytes = tagreader_test_support::OneByOneJpeg();
+    const std::vector<std::uint8_t> expectedFolderBytes = tagreader_test_support::OneByOnePng();
+    const std::filesystem::path expectedCoverPath = tagreader_cover::WriteCoverAsPng(root / "export", expectedCoverBytes.data(), expectedCoverBytes.size());
+    const std::filesystem::path expectedFolderPath = tagreader_cover::WriteCoverAsPng(root / "export", expectedFolderBytes.data(), expectedFolderBytes.size());
+    INFO(expectedCoverPath.string());
+    INFO(expectedFolderPath.string());
+    REQUIRE(ExpectPathEqual(tags.front().coverPath(), expectedCoverPath));
+}
+
+TEST_CASE("cue read keeps embedded cover over same-directory fallback", "[cue][cover]")
+{
+    const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("cue_cover_embedded_wins");
+    REQUIRE(EnsureCleanRoot(root));
+
+    const std::filesystem::path audioPath = root / "audio-with-cover.mp3";
+    const std::filesystem::path cuePath = root / "album.cue";
+    REQUIRE(tagreader_test_support::GenerateCoverSample(audioPath));
+    REQUIRE(WriteCoverImage(root / "cover.jpg", false));
+    REQUIRE(WriteBytes(cuePath, Utf8Bytes("TITLE \"Album\"\nPERFORMER \"Artist\"\nFILE \"audio-with-cover.mp3\" MP3\n  TRACK 01 AUDIO\n    TITLE \"Song\"\n    INDEX 01 00:00:00\n")));
+
+    const std::vector<MusicTag> tags = TagReader::ReadCueSheet(cuePath, root / "export");
+    REQUIRE(tags.size() == 1);
+    REQUIRE(!tags.front().coverPath().empty());
+    REQUIRE(std::filesystem::exists(tags.front().coverPath()));
+    REQUIRE(tags.front().coverPath().filename() != "cover.png");
 }
