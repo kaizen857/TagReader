@@ -96,6 +96,7 @@ add_library(TagReaderCore STATIC
     src/formats/mp4/Mp4Parser.cpp
     src/formats/ape/ApeParser.cpp
     src/formats/cue/CueReader.cpp
+    src/formats/cue/CueParser.cpp
     src/formats/cue/CueTextLoader.cpp
 )
 

@@ -1,11 +1,13 @@
 #include "catch2_regression_support.hpp"
 #include "catch2_sample_support.hpp"
 #include "TagReader.hpp"
+#include "../../src/formats/cue/CueParser.hpp"
 #include "../../src/formats/cue/CueTextLoader.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,6 +60,28 @@ std::vector<std::uint8_t> Utf16BeBytes(std::u16string_view text)
         bytes.push_back(static_cast<std::uint8_t>(ch & 0xFF));
     }
     return bytes;
+}
+
+std::string LongText(std::size_t size, char ch)
+{
+    return std::string(size, ch);
+}
+
+std::string BasicCueSheet()
+{
+    return "REM GENRE Rock\n"
+           "REM DATE 2026\n"
+           "REM YEAR 2026\n"
+           "REM DISCNUMBER 2\n"
+           "TITLE \"Album\"\n"
+           "PERFORMER \"Artist\"\n"
+           "FILE \"disc one.flac\" FLAC\n"
+           "  TRACK 01 AUDIO\n"
+           "    TITLE \"Intro\"\n"
+           "    PERFORMER \"Band\"\n"
+           "    SONGWRITER \"Writer\"\n"
+           "    INDEX 01 00:00:00\n"
+           "    INDEX 02 00:01:12\n";
 }
 }
 
@@ -130,4 +154,101 @@ TEST_CASE("cue text loader accepts latin1 fallback text", "[cue][encoding]")
     REQUIRE(latin1Decoded.has_value());
     REQUIRE(*latin1Decoded == "TITLE \"café\"");
     REQUIRE(tagreader_test_support::WriteTextFile(root / "latin1-note.txt", *latin1Decoded));
+}
+
+TEST_CASE("cue parser handles single file and selected rem fields", "[cue][parser]")
+{
+    const auto parsed = tagreader_cue::ParseCueSheet(BasicCueSheet());
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->global.title == "Album");
+    REQUIRE(parsed->global.performer == "Artist");
+    REQUIRE(parsed->global.genre == "Rock");
+    REQUIRE(parsed->global.date == "2026");
+    REQUIRE(parsed->global.year == "2026");
+    REQUIRE(parsed->global.discNumber == "2");
+    REQUIRE(parsed->files.size() == 1);
+    REQUIRE(parsed->files.front().name == "disc one.flac");
+    REQUIRE(parsed->files.front().format == "FLAC");
+    REQUIRE(parsed->files.front().tracks.size() == 1);
+    REQUIRE(parsed->files.front().tracks.front().title == "Intro");
+    REQUIRE(parsed->files.front().tracks.front().performer == "Band");
+    REQUIRE(parsed->files.front().tracks.front().songwriter == "Writer");
+    REQUIRE(parsed->files.front().tracks.front().indexes.size() == 2);
+    REQUIRE(parsed->files.front().tracks.front().indexes.front().frame == 0);
+    REQUIRE(parsed->files.front().tracks.front().indexes.back().frame == 12);
+}
+
+TEST_CASE("cue parser handles lowercase mixedcase and unknown commands", "[cue][parser]")
+{
+    const std::string cue = "  reM genre Jazz\n"
+                            "title \"album\"\n"
+                            "unknown something\n"
+                            "FiLe \"set.wav\" wave\n"
+                            "  TrAcK 01 Audio\n"
+                            "    TiTlE \"song\"\n"
+                            "    PeRfOrMeR \"artist\"\n"
+                            "    Index 01 00:00:00\n";
+    const auto parsed = tagreader_cue::ParseCueSheet(cue);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->global.genre == "Jazz");
+    REQUIRE(parsed->files.size() == 1);
+    REQUIRE(parsed->files.front().tracks.size() == 1);
+    REQUIRE(parsed->files.front().tracks.front().title == "song");
+    REQUIRE(parsed->files.front().tracks.front().performer == "artist");
+}
+
+TEST_CASE("cue parser handles multi file and quoted fields", "[cue][parser]")
+{
+    const std::string cue = "TITLE \"multi album\"\n"
+                            "FILE \"disc a.flac\" FLAC\n"
+                            "  TRACK 01 AUDIO\n"
+                            "    TITLE \"A track\"\n"
+                            "    INDEX 01 00:00:00\n"
+                            "FILE \"disc b.flac\" FLAC\n"
+                            "  TRACK 02 AUDIO\n"
+                            "    TITLE \"B track\"\n"
+                            "    INDEX 01 00:10:00\n";
+    const auto parsed = tagreader_cue::ParseCueSheet(cue);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->files.size() == 2);
+    REQUIRE(parsed->files[0].name == "disc a.flac");
+    REQUIRE(parsed->files[1].name == "disc b.flac");
+    REQUIRE(parsed->files[1].tracks.front().number == 2);
+    REQUIRE(parsed->files[1].tracks.front().indexes.front().minute == 0);
+}
+
+TEST_CASE("cue parser rejects overflow and structural limits", "[cue][parser][limit]")
+{
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"a.flac\" FLAC\n" + LongText(tagreader_cue::kMaxCueLines, '\n')).has_value());
+
+    std::string tooManyFiles;
+    for (std::size_t index = 0; index < tagreader_cue::kMaxCueFileRefs + 1; ++index)
+    {
+        tooManyFiles += "FILE \"f" + std::to_string(index) + ".flac\" FLAC\n";
+    }
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet(tooManyFiles).has_value());
+
+    std::string tooManyTracks = "FILE \"f.flac\" FLAC\n";
+    for (std::size_t index = 1; index <= tagreader_cue::kMaxCueTracks + 1; ++index)
+    {
+        tooManyTracks += "TRACK " + (index < 10 ? std::string("0") : std::string()) + std::to_string(index) + " AUDIO\n";
+    }
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet(tooManyTracks).has_value());
+
+    std::string tooManyIndexes = "FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\n";
+    for (std::size_t index = 1; index <= tagreader_cue::kMaxCueIndexesPerTrack + 1; ++index)
+    {
+        tooManyIndexes += "INDEX " + (index < 10 ? std::string("0") : std::string()) + std::to_string(index) + " 00:00:00\n";
+    }
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet(tooManyIndexes).has_value());
+
+    const std::string longField = "TITLE \"" + LongText(tagreader_cue::kMaxCueFieldBytes + 1, 'x') + "\"\n";
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet(longField).has_value());
+}
+
+TEST_CASE("cue parser rejects invalid index values", "[cue][parser][invalid]")
+{
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:00:75\n").has_value());
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:60:00\n").has_value());
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 999999999999:00:00\n").has_value());
 }
