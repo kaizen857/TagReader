@@ -1,0 +1,19 @@
+Task 6 evidence
+
+Changed files:
+- src/formats/cue/CueReader.cpp
+- test/CMakeLists.txt
+- test/regression/cue_mapping_catch2_tests.cpp
+- .omo/notepads/read-cue-sheet/learnings.md
+
+Verification:
+- `cmake --build --preset default` ✅
+- `ctest --test-dir build/default -R 'cue mapping applies track and album fields|cue mapping preserves audio fields when cue has no override|cue read path stays unchanged for ordinary audio' --output-on-failure` ✅
+- Pure LOC: `CueReader.cpp` 166, `cue_mapping_catch2_tests.cpp` 80
+
+Behavior covered:
+- track title/artist/composer override
+- album/albumArtist/genre/year/discNumber mapping
+- audio-derived sampleRate/bitDepth/bitRate/channels/format preserved
+- lyrics/coverPath/playCount/rating preserved when unmodified
+- ordinary `Read()` remains unchanged

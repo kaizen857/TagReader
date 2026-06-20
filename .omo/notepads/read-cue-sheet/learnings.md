@@ -15,3 +15,5 @@ Focused CUE encoding tests now cover plain UTF-8, UTF-8 BOM, UTF-16LE/BE BOM, La
 - TODO 5 先落一个私有 `CuePathResolver`，把 `FILE` 解析限制在 `.cue` 同目录下的普通文件；当前策略显式拒绝 empty/absolute/`..`/symlink/directory/non-regular/self-reference`，并为后续音频映射保留可测的 `CuePathResolutionStatus`。
 - `cue_catch2_tests.cpp` 的路径测试已拆到 `cue_path_catch2_tests.cpp`，避免单文件超过 250 行；路径安全只依赖 `CuePathResolver`，解析语法测试继续独立。
 - TODO 5 已提交为原子提交，后续 task 6 继续只在音频映射层展开。
+- TODO 6 先在 `CueReader.cpp` 里做最小映射：`ReadTag()` 负责音频字段，CUE 只覆盖 `title/artist/composer/album/albumArtist/genre/year/discNumber/trackNumber`；普通 `Read()` 路径保持不变。
+- 映射测试单独放到 `cue_mapping_catch2_tests.cpp`，覆盖 track/album 覆盖、audio field 保留、以及普通 `Read()` 非回归三条用例。

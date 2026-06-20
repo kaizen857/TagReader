@@ -138,6 +138,30 @@ tagreader_enable_sanitizers(TagReaderCuePathCatch2Tests)
 
 catch_discover_tests(TagReaderCuePathCatch2Tests)
 
+add_executable(TagReaderCueMappingCatch2Tests
+    regression/catch2_regression_support.cpp
+    regression/catch2_sample_support.cpp
+    regression/cue_mapping_catch2_tests.cpp
+)
+
+target_link_libraries(TagReaderCueMappingCatch2Tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        TagReaderCore
+)
+
+target_include_directories(TagReaderCueMappingCatch2Tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/formats/cue
+)
+
+tagreader_enable_sanitizers(TagReaderCueMappingCatch2Tests)
+
+catch_discover_tests(TagReaderCueMappingCatch2Tests)
+
 add_executable(TagReaderLyricsNormalizeComplexityCatch2Tests
     catch2/lyrics_normalize_complexity_catch2_tests.cpp
 )
