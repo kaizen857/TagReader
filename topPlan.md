@@ -59,15 +59,16 @@
 - 更新文档时必须区分“当前可读”“检测可达”“目标能力”“明确不支持”，不要把最终目标写成 public API 已完整支持。
 - 若后续评估 TagLib，只能作为单独架构决策；在正式决定前不得混用 TagLib 与自研 parser，也不得把 TagLib 支持矩阵写成当前能力。
 
-## 阶段 6：新增 CUE 目录/索引解析
+## 阶段 6：未来 CUE 目录/索引解析
 
-目标是在单曲文件能力稳定后，支持 CUE 这种 sidecar/album-level 输入，把一张碟或一个目录中的虚拟曲目展开成多首 `MusicTag`。
+目标是在单曲文件能力稳定后，再评估 CUE 这种 sidecar/album-level 输入，把一张碟或一个目录中的虚拟曲目展开成多首 `MusicTag`。当前阶段 6 尚未实现，Task 14 只审计边界，不新增 public API、目录扫描或批量读取语义。
 
-- CUE 不复用现有 `Read(path) -> MusicTag` 入口；新增独立函数，例如 `ReadCue(path)` 或 `ReadAlbum(path)`，避免同名同参仅返回值不同的非法 C++ 重载，也避免改变单曲读取语义。
-- Public 返回值优先使用 `std::vector<MusicTag>`：每个元素表示 CUE 中的一首虚拟歌曲，`filePath` 指向 `FILE` 引用的真实音频文件，`offset` 来自 `INDEX 01`，`duration` 由下一轨 `INDEX 01` 或源音频总时长推算。
+- CUE 未来不复用现有 `Read(path) -> MusicTag` 入口；如需落地，应设计独立的专辑级入口，避免同名同参仅返回值不同的非法 C++ 重载，也避免改变单曲读取语义。
+- Public 返回模型未来应单独设计：每个元素表示 CUE 中的一首虚拟歌曲，`filePath` 指向 `FILE` 引用的真实音频文件，`offset` 来自 `INDEX 01`，`duration` 由下一轨 `INDEX 01` 或源音频总时长推算。
 - `MusicTag` 已能承载 CUE track 的主要公开信息：`title`、`artist`、`album`、`albumArtist`、`genre`、`year`、`trackNumber`、`discNumber`、`filePath`、`offset`、`duration`、`coverPath`、`lyrics` 和基础媒体参数。
-- 内部可以使用私有 `RawCueSheet`/`RawCueTrack` 保留完整 CUE 结构，包括全局字段、`REM`、`FILE`、`TRACK`、`INDEX 00/01/...`、pregap/postgap、未知命令和编码诊断，但这些结构不必作为首版 public API 暴露。
-- CUE 解析要同时支持单文件整碟和多文件分轨；目录入口只在 `ReadCue`/`ReadAlbum` 中处理，不修改当前 `ValidatePath()` 对普通 `Read()` 的单文件约束。
+- 内部中间态未来应保持私有，保留完整 CUE 结构，包括全局字段、`REM`、`FILE`、`TRACK`、`INDEX 00/01/...`、pregap/postgap、未知命令和编码诊断，但这些结构不作为首版 public API 暴露。
+- CUE 解析未来要同时支持单文件整碟和多文件分轨；目录入口只在专辑级入口中处理，不修改当前 `ValidatePath()` 对普通 `Read()` 的单文件约束。
+- CUE track 字段最终仍应汇入现有规范化链路，复用 `NormalizeMetadata()`、`NormalizeLyrics()`、`ReadMediaInfo()` 产出的媒体参数，以及现有 content-addressed 封面 PNG 缓存。
 
 ## 总体优先级
 
@@ -77,4 +78,4 @@
 4. 实现 RIFF/IFF/DSF/DSDIFF 类容器提取：WAV、AIFF/AIF、DSF/DFF、DXD。
 5. 新增 ASF/WMA 与 Matroska/WebM/MKA 元数据模型。
 6. 收束 DTS、AC3、TrueHD 裸流边界与文档表述。
-7. 最后新增 CUE 目录/索引解析：独立入口返回 `std::vector<MusicTag>`，内部保留完整 CUE 结构。
+7. 最后评估 CUE 目录/索引解析：仅通过独立专辑级入口建模，并继续复用现有规范化、媒体信息和封面缓存链路。

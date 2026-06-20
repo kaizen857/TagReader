@@ -1,0 +1,3 @@
+- 当前工作树在 Todo 0 之前已经存在大量 `.omo` 删除状态，并且还夹杂着 `AGENTS.md`、`docs/DESIGN.md`、`test/*`、`topPlan.md` 等非 `.omo` 改动。
+- 迁移提交必须采用显式 pathspec 白名单，不能用 `git add .` 或 `git add -A`，否则会把旧 `.omo` 删除一起卷入。
+- 如果后续确实要处理 `.omo` 删除，应该单独做 cleanup commit，和 Catch2/CTest 迁移拆开。

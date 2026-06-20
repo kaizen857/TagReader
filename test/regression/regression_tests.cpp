@@ -30,6 +30,7 @@ extern "C"
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <concepts>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,7 +52,7 @@ struct TestCase
     bool implemented;
 };
 
-constexpr std::array<TestCase, 54> kTestCases{{
+constexpr std::array<TestCase, 56> kTestCases{{
     {"TR-AUDIT-001", true},
     {"TR-AUDIT-002", true},
     {"TR-AUDIT-003", true},
@@ -106,6 +107,8 @@ constexpr std::array<TestCase, 54> kTestCases{{
     {"TR-AUDIT-052", true},
     {"TR-AUDIT-053", true},
     {"TR-AUDIT-054", true},
+    {"TR-AUDIT-055", true},
+    {"TR-AUDIT-056", true},
 }};
 
 void PrintUsage(std::string_view program)
@@ -138,6 +141,43 @@ bool Expect(bool condition, std::string_view message)
 
     return true;
 }
+
+template <typename T>
+concept HasReadCueMember = requires(const std::filesystem::path &path) {
+    T::ReadCue(path);
+};
+
+template <typename T>
+concept HasReadAlbumMember = requires(const std::filesystem::path &path) {
+    T::ReadAlbum(path);
+};
+
+template <typename T>
+concept ReadPathReturnsMusicTag = requires(const std::filesystem::path &path) {
+    { T::Read(path) } -> std::same_as<MusicTag>;
+};
+
+template <typename T>
+concept ReadPathAndCoverDirReturnsMusicTag = requires(const std::filesystem::path &path, const std::filesystem::path &coverExportDir) {
+    { T::Read(path, coverExportDir) } -> std::same_as<MusicTag>;
+};
+
+template <typename T>
+concept ReadPathReturnsBatch = requires(const std::filesystem::path &path) {
+    { T::Read(path) } -> std::same_as<std::vector<MusicTag>>;
+};
+
+template <typename T>
+concept ReadPathAndCoverDirReturnsBatch = requires(const std::filesystem::path &path, const std::filesystem::path &coverExportDir) {
+    { T::Read(path, coverExportDir) } -> std::same_as<std::vector<MusicTag>>;
+};
+
+static_assert(!HasReadCueMember<TagReader>);
+static_assert(!HasReadAlbumMember<TagReader>);
+static_assert(ReadPathReturnsMusicTag<TagReader>);
+static_assert(ReadPathAndCoverDirReturnsMusicTag<TagReader>);
+static_assert(!ReadPathReturnsBatch<TagReader>);
+static_assert(!ReadPathAndCoverDirReturnsBatch<TagReader>);
 
 std::filesystem::path RegressionTempRoot(std::string_view caseId)
 {
@@ -7517,6 +7557,136 @@ bool RunTrAudit054()
     return passed;
 }
 
+bool RunTrAudit055()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-055";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    const std::filesystem::path inputDir = evidenceRoot / "album-directory";
+    const std::filesystem::path explicitExportDir = evidenceRoot / "covers-should-not-be-created";
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(inputDir, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create input directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    bool singleArgRejected = false;
+    bool explicitArgRejected = false;
+    std::string singleArgError;
+    std::string explicitArgError;
+
+    try
+    {
+        (void)TagReader::Read(inputDir);
+    }
+    catch (const std::exception &ex)
+    {
+        singleArgError = ex.what();
+        singleArgRejected = singleArgError.find("regular file") != std::string::npos;
+    }
+
+    try
+    {
+        (void)TagReader::Read(inputDir, explicitExportDir);
+    }
+    catch (const std::exception &ex)
+    {
+        explicitArgError = ex.what();
+        explicitArgRejected = explicitArgError.find("regular file") != std::string::npos;
+    }
+
+    const bool explicitExportNotCreated = Expect(!std::filesystem::exists(explicitExportDir, ec), "directory input should be rejected before explicit cover export directory creation");
+    ec.clear();
+    bool passed = true;
+    passed = Expect(singleArgRejected, "Read(path) should reject directory input as a non-regular file") && passed;
+    passed = Expect(explicitArgRejected, "Read(path, coverExportDir) should reject directory input as a non-regular file") && passed;
+    passed = explicitExportNotCreated && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-055 read-directory-single-arg-rejected\n"
+        "TR-AUDIT-055 read-directory-explicit-cover-dir-rejected\n"
+        "TR-AUDIT-055 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-055\n"
+        "marker=single-file-read-directory-rejection\n"
+        "inputDir=" + inputDir.string() + "\n" +
+        "explicitExportDir=" + explicitExportDir.string() + "\n" +
+        "singleArgRejected=" + std::string(singleArgRejected ? "true" : "false") + "\n" +
+        "singleArgError=" + singleArgError + "\n" +
+        "explicitArgRejected=" + std::string(explicitArgRejected ? "true" : "false") + "\n" +
+        "explicitArgError=" + explicitArgError + "\n" +
+        "explicitExportCreated=" + std::string(std::filesystem::exists(explicitExportDir, ec) ? "true" : "false") + "\n";
+    ec.clear();
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-055 read-directory-single-arg-rejected\n";
+        std::cout << "TR-AUDIT-055 read-directory-explicit-cover-dir-rejected\n";
+    }
+    return passed;
+}
+
+bool RunTrAudit056()
+{
+    constexpr std::string_view kCaseId = "TR-AUDIT-056";
+    const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
+    std::error_code ec;
+    std::filesystem::remove_all(evidenceRoot, ec);
+    ec.clear();
+    std::filesystem::create_directories(evidenceRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
+        return false;
+    }
+
+    bool passed = true;
+    passed = Expect(!HasReadCueMember<TagReader>, "TagReader should not expose ReadCue in the public API") && passed;
+    passed = Expect(!HasReadAlbumMember<TagReader>, "TagReader should not expose ReadAlbum in the public API") && passed;
+    passed = Expect(ReadPathReturnsMusicTag<TagReader>, "Read(path) should continue returning MusicTag") && passed;
+    passed = Expect(ReadPathAndCoverDirReturnsMusicTag<TagReader>, "Read(path, coverExportDir) should continue returning MusicTag") && passed;
+    passed = Expect(!ReadPathReturnsBatch<TagReader>, "Read(path) should not return a batch of MusicTag") && passed;
+    passed = Expect(!ReadPathAndCoverDirReturnsBatch<TagReader>, "Read(path, coverExportDir) should not return a batch of MusicTag") && passed;
+
+    const std::string stdoutLike =
+        "TR-AUDIT-056 no-readcue-readalbum-public-api\n"
+        "TR-AUDIT-056 read-overloads-return-musictag\n"
+        "TR-AUDIT-056 no-batch-read-public-api\n"
+        "TR-AUDIT-056 PASS\n";
+    const std::string summary =
+        "case=TR-AUDIT-056\n"
+        "marker=cue-album-api-absence\n"
+        "hasReadCue=false\n"
+        "hasReadAlbum=false\n"
+        "readPathReturnsMusicTag=true\n"
+        "readPathAndCoverDirReturnsMusicTag=true\n"
+        "readPathReturnsBatch=false\n"
+        "readPathAndCoverDirReturnsBatch=false\n";
+    const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
+                            WriteTextFile(evidenceRoot / "summary.txt", summary);
+    if (!evidenceOk)
+    {
+        return false;
+    }
+
+    if (passed)
+    {
+        std::cout << "TR-AUDIT-056 no-readcue-readalbum-public-api\n";
+        std::cout << "TR-AUDIT-056 read-overloads-return-musictag\n";
+        std::cout << "TR-AUDIT-056 no-batch-read-public-api\n";
+    }
+    return passed;
+}
+
 int RunCase(const TestCase &testCase)
 {
     if (!testCase.implemented)
@@ -8113,6 +8283,28 @@ int RunCase(const TestCase &testCase)
     if (testCase.id == "TR-AUDIT-054")
     {
         if (!RunTrAudit054())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-055")
+    {
+        if (!RunTrAudit055())
+        {
+            return 1;
+        }
+
+        std::cout << testCase.id << " PASS\n";
+        return 0;
+    }
+
+    if (testCase.id == "TR-AUDIT-056")
+    {
+        if (!RunTrAudit056())
         {
             return 1;
         }

@@ -8,6 +8,7 @@ parser-target samples used by later implementation phases.
 
 from __future__ import annotations
 
+import argparse
 import base64
 import shutil
 import struct
@@ -16,11 +17,14 @@ import sys
 from pathlib import Path
 
 
-OUT_DIR = Path("/tmp/opencode/tagreader_security_samples")
+DEFAULT_OUT_DIR = Path("/tmp/opencode/tagreader_security_samples")
 
 PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
+
+ASF_HEADER_GUID = bytes.fromhex("3026b2758e66cf11a6d900aa0062ce6c")
+ASF_EXTENDED_CONTENT_DESCRIPTION_GUID = bytes.fromhex("40a4d0d207e3d21197f000a0c95ea850")
 
 
 def syncsafe32(value: int) -> bytes:
@@ -34,6 +38,45 @@ def syncsafe32(value: int) -> bytes:
             value & 0x7F,
         ]
     )
+
+
+def flac_picture_block(image_bytes: bytes, mime: bytes = b"image/png", description: bytes = b"cover") -> bytes:
+    return (
+        struct.pack(">I", 3)
+        + struct.pack(">I", len(mime))
+        + mime
+        + struct.pack(">I", len(description))
+        + description
+        + struct.pack(">IIII", 1, 1, 24, 0)
+        + struct.pack(">I", len(image_bytes))
+        + image_bytes
+    )
+
+
+def metadata_block_picture_value(image_bytes: bytes = PNG_1X1) -> str:
+    return base64.b64encode(flac_picture_block(image_bytes)).decode("ascii")
+
+
+def utf16le_text(text: str, terminated: bool = True) -> bytes:
+    encoded = text.encode("utf-16-le")
+    return encoded + (b"\x00\x00" if terminated else b"")
+
+
+def asf_object(guid: bytes, payload: bytes) -> bytes:
+    return guid + struct.pack("<Q", len(payload) + 24) + payload
+
+
+def asf_extended_descriptor(name: str, value_type: int, value: bytes) -> bytes:
+    name_bytes = utf16le_text(name)
+    return struct.pack("<H", len(name_bytes)) + name_bytes + struct.pack("<HH", value_type, len(value)) + value
+
+
+def asf_extended_content_description(descriptors: list[bytes]) -> bytes:
+    return asf_object(ASF_EXTENDED_CONTENT_DESCRIPTION_GUID, struct.pack("<H", len(descriptors)) + b"".join(descriptors))
+
+
+def asf_picture_value(image_bytes: bytes) -> bytes:
+    return b"\x03" + struct.pack("<I", len(image_bytes)) + utf16le_text("image/png") + utf16le_text("front cover") + image_bytes
 
 
 def id3v22_frame(frame_id: str, payload: bytes) -> bytes:
@@ -170,6 +213,64 @@ def generate_metadata_ogg(path: Path) -> bool:
             "discnumber=1",
             "-metadata",
             "lyrics=Ogg lyric line",
+            str(path),
+        ]
+    )
+
+
+def generate_metadata_opus(path: Path) -> bool:
+    return run_ffmpeg(
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=mono",
+            "-t",
+            "0.2",
+            "-codec:a",
+            "libopus",
+            "-metadata",
+            "title=Opus Security Title",
+            str(path),
+        ]
+    )
+
+
+def generate_ogg_picture(path: Path) -> bool:
+    return run_ffmpeg(
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=44100:cl=mono",
+            "-t",
+            "0.2",
+            "-codec:a",
+            "libvorbis",
+            "-metadata",
+            "title=Ogg Picture Security",
+            "-metadata",
+            f"METADATA_BLOCK_PICTURE={metadata_block_picture_value()}",
+            str(path),
+        ]
+    )
+
+
+def generate_opus_picture(path: Path) -> bool:
+    return run_ffmpeg(
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=mono",
+            "-t",
+            "0.2",
+            "-codec:a",
+            "libopus",
+            "-metadata",
+            "title=Opus Picture Security",
+            "-metadata",
+            f"METADATA_BLOCK_PICTURE={metadata_block_picture_value()}",
             str(path),
         ]
     )
@@ -355,79 +456,212 @@ def write_id3v24_large_declared(path: Path, base_mp3: Path, declared_size: int) 
     path.write_bytes(header + base_mp3.read_bytes())
 
 
-def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def inject_asf_header_children(base_asf: Path, path: Path, children: list[bytes]) -> bool:
+    data = base_asf.read_bytes()
+    header_index = data.find(ASF_HEADER_GUID)
+    if header_index < 0 or header_index + 30 > len(data):
+        return False
+    declared_size = struct.unpack("<Q", data[header_index + 16 : header_index + 24])[0]
+    if declared_size < 30 or header_index + declared_size > len(data):
+        return False
+    child_count = struct.unpack("<I", data[header_index + 24 : header_index + 28])[0]
+    payload = data[header_index + 30 : header_index + declared_size] + b"".join(children)
+    replacement = ASF_HEADER_GUID + struct.pack("<Q", len(payload) + 30) + struct.pack("<I", child_count + len(children)) + data[header_index + 28 : header_index + 30] + payload
+    path.write_bytes(data[:header_index] + replacement + data[header_index + declared_size :])
+    return True
 
-    base_mp3 = OUT_DIR / "base.mp3"
+
+def write_asf_picture_sample(path: Path, base_asf: Path) -> bool:
+    descriptor = asf_extended_descriptor("WM/Picture", 1, asf_picture_value(PNG_1X1))
+    title = asf_extended_descriptor("Title", 0, utf16le_text("ASF Picture Security"))
+    return inject_asf_header_children(base_asf, path, [asf_extended_content_description([title, descriptor])])
+
+
+def matroska_id(element_id: int) -> bytes:
+    length = max(1, (element_id.bit_length() + 7) // 8)
+    return element_id.to_bytes(length, "big")
+
+
+def matroska_size(size: int) -> bytes:
+    if size <= 0x7F:
+        return bytes([0x80 | size])
+    if size <= 0x3FFF:
+        return bytes([0x40 | ((size >> 8) & 0x3F), size & 0xFF])
+    if size <= 0x1FFFFF:
+        return bytes([0x20 | ((size >> 16) & 0x1F), (size >> 8) & 0xFF, size & 0xFF])
+    if size <= 0x0FFFFFFF:
+        return bytes([0x10 | ((size >> 24) & 0x0F), (size >> 16) & 0xFF, (size >> 8) & 0xFF, size & 0xFF])
+    return bytes([0x08 | ((size >> 32) & 0x07), (size >> 24) & 0xFF, (size >> 16) & 0xFF, (size >> 8) & 0xFF, size & 0xFF])
+
+
+def matroska_element(element_id: int, payload: bytes) -> bytes:
+    return matroska_id(element_id) + matroska_size(len(payload)) + payload
+
+
+def matroska_text_element(element_id: int, text: str) -> bytes:
+    return matroska_element(element_id, text.encode("utf-8"))
+
+
+def matroska_simple_tag(name: str, value: str) -> bytes:
+    return matroska_element(0x67C8, matroska_text_element(0x45A3, name) + matroska_text_element(0x4487, value))
+
+
+def matroska_attached_file(file_name: str, media_type: str, file_data: bytes) -> bytes:
+    return matroska_element(
+        0x61A7,
+        matroska_text_element(0x466E, file_name)
+        + matroska_text_element(0x4660, media_type)
+        + matroska_element(0x465C, file_data),
+    )
+
+
+def matroska_file(segment_payload: bytes) -> bytes:
+    ebml = matroska_element(0x1A45DFA3, matroska_element(0x4286, b"\x01") + matroska_text_element(0x4282, "matroska"))
+    return ebml + matroska_element(0x18538067, segment_payload)
+
+
+def write_matroska_picture_fixture(path: Path) -> None:
+    tags = matroska_element(0x1254C367, matroska_element(0x7373, matroska_simple_tag("TITLE", "Matroska Picture Security")))
+    attachments = matroska_element(0x1941A469, matroska_attached_file("cover.png", "image/png", PNG_1X1))
+    path.write_bytes(matroska_file(tags + attachments))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate minimal TagReader security smoke samples")
+    parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    args = parser.parse_args()
+    out_dir = args.out_dir
+
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    smoke_samples: list[Path] = []
+    parser_level_samples: list[Path] = []
+    skips: list[str] = []
+
+    base_mp3 = out_dir / "base.mp3"
     if generate_base_mp3(base_mp3):
-        write_id3v24_apic(OUT_DIR / "id3v24_apic_png.mp3", PNG_1X1, base_mp3)
-        write_id3v24_apic(OUT_DIR / "cover_cache_base.mp3", PNG_1X1, base_mp3)
-        write_id3v24_apic(OUT_DIR / "cover_export_base.mp3", PNG_1X1, base_mp3)
-        write_malformed_noncover_metadata(OUT_DIR / "malformed_noncover_metadata.mp3", base_mp3)
+        id3_apic = out_dir / "id3v24_apic_png.mp3"
+        cover_cache = out_dir / "cover_cache_base.mp3"
+        cover_export = out_dir / "cover_export_base.mp3"
+        malformed = out_dir / "malformed_noncover_metadata.mp3"
+        write_id3v24_apic(id3_apic, PNG_1X1, base_mp3)
+        write_id3v24_apic(cover_cache, PNG_1X1, base_mp3)
+        write_id3v24_apic(cover_export, PNG_1X1, base_mp3)
+        write_malformed_noncover_metadata(malformed, base_mp3)
+        smoke_samples.extend([id3_apic, cover_cache, cover_export, malformed])
         write_lrc_id3(
-            OUT_DIR / "id3v24_uslt_lrc.mp3",
+            out_dir / "id3v24_uslt_lrc.mp3",
             "[00:01.000]first line\n[00:02.000][00:03.000]repeated line",
             base_mp3,
         )
-        write_lrc_id3(OUT_DIR / "id3v24_uslt_invalid_lrc.mp3", "[abc:def]bad timestamp", base_mp3)
+        write_lrc_id3(out_dir / "id3v24_uslt_invalid_lrc.mp3", "[abc:def]bad timestamp", base_mp3)
         write_lrc_id3(
-            OUT_DIR / "lyrics_bracket_plain.mp3",
+            out_dir / "lyrics_bracket_plain.mp3",
             "[ar:Unit Test Artist]\n[Verse]\n[hello]\n[Chorus] sing",
             base_mp3,
         )
         write_lrc_id3(
-            OUT_DIR / "lyrics_timed_multi.mp3",
+            out_dir / "lyrics_timed_multi.mp3",
             "[00:01.00]first timed line\n[00:02.00]second timed line",
             base_mp3,
         )
         write_id3v22_lyrics(
-            OUT_DIR / "id3v22_lyrics_flagged.mp3",
+            out_dir / "id3v22_lyrics_flagged.mp3",
             "ID3v22 flagged lyric line",
             0x80,
             base_mp3,
         )
         write_id3v22_lyrics(
-            OUT_DIR / "id3v22_lyrics_unsupported_flag.mp3",
+            out_dir / "id3v22_lyrics_unsupported_flag.mp3",
             "ID3v22 unsupported damaged lyric payload",
             0x40,
             base_mp3,
         )
-        write_id3v24_large_declared(OUT_DIR / "id3v24_declared_32m.mp3", base_mp3, 32 * 1024 * 1024)
+        write_id3v24_large_declared(out_dir / "id3v24_declared_32m.mp3", base_mp3, 32 * 1024 * 1024)
+    else:
+        skips.append("mp3/id3 cover smoke samples skipped: ffmpeg mp3 generation failed or codec unavailable")
 
-    base_m4a = OUT_DIR / "base.m4a"
+    base_m4a = out_dir / "base.m4a"
     if generate_base_m4a(base_m4a):
         write_mp4_lyrics_sample(
-            OUT_DIR / "mp4_lyrics_utf16_bom.m4a",
+            out_dir / "mp4_lyrics_utf16_bom.m4a",
             base_m4a,
             2,
             utf16be_bom_text("MP4 UTF16 lyric line"),
         )
         write_mp4_lyrics_sample(
-            OUT_DIR / "mp4_lyrics_utf8.m4a",
+            out_dir / "mp4_lyrics_utf8.m4a",
             base_m4a,
             1,
             b"MP4 UTF8 lyric line",
         )
         write_mp4_lyrics_sample(
-            OUT_DIR / "mp4_lyrics_oversized.m4a",
+            out_dir / "mp4_lyrics_oversized.m4a",
             base_m4a,
             1,
             b"O" * (8 * 1024 * 1024 + 1),
         )
-        write_mp4_size0_tail_ok(OUT_DIR / "mp4_size0_tail_ok.m4a", base_m4a)
-        write_mp4_size0_hides_metadata(OUT_DIR / "mp4_size0_hides_metadata.m4a", base_m4a)
-    base_ogg = OUT_DIR / "base.ogg"
+        write_mp4_size0_tail_ok(out_dir / "mp4_size0_tail_ok.m4a", base_m4a)
+        write_mp4_size0_hides_metadata(out_dir / "mp4_size0_hides_metadata.m4a", base_m4a)
+    else:
+        skips.append("mp4 lyrics smoke samples skipped: ffmpeg m4a generation failed or codec unavailable")
+
+    base_ogg = out_dir / "base.ogg"
     if generate_base_ogg(base_ogg):
-        write_ogg_vorbis_music_multistream(OUT_DIR / "ogg_vorbis_music_multistream_comments.ogg")
-        write_non_vorbis_or_video_mixed(OUT_DIR / "ogg_non_vorbis_or_video_mixed.ogg", base_ogg)
+        write_ogg_vorbis_music_multistream(out_dir / "ogg_vorbis_music_multistream_comments.ogg")
+        write_non_vorbis_or_video_mixed(out_dir / "ogg_non_vorbis_or_video_mixed.ogg", base_ogg)
+        ogg_picture = out_dir / "ogg_vorbis_picture_cover.ogg"
+        if generate_ogg_picture(ogg_picture):
+            smoke_samples.append(ogg_picture)
+        else:
+            skips.append("ogg/vorbis picture smoke sample skipped: ffmpeg picture metadata generation failed")
+    else:
+        skips.append("ogg/vorbis cover smoke sample skipped: ffmpeg ogg generation failed or codec unavailable")
 
-    write_deep_mp4(OUT_DIR / "mp4_deep_nested_atoms.m4a", 128)
-    write_mp4_lyrics_atom(OUT_DIR / "mp4_lyrics_atom.m4a")
-    write_ogg_continuation(OUT_DIR / "ogg_continuation_packet.ogg", 512)
-    write_ogg_comment_resource_limit(OUT_DIR / "ogg_comment_resource_limit.ogg")
+    opus_picture = out_dir / "ogg_opus_picture_cover.opus"
+    if generate_opus_picture(opus_picture):
+        smoke_samples.append(opus_picture)
+    else:
+        skips.append("ogg/opus picture smoke sample skipped: ffmpeg opus picture metadata generation failed")
 
-    print(f"generated samples under {OUT_DIR}")
-    for path in sorted(OUT_DIR.iterdir()):
+    base_asf = out_dir / "base.wma"
+    asf_picture = out_dir / "asf_picture_cover.wma"
+    if run_ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.2", "-codec:a", "wmav2", str(base_asf)]):
+        if write_asf_picture_sample(asf_picture, base_asf):
+            smoke_samples.append(asf_picture)
+        else:
+            parser_level_samples.append(asf_picture)
+            skips.append("asf picture smoke sample documented as parser-level: could not inject ASF header metadata into ffmpeg output")
+    else:
+        synthetic_asf = out_dir / "asf_picture_cover.parser-fixture.wma"
+        synthetic_asf.write_bytes(asf_object(ASF_HEADER_GUID, struct.pack("<I", 1) + b"\x01\x02" + asf_extended_content_description([asf_extended_descriptor("WM/Picture", 1, asf_picture_value(PNG_1X1))])))
+        parser_level_samples.append(synthetic_asf)
+        skips.append("asf picture smoke sample documented as parser-level: ffmpeg wma generation failed or codec unavailable")
+
+    matroska_fixture = out_dir / "matroska_attachment_cover.parser-fixture.webm"
+    write_matroska_picture_fixture(matroska_fixture)
+    parser_level_samples.append(matroska_fixture)
+    skips.append("matroska attachment cover documented as parser-level fixture: minimal synthetic EBML has no audio stream for TagReaderSecuritySmoke")
+
+    write_deep_mp4(out_dir / "mp4_deep_nested_atoms.m4a", 128)
+    write_mp4_lyrics_atom(out_dir / "mp4_lyrics_atom.m4a")
+    write_ogg_continuation(out_dir / "ogg_continuation_packet.ogg", 512)
+    write_ogg_comment_resource_limit(out_dir / "ogg_comment_resource_limit.ogg")
+
+    manifest_lines = ["# TagReader security samples", "", "## smoke_samples"]
+    manifest_lines.extend(str(path) for path in sorted(smoke_samples))
+    manifest_lines.extend(["", "## parser_level_samples"])
+    manifest_lines.extend(str(path) for path in sorted(parser_level_samples))
+    manifest_lines.extend(["", "## documented_skips"])
+    manifest_lines.extend(skips)
+    (out_dir / "MANIFEST.txt").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+
+    print(f"generated samples under {out_dir}")
+    for skip in skips:
+        print(f"warning: {skip}", file=sys.stderr)
+    for path in sorted(out_dir.iterdir()):
         if path.is_file():
             print(path)
     return 0

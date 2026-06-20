@@ -1,7 +1,0 @@
-Task 6 non-target Ogg safety evidence
-
-Commands run:
-- python3 test/security/generate_samples.py
-- ./build/TagReaderTest /tmp/opencode/tagreader_security_samples/ogg_non_vorbis_or_video_mixed.ogg > /tmp/opencode/task6-nontarget-out.txt 2> /tmp/opencode/task6-nontarget-err.txt; code=$?; test "$code" = 0 -o "$code" = 2; ! grep -Eq 'AddressSanitizer|runtime error|heap-buffer-overflow' /tmp/opencode/task6-nontarget-err.txt
-
-Result: PASS. The command completed with an allowed exit code and stderr did not contain AddressSanitizer, runtime error, or heap-buffer-overflow diagnostics. Non-Vorbis/video-like logical stream pages remain non-target and safely bounded.

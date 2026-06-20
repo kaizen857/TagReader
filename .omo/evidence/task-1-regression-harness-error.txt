@@ -1,4 +1,0 @@
-$ ./build/TagReaderRegressionTests TR-AUDIT-999
-TR-AUDIT-999 unknown regression case
-
-[exit 2]

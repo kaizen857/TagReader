@@ -1,6 +1,0 @@
-# Task 4 forbidden abstraction scan
-
-scan command: rg -n "dynamic_cast|typeid\(|visitor|Plugin|Registry|ITagParser|virtual .*Parser" src include
-exit code: 1
-
-(no matches)

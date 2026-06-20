@@ -140,8 +140,183 @@ def flac_picture_block(mime: bytes, description: bytes, image: bytes, declared_i
     )
 
 
+def flac_picture_comment(image: bytes = PNG_1X1, mime: bytes = b"image/png", description: bytes = b"cover") -> bytes:
+    return b"METADATA_BLOCK_PICTURE=" + base64.b64encode(flac_picture_block(mime, description, image))
+
+
 def lrc_line(timestamp_count: int, text: bytes = b"line") -> bytes:
     return b"".join(f"[00:{index % 60:02d}.00]".encode() for index in range(timestamp_count)) + text + b"\n"
+
+
+def riff_chunk(chunk_id: bytes, payload: bytes, declared_size: int | None = None) -> bytes:
+    size = len(payload) if declared_size is None else declared_size
+    chunk = chunk_id + struct.pack("<I", size) + payload
+    if declared_size is None and len(payload) % 2:
+        chunk += b"\0"
+    return chunk
+
+
+def riff_file(chunks: list[bytes], form_type: bytes = b"WAVE") -> bytes:
+    payload = form_type + b"".join(chunks)
+    return b"RIFF" + struct.pack("<I", len(payload)) + payload
+
+
+def riff_info_field(field_id: bytes, value: bytes) -> bytes:
+    return riff_chunk(field_id, value + b"\0")
+
+
+def riff_info_list(fields: list[bytes], declared_size: int | None = None) -> bytes:
+    return riff_chunk(b"LIST", b"INFO" + b"".join(fields), declared_size)
+
+
+def aiff_chunk(chunk_id: bytes, payload: bytes, declared_size: int | None = None) -> bytes:
+    size = len(payload) if declared_size is None else declared_size
+    chunk = chunk_id + struct.pack(">I", size) + payload
+    if declared_size is None and len(payload) % 2:
+        chunk += b"\0"
+    return chunk
+
+
+def aiff_text_chunk(chunk_id: bytes, value: bytes) -> bytes:
+    return aiff_chunk(chunk_id, value)
+
+
+def aiff_comm_chunk() -> bytes:
+    return aiff_chunk(b"COMM", b"\0\1" + struct.pack(">I", 1) + b"\0\x10" + bytes.fromhex("400eac44000000000000"))
+
+
+def aiff_ssnd_chunk() -> bytes:
+    return aiff_chunk(b"SSND", struct.pack(">II", 0, 0) + b"\0\0")
+
+
+def aiff_file(form_type: bytes, chunks: list[bytes], declared_size: int | None = None) -> bytes:
+    payload = form_type + b"".join(chunks)
+    size = len(payload) if declared_size is None else declared_size
+    return b"FORM" + struct.pack(">I", size) + payload
+
+
+def dsf_file(metadata: bytes, metadata_pointer: int, declared_file_size: int | None = None) -> bytes:
+    header_size = 28
+    file_size = declared_file_size if declared_file_size is not None else metadata_pointer + len(metadata)
+    data = bytearray(b"DSD ")
+    data += struct.pack("<Q", header_size)
+    data += struct.pack("<Q", file_size)
+    data += struct.pack("<Q", metadata_pointer)
+    if metadata_pointer > len(data):
+        data.extend(b"\0" * (metadata_pointer - len(data)))
+    data += metadata
+    return bytes(data)
+
+
+def dff_chunk(chunk_id: bytes, payload: bytes, declared_size: int | None = None) -> bytes:
+    size = len(payload) if declared_size is None else declared_size
+    chunk = chunk_id + struct.pack(">Q", size) + payload
+    if declared_size is None and len(payload) % 2:
+        chunk += b"\0"
+    return chunk
+
+
+def dff_file(chunks: list[bytes], form_type: bytes = b"DSD ") -> bytes:
+    return dff_chunk(b"FRM8", form_type + b"".join(chunks))
+
+
+ASF_HEADER_GUID = bytes.fromhex("3026b2758e66cf11a6d900aa0062ce6c")
+ASF_CONTENT_DESCRIPTION_GUID = bytes.fromhex("3326b2758e66cf11a6d900aa0062ce6c")
+ASF_EXTENDED_CONTENT_DESCRIPTION_GUID = bytes.fromhex("40a4d0d207e3d21197f000a0c95ea850")
+ASF_METADATA_LIBRARY_GUID = bytes.fromhex("941c23449894d149a1411d134e457054")
+
+
+def utf16le_text(text: str, terminated: bool = True) -> bytes:
+    encoded = text.encode("utf-16-le")
+    return encoded + (b"\0\0" if terminated else b"")
+
+
+def asf_object(guid: bytes, payload: bytes, declared_size: int | None = None) -> bytes:
+    size = len(payload) + 24 if declared_size is None else declared_size
+    return guid + struct.pack("<Q", size) + payload
+
+
+def asf_header_object(children: list[bytes], declared_size: int | None = None) -> bytes:
+    payload = struct.pack("<I", len(children)) + b"\x01\x02" + b"".join(children)
+    return asf_object(ASF_HEADER_GUID, payload, declared_size)
+
+
+def asf_content_description(title: str, author: str, copyright_text: str, description: str, rating: str) -> bytes:
+    fields = [utf16le_text(field) for field in (title, author, copyright_text, description, rating)]
+    payload = b"".join(struct.pack("<H", len(field)) for field in fields) + b"".join(fields)
+    return asf_object(ASF_CONTENT_DESCRIPTION_GUID, payload)
+
+
+def asf_extended_descriptor(name: str, value_type: int, value: bytes, declared_value_len: int | None = None) -> bytes:
+    name_bytes = utf16le_text(name)
+    value_len = len(value) if declared_value_len is None else declared_value_len
+    return struct.pack("<H", len(name_bytes)) + name_bytes + struct.pack("<HH", value_type, value_len) + value
+
+
+def asf_extended_content_description(descriptors: list[bytes]) -> bytes:
+    return asf_object(ASF_EXTENDED_CONTENT_DESCRIPTION_GUID, struct.pack("<H", len(descriptors)) + b"".join(descriptors))
+
+
+def asf_metadata_library_descriptor(name: str, value_type: int, value: bytes, declared_value_len: int | None = None) -> bytes:
+    name_bytes = utf16le_text(name)
+    value_len = len(value) if declared_value_len is None else declared_value_len
+    return struct.pack("<HHHHI", 0, 0, len(name_bytes), value_type, value_len) + name_bytes + value
+
+
+def asf_metadata_library(descriptors: list[bytes]) -> bytes:
+    return asf_object(ASF_METADATA_LIBRARY_GUID, struct.pack("<H", len(descriptors)) + b"".join(descriptors))
+
+
+def asf_picture_value(image: bytes, declared_image_len: int | None = None) -> bytes:
+    image_len = len(image) if declared_image_len is None else declared_image_len
+    return b"\x03" + struct.pack("<I", image_len) + utf16le_text("image/png") + utf16le_text("front cover") + image
+
+
+def matroska_id(element_id: int) -> bytes:
+    length = max(1, (element_id.bit_length() + 7) // 8)
+    return element_id.to_bytes(length, "big")
+
+
+def matroska_size(size: int) -> bytes:
+    if size <= 0x7F:
+        return bytes([0x80 | size])
+    if size <= 0x3FFF:
+        return bytes([0x40 | ((size >> 8) & 0x3F), size & 0xFF])
+    if size <= 0x1FFFFF:
+        return bytes([0x20 | ((size >> 16) & 0x1F), (size >> 8) & 0xFF, size & 0xFF])
+    if size <= 0x0FFFFFFF:
+        return bytes([0x10 | ((size >> 24) & 0x0F), (size >> 16) & 0xFF, (size >> 8) & 0xFF, size & 0xFF])
+    return bytes([0x08 | ((size >> 32) & 0x07), (size >> 24) & 0xFF, (size >> 16) & 0xFF, (size >> 8) & 0xFF, size & 0xFF])
+
+
+def matroska_element(element_id: int, payload: bytes) -> bytes:
+    return matroska_id(element_id) + matroska_size(len(payload)) + payload
+
+
+def matroska_unknown_size_element(element_id: int, payload: bytes) -> bytes:
+    return matroska_id(element_id) + b"\xff" + payload
+
+
+def matroska_text_element(element_id: int, text: str) -> bytes:
+    return matroska_element(element_id, text.encode("utf-8"))
+
+
+def matroska_simple_tag(name: str, value: str) -> bytes:
+    return matroska_element(0x67C8, matroska_text_element(0x45A3, name) + matroska_text_element(0x4487, value))
+
+
+def matroska_attached_file(file_name: str, media_type: str, file_data: bytes) -> bytes:
+    return matroska_element(
+        0x61A7,
+        matroska_text_element(0x466E, file_name)
+        + matroska_text_element(0x4660, media_type)
+        + matroska_element(0x465C, file_data),
+    )
+
+
+def matroska_file(segment_payload: bytes) -> bytes:
+    ebml = matroska_element(0x1A45DFA3, matroska_element(0x4286, b"\x01") + matroska_text_element(0x4282, "matroska"))
+    return ebml + matroska_element(0x18538067, segment_payload)
 
 
 def write_seed(out_dir: Path, category: str, name: str, data: bytes) -> None:
@@ -308,6 +483,8 @@ def generate_ogg(out_dir: Path) -> None:
     invalid_key = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_key_comment)], invalid_key_comment)
     invalid_value = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_value_comment)], invalid_value_comment)
     invalid_lyrics = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(invalid_lyrics_comment)], invalid_lyrics_comment)
+    picture_comment = b"\x03vorbis" + vorbis_block([b"TITLE=ogg picture", flac_picture_comment()]) + b"\x01"
+    picture_malformed_comment = b"\x03vorbis" + vorbis_block([b"TITLE=ogg malformed picture", b"METADATA_BLOCK_PICTURE=not@base64"]) + b"\x01"
     public_api_comment = b"\x03vorbis" + vorbis_block(
         [
             b"TITLE=ogg public title",
@@ -322,6 +499,13 @@ def generate_ogg(out_dir: Path) -> None:
     public_api = ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, [len(public_api_comment)], public_api_comment)
     multistream_serial = 0x87654321
     opus_head = b"OpusHead" + b"\x01\x01" + b"\x00" * 16
+    opus_tags = b"OpusTags" + vorbis_block([b"TITLE=opus title", b"ARTIST=opus artist", flac_picture_comment()], b"opus-vendor")
+    opus_picture = ogg_page(0x0BADF00D, 0, 0x02, [len(opus_head)], opus_head) + ogg_page(
+        0x0BADF00D, 1, 0, ogg_segments(len(opus_tags)), opus_tags
+    )
+    opus_truncated_tags = ogg_page(0x0BADF00D, 0, 0x02, [len(opus_head)], opus_head) + ogg_page(
+        0x0BADF00D, 1, 0, [8], b"OpusTags"
+    )
     multistream_comment = b"\x03vorbis" + vorbis_block(
         [
             b"TITLE=ogg multistream title",
@@ -347,6 +531,10 @@ def generate_ogg(out_dir: Path) -> None:
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_key_then_title.ogg", invalid_key)
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_value_then_artist.ogg", invalid_value)
     write_seed(out_dir, "ogg", "ogg_vorbis_invalid_lyrics_then_title.ogg", invalid_lyrics)
+    write_seed(out_dir, "ogg", "ogg_vorbis_metadata_block_picture.ogg", ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, ogg_segments(len(picture_comment)), picture_comment))
+    write_seed(out_dir, "ogg", "ogg_vorbis_malformed_picture_comment.ogg", ogg_page(serial, 0, 0, [len(ident)], ident) + ogg_page(serial, 1, 0, ogg_segments(len(picture_malformed_comment)), picture_malformed_comment))
+    write_seed(out_dir, "ogg", "ogg_opus_opustags_picture.opus", opus_picture)
+    write_seed(out_dir, "ogg", "ogg_opus_truncated_opustags.opus", opus_truncated_tags)
     write_seed(out_dir, "ogg", "ogg_public_api_comments_and_lrc.ogg", public_api)
     write_seed(out_dir, "ogg", "ogg_vorbis_multistream_target_comments.ogg", multistream)
     write_seed(out_dir, "ogg", "ogg_comment_resource_limit.ogg", resource_limit)
@@ -460,6 +648,105 @@ def generate_encoding(out_dir: Path) -> None:
     write_seed(out_dir, "encoding", "mp4_utf16_title_over_limit.m4a", mp4_utf16_over_limit)
 
 
+def generate_riff(out_dir: Path) -> None:
+    info = riff_info_list(
+        [
+            riff_info_field(b"INAM", b"wav title"),
+            riff_info_field(b"IART", b"wav artist"),
+            riff_info_field(b"IPRD", b"wav album"),
+        ]
+    )
+    embedded_id3 = riff_chunk(b"id3 ", id3_tag(3, id3v23_frame(b"TIT2", b"\x03embedded wav title")))
+    malformed_list = riff_info_list([riff_info_field(b"INAM", b"truncated")], declared_size=64)
+    oversized_list = riff_info_list([riff_info_field(b"INAM", b"oversized")], declared_size=17 * 1024 * 1024)
+
+    write_seed(out_dir, "riff", "wav_info_list.wav", riff_file([info]))
+    write_seed(out_dir, "riff", "wav_embedded_id3.wav", riff_file([embedded_id3, info]))
+    write_seed(out_dir, "riff", "wav_malformed_list_size.wav", riff_file([malformed_list]))
+    write_seed(out_dir, "riff", "wav_oversized_list_declared.wav", riff_file([oversized_list]))
+
+
+def generate_aiff(out_dir: Path) -> None:
+    native = [
+        aiff_comm_chunk(),
+        aiff_ssnd_chunk(),
+        aiff_text_chunk(b"NAME", b"aiff title"),
+        aiff_text_chunk(b"AUTH", b"aiff artist"),
+        aiff_text_chunk(b"ANNO", b"aiff note"),
+    ]
+    embedded_id3 = aiff_chunk(b"ID3 ", id3_tag(3, id3v23_frame(b"TIT2", b"\x03embedded aiff title")))
+    truncated_comt = aiff_chunk(b"COMT", b"\0\1\0\0", declared_size=32)
+    oversized_native = aiff_chunk(b"NAME", b"oversized", declared_size=17 * 1024 * 1024)
+
+    write_seed(out_dir, "aiff", "aiff_native_chunks.aiff", aiff_file(b"AIFF", native))
+    write_seed(out_dir, "aiff", "aifc_embedded_id3.aifc", aiff_file(b"AIFC", [aiff_comm_chunk(), aiff_ssnd_chunk(), embedded_id3]))
+    write_seed(out_dir, "aiff", "aiff_truncated_comt.aiff", aiff_file(b"AIFF", [aiff_comm_chunk(), aiff_ssnd_chunk(), truncated_comt]))
+    write_seed(out_dir, "aiff", "aiff_oversized_native_chunk.aiff", aiff_file(b"AIFF", [aiff_comm_chunk(), aiff_ssnd_chunk(), oversized_native]))
+    write_seed(out_dir, "aiff", "aiff_bad_form_size.aiff", aiff_file(b"AIFF", [aiff_comm_chunk()], declared_size=0xFFFFFFFF))
+
+
+def generate_dsd(out_dir: Path) -> None:
+    id3 = id3_tag(3, id3v23_frame(b"TIT2", b"\x03dsd title"))
+    write_seed(out_dir, "dsd", "dsf_id3_pointer.dsf", dsf_file(id3, 64))
+    write_seed(out_dir, "dsd", "dsf_zero_metadata_pointer.dsf", dsf_file(b"", 0, 28))
+    write_seed(out_dir, "dsd", "dsf_pointer_out_of_bounds.dsf", dsf_file(id3, 64, 32))
+    write_seed(out_dir, "dsd", "dff_id3_chunk.dff", dff_file([dff_chunk(b"ID3 ", id3)]))
+    write_seed(out_dir, "dsd", "dff_di3v_chunk.dff", dff_file([dff_chunk(b"DI3v", id3)]))
+    write_seed(out_dir, "dsd", "dff_empty_standard_tags.dff", dff_file([dff_chunk(b"PROP", b"SND " + dff_chunk(b"FS  ", struct.pack(">I", 2822400)))]))
+
+
+def generate_asf(out_dir: Path) -> None:
+    metadata = asf_header_object(
+        [
+            asf_content_description("asf title", "asf author", "", "asf description", ""),
+            asf_extended_content_description(
+                [
+                    asf_extended_descriptor("WM/AlbumTitle", 0, utf16le_text("asf album")),
+                    asf_extended_descriptor("WM/Lyrics", 0, utf16le_text("asf lyric")),
+                    asf_extended_descriptor("WM/Picture", 1, asf_picture_value(PNG_1X1)),
+                ]
+            ),
+        ]
+    )
+    malformed_utf16 = asf_header_object(
+        [asf_extended_content_description([asf_extended_descriptor("Title", 0, utf16le_text("bad", False) + b"\0")])]
+    )
+    oversized_image = asf_header_object(
+        [asf_metadata_library([asf_metadata_library_descriptor("WM/Picture", 1, asf_picture_value(b"", 64 * 1024 * 1024 + 1))])]
+    )
+    oversized_object = asf_header_object([], declared_size=64 * 1024 * 1024 + 25)
+
+    write_seed(out_dir, "asf", "asf_metadata_picture.wma", metadata)
+    write_seed(out_dir, "asf", "asf_malformed_utf16_descriptor.wma", malformed_utf16)
+    write_seed(out_dir, "asf", "asf_oversized_picture_declared.wma", oversized_image)
+    write_seed(out_dir, "asf", "asf_oversized_header_object.wma", oversized_object)
+    write_seed(out_dir, "asf", "asf_bad_magic.wma", b"not an ASF object")
+
+
+def generate_matroska(out_dir: Path) -> None:
+    tags = matroska_element(
+        0x1254C367,
+        matroska_element(
+            0x7373,
+            matroska_simple_tag("TITLE", "matroska title")
+            + matroska_simple_tag("ARTIST", "matroska artist")
+            + matroska_simple_tag("DATE_RELEASED", "2026-06-19"),
+        ),
+    )
+    attachments = matroska_element(
+        0x1941A469,
+        matroska_attached_file("cover.txt", "text/plain", b"not a cover")
+        + matroska_attached_file("cover.png", "image/png", PNG_1X1),
+    )
+    unknown_size = matroska_file(matroska_unknown_size_element(0xEC, b"unknown sized local padding"))
+    malformed_size = matroska_element(0x1A45DFA3, matroska_text_element(0x4282, "matroska")) + matroska_id(0x18538067) + b"\x84bad"
+
+    write_seed(out_dir, "matroska", "matroska_simple_tags.mka", matroska_file(tags))
+    write_seed(out_dir, "matroska", "matroska_attachment_cover.webm", matroska_file(tags + attachments))
+    write_seed(out_dir, "matroska", "matroska_unknown_size_element.mka", unknown_size)
+    write_seed(out_dir, "matroska", "matroska_malformed_segment_size.mka", malformed_size)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate TagReader fuzz corpus seeds")
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
@@ -475,6 +762,11 @@ def main() -> int:
     generate_mp4(args.out_dir)
     generate_image(args.out_dir)
     generate_encoding(args.out_dir)
+    generate_riff(args.out_dir)
+    generate_aiff(args.out_dir)
+    generate_dsd(args.out_dir)
+    generate_asf(args.out_dir)
+    generate_matroska(args.out_dir)
 
     for category_dir in sorted(p for p in args.out_dir.iterdir() if p.is_dir()):
         count = sum(1 for p in category_dir.iterdir() if p.is_file())

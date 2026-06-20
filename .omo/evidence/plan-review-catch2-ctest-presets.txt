@@ -1,0 +1,28 @@
+High-accuracy review for .omo/plans/catch2-ctest-presets.md
+
+First Momus pass: REVISE
+- Blocking issue: existing dirty `.omo` deletion state and newly generated plan artifacts could pollute later migration commits.
+- Required fix: add a pre-implementation dirty-worktree isolation task before any Catch2/CTest migration work.
+
+Plan revision applied:
+- Added Todo 0: `隔离当前脏工作树与 .omo 删除状态`.
+- Added Wave 0 and dependency matrix entry requiring Todo 0 before all implementation tasks.
+- Added scope/commit-strategy guardrails preventing old `.omo` deletion state or unrelated dirty worktree content from being mixed into test migration commits.
+
+Second Momus pass: OKAY
+- Previous blocking issue addressed.
+- Plan is execution-ready with clear dependency ordering.
+- Catch2/CTest/CMakePresets migration is covered.
+- `TR-AUDIT-001..056` preservation is explicitly required.
+- Security smoke, fuzz opt-in, clangd `compile_commands.json`, and old runner removal sequencing have concrete acceptance criteria.
+
+Independent local structure check: OKAY
+- no_template_placeholders: OK
+- has_todo_0: OK
+- has_all_todos: OK
+- has_final_wave: OK
+- has_tr_audit_bounds: OK
+- has_clangd: OK
+- has_no_default_fuzz: OK
+
+Final verdict: OKAY

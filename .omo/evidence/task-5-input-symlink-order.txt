@@ -1,8 +1,0 @@
-$ cmake --build build
-ninja: no work to do.
-
-$ ./build/TagReaderRegressionTests TR-AUDIT-029
-TR-AUDIT-029 regular-file-ok
-TR-AUDIT-029 symlink-rejected-before-open
-TR-AUDIT-029 PASS
-exit=0

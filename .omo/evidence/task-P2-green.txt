@@ -1,2 +1,0 @@
-same-timestamp scaling small_ns=1886628 large_ns=8272043 ratio=4.38456
-TagReaderLyricsNormalizeComplexityTests PASS

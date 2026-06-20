@@ -1,0 +1,365 @@
+Task 0 evidence — isolate dirty worktree from `.omo` deletion state
+
+Plan context:
+- Goal: record the current dirty tree and define a safe commit boundary for later Catch2/CTest migration work.
+- Constraint: do not touch product sources, tests, CMake, or docs in this task.
+
+Command: `git status --short`
+```text
+ M .omo/boulder.json
+ D .omo/evidence/baseline/covers/72/a745dac99d472921c1abd5cc81f197.png
+ D .omo/evidence/baseline/flac_flac_picture_desc_truncated.flac.stdout
+ D .omo/evidence/baseline/flac_flac_picture_image_truncated.flac.stdout
+ D .omo/evidence/baseline/flac_flac_picture_mime_truncated.flac.stdout
+ D .omo/evidence/baseline/flac_flac_picture_valid.flac.stdout
+ D .omo/evidence/baseline/flac_flac_valid_chain.flac.stdout
+ D .omo/evidence/baseline/flac_flac_vorbis_invalid_key_then_title.flac.stdout
+ D .omo/evidence/baseline/flac_flac_vorbis_invalid_lyrics_then_title.flac.stdout
+ D .omo/evidence/baseline/flac_flac_vorbis_invalid_value_then_artist.flac.stdout
+ D .omo/evidence/baseline/index.md
+ D .omo/evidence/baseline/tagreadertest-runs.json
+ D .omo/evidence/final-cast-inventory.txt
+ D .omo/evidence/final-summary.md
+ D .omo/evidence/task-1-baseline-gaps.md
+ D .omo/evidence/task-1-baseline.md
+ D .omo/evidence/task-1-cover-cache-poisoned.txt
+ D .omo/evidence/task-1-cover-cache-valid.txt
+ D .omo/evidence/task-1-regression-harness-error.txt
+ D .omo/evidence/task-1-regression-harness.txt
+ D .omo/evidence/task-10-baseline-actual/flac_picture_desc_truncated.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_picture_image_truncated.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_picture_mime_truncated.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_picture_valid.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_valid_chain.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_key_then_title.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_lyrics_then_title.flac.stdout
+ D .omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_value_then_artist.flac.stdout
+ D .omo/evidence/task-10-covers/72/a745dac99d472921c1abd5cc81f197.png
+ D .omo/evidence/task-10-mp4-diff.txt
+ D .omo/evidence/task-10-mp4-malformed.txt
+ D .omo/evidence/task-11-pipeline-diff.txt
+ D .omo/evidence/task-11-tagformat-switch.txt
+ D .omo/evidence/task-12-cmake-targets.txt
+ D .omo/evidence/task-12-public-headers.txt
+ D .omo/evidence/task-13-sanitizer-fuzz.txt
+ D .omo/evidence/task-2-ape-tag-size-error.txt
+ D .omo/evidence/task-2-ape-tag-size.txt
+ D .omo/evidence/task-2-cover-export-ok.txt
+ D .omo/evidence/task-2-cover-export-readonly.txt
+ D .omo/evidence/task-2-malformed-noncover.txt
+ D .omo/evidence/task-2-public-surface.txt
+ D .omo/evidence/task-2-skeleton-build.txt
+ D .omo/evidence/task-3-core-contracts.txt
+ D .omo/evidence/task-3-fuzz-parallel.txt
+ D .omo/evidence/task-3-fuzz-root.txt
+ D .omo/evidence/task-3-id3-v22-flags-error.txt
+ D .omo/evidence/task-3-id3-v22-flags.txt
+ D .omo/evidence/task-3-public-api.txt
+ D .omo/evidence/task-4-cast-inventory.txt
+ D .omo/evidence/task-4-cover-packet-padding-error.txt
+ D .omo/evidence/task-4-cover-packet-padding.txt
+ D .omo/evidence/task-4-forbidden-abstractions.txt
+ D .omo/evidence/task-4-id3v22-lyrics-flagged.txt
+ D .omo/evidence/task-4-id3v22-unsupported-flag.txt
+ D .omo/evidence/task-4-text-baseline-diff.txt
+ D .omo/evidence/task-5-cover-security.txt
+ D .omo/evidence/task-5-input-symlink-order-error.txt
+ D .omo/evidence/task-5-input-symlink-order.txt
+ D .omo/evidence/task-5-mp4-lyrics-oversized.txt
+ D .omo/evidence/task-5-mp4-lyrics-utf16.txt
+ D .omo/evidence/task-5-no-cover-side-effect.txt
+ D .omo/evidence/task-6-baseline-actual/flac_flac_picture_desc_truncated.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_picture_image_truncated.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_picture_mime_truncated.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_picture_valid.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_valid_chain.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_key_then_title.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_lyrics_then_title.flac.stdout.actual
+ D .omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_value_then_artist.flac.stdout.actual
+ D .omo/evidence/task-6-covers/72/a745dac99d472921c1abd5cc81f197.png
+ D .omo/evidence/task-6-id3-cover-lyrics.txt
+ D .omo/evidence/task-6-id3-diff.txt
+ D .omo/evidence/task-6-no-iconv-policy-error.txt
+ D .omo/evidence/task-6-no-iconv-policy.txt
+ D .omo/evidence/task-6-ogg-nontarget-safe.txt
+ D .omo/evidence/task-6-ogg-resource-limit.txt
+ D .omo/evidence/task-6-ogg-vorbis-musictag.txt
+ D .omo/evidence/task-7-cover-export-policy-error.txt
+ D .omo/evidence/task-7-cover-export-policy.txt
+ D .omo/evidence/task-7-lrc-bracket-plain.txt
+ D .omo/evidence/task-7-lrc-timed.txt
+ D .omo/evidence/task-7-vorbis-diff.txt
+ D .omo/evidence/task-7-vorbis-invalid-entry.txt
+ D .omo/evidence/task-8-flac-diff.txt
+ D .omo/evidence/task-8-flac-malformed.txt
+ D .omo/evidence/task-8-full-integration-error.txt
+ D .omo/evidence/task-8-full-integration.txt
+ D .omo/evidence/task-8-mp4-size0-hidden-sibling.txt
+ D .omo/evidence/task-8-mp4-size0-tail.txt
+ D .omo/evidence/task-9-ogg-diff.txt
+ D .omo/evidence/task-9-ogg-malformed.txt
+ D .omo/evidence/task-P1-green.txt
+ D .omo/evidence/task-P1-red.txt
+ D .omo/evidence/task-P2-green.txt
+ D .omo/evidence/task-P2-red.txt
+ D .omo/evidence/task-S1-green.txt
+ D .omo/evidence/task-S1-red.txt
+ D .omo/evidence/task-S2-green.txt
+ D .omo/evidence/task-S2-red.txt
+ D .omo/evidence/task-S3-green.txt
+ D .omo/evidence/task-S3-red.txt
+ D .omo/notepads/analysis-bugfix-plan/decisions.md
+ D .omo/notepads/analysis-bugfix-plan/issues.md
+ D .omo/notepads/analysis-bugfix-plan/learnings.md
+ D .omo/notepads/analysis-bugfix-plan/problems.md
+ D .omo/notepads/analysis-bugfix/learnings.md
+ D .omo/notepads/analysis-fix-plan/decisions.md
+ D .omo/notepads/analysis-fix-plan/issues.md
+ D .omo/notepads/analysis-fix-plan/learnings.md
+ D .omo/notepads/analysis-fix-plan/problems.md
+ D .omo/notepads/ape-tag-support/decisions.md
+ D .omo/notepads/ape-tag-support/issues.md
+ D .omo/notepads/ape-tag-support/learnings.md
+ D .omo/notepads/bug-report-fixes/decisions.md
+ D .omo/notepads/bug-report-fixes/issues.md
+ D .omo/notepads/bug-report-fixes/learnings.md
+ D .omo/notepads/bug-report-fixes/problems.md
+ D .omo/notepads/bugfix-sprint/decisions.md
+ D .omo/notepads/bugfix-sprint/issues.md
+ D .omo/notepads/bugfix-sprint/learnings.md
+ D .omo/notepads/tagreader-refactor-implementation/decisions.md
+ D .omo/notepads/tagreader-refactor-implementation/issues.md
+ D .omo/notepads/tagreader-refactor-implementation/learnings.md
+ D .omo/notepads/tagreader-refactor-implementation/problems.md
+ D .omo/notepads/tagreader-security-fixes/learnings.md
+ D .omo/notepads/topplan-phases-0-5/decisions.md
+ D .omo/notepads/topplan-phases-0-5/issues.md
+ D .omo/notepads/topplan-phases-0-5/learnings.md
+ D .omo/notepads/topplan-phases-0-5/problems.md
+ D .omo/plans/analysis-bugfix-plan.md
+ D .omo/plans/analysis-bugfix.md
+ D .omo/plans/analysis-fix-plan.md
+ D .omo/plans/ape-tag-support.md
+ D .omo/plans/bug-report-fixes.md
+ D .omo/plans/bugfix-sprint.md
+ D .omo/plans/tagreader-refactor-implementation.md
+ D .omo/plans/tagreader-security-fixes.md
+ D .omo/plans/topplan-phases-0-5.md
+ D .omo/run-continuation/ses_12275b6eaffeEX3BbrOWgsWtcQ.json
+ D .omo/run-continuation/ses_12829a8cbffeAyeAN5BMCajhG6.json
+ D .omo/run-continuation/ses_12b972f7cffeo3eW402PQ8TD0f.json
+ D .omo/run-continuation/ses_12b97ede6ffeTrOHIu5iEQq2zm.json
+ D .omo/run-continuation/ses_1545dbb2bffeA55wC8mRQPkHY5.json
+ D .omo/run-continuation/ses_15473b44cffegziAj3d3VQfB7o.json
+ D .omo/run-continuation/ses_1553b5a7effehBH9eebf49lhXS.json
+ D .omo/run-continuation/ses_155537fe7ffeYVsnP8NmuFojRd.json
+ D .omo/run-continuation/ses_155aafb89ffejbQmKDbG4q6t7T.json
+ D .omo/run-continuation/ses_159815338ffeXK9B3GedIt1ex1.json
+ D .omo/run-continuation/ses_159f20313ffewKLfjBryf5oYq6.json
+ D .omo/run-continuation/ses_15a4cbeacffeVZywYVfRxrfK3y.json
+ D .omo/run-continuation/ses_15a5810f3ffepD1JVnLH10znUQ.json
+ D .omo/run-continuation/ses_15a58bf41ffeQ0UNSu49VOldOI.json
+ D .omo/run-continuation/ses_16f9729f3ffe1L9H9Mprj76eyZ.json
+ D .omo/run-continuation/ses_174e97bddffeMaLXyZlsWvMiOj.json
+ D .omo/run-continuation/ses_17e2d1d07ffe5Q61oS33R7lR7U.json
+ D .omo/run-continuation/ses_17e900a5effegFHVv4aDpe5i3g.json
+ D .omo/run-continuation/ses_183c44b07ffeAqkIXGfMeNX1Il.json
+ D .omo/run-continuation/ses_184233d0effeyBfGL95OU8I67C.json
+ D .omo/run-continuation/ses_186fae984ffer6uI50CMtr0MyZ.json
+ D .omo/run-continuation/ses_18706db8effeo6e1MWiwmBxHqu.json
+ M AGENTS.md
+ M docs/DESIGN.md
+ M test/corpus/generate_corpus.py
+ M test/regression/regression_tests.cpp
+ M test/security/generate_samples.py
+ M topPlan.md
+?? .omo/drafts/
+?? .omo/evidence/plan-review-catch2-ctest-presets.txt
+?? .omo/notepads/catch2-ctest-presets/
+?? .omo/plans/catch2-ctest-presets.md
+?? .omo/start-work/
+```
+
+Command: `git diff --name-status -- .omo`
+```text
+M	.omo/boulder.json
+D	.omo/evidence/baseline/covers/72/a745dac99d472921c1abd5cc81f197.png
+D	.omo/evidence/baseline/flac_flac_picture_desc_truncated.flac.stdout
+D	.omo/evidence/baseline/flac_flac_picture_image_truncated.flac.stdout
+D	.omo/evidence/baseline/flac_flac_picture_mime_truncated.flac.stdout
+D	.omo/evidence/baseline/flac_flac_picture_valid.flac.stdout
+D	.omo/evidence/baseline/flac_flac_valid_chain.flac.stdout
+D	.omo/evidence/baseline/flac_flac_vorbis_invalid_key_then_title.flac.stdout
+D	.omo/evidence/baseline/flac_flac_vorbis_invalid_lyrics_then_title.flac.stdout
+D	.omo/evidence/baseline/flac_flac_vorbis_invalid_value_then_artist.flac.stdout
+D	.omo/evidence/baseline/index.md
+D	.omo/evidence/baseline/tagreadertest-runs.json
+D	.omo/evidence/final-cast-inventory.txt
+D	.omo/evidence/final-summary.md
+D	.omo/evidence/task-1-baseline-gaps.md
+D	.omo/evidence/task-1-baseline.md
+D	.omo/evidence/task-1-cover-cache-poisoned.txt
+D	.omo/evidence/task-1-cover-cache-valid.txt
+D	.omo/evidence/task-1-regression-harness-error.txt
+D	.omo/evidence/task-1-regression-harness.txt
+D	.omo/evidence/task-10-baseline-actual/flac_picture_desc_truncated.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_picture_image_truncated.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_picture_mime_truncated.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_picture_valid.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_valid_chain.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_key_then_title.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_lyrics_then_title.flac.stdout
+D	.omo/evidence/task-10-baseline-actual/flac_vorbis_invalid_value_then_artist.flac.stdout
+D	.omo/evidence/task-10-covers/72/a745dac99d472921c1abd5cc81f197.png
+D	.omo/evidence/task-10-mp4-diff.txt
+D	.omo/evidence/task-10-mp4-malformed.txt
+D	.omo/evidence/task-11-pipeline-diff.txt
+D	.omo/evidence/task-11-tagformat-switch.txt
+D	.omo/evidence/task-12-cmake-targets.txt
+D	.omo/evidence/task-12-public-headers.txt
+D	.omo/evidence/task-13-sanitizer-fuzz.txt
+D	.omo/evidence/task-2-ape-tag-size-error.txt
+D	.omo/evidence/task-2-ape-tag-size.txt
+D	.omo/evidence/task-2-cover-export-ok.txt
+D	.omo/evidence/task-2-cover-export-readonly.txt
+D	.omo/evidence/task-2-malformed-noncover.txt
+D	.omo/evidence/task-2-public-surface.txt
+D	.omo/evidence/task-2-skeleton-build.txt
+D	.omo/evidence/task-3-core-contracts.txt
+D	.omo/evidence/task-3-fuzz-parallel.txt
+D	.omo/evidence/task-3-fuzz-root.txt
+D	.omo/evidence/task-3-id3-v22-flags-error.txt
+D	.omo/evidence/task-3-id3-v22-flags.txt
+D	.omo/evidence/task-3-public-api.txt
+D	.omo/evidence/task-4-cast-inventory.txt
+D	.omo/evidence/task-4-cover-packet-padding-error.txt
+D	.omo/evidence/task-4-cover-packet-padding.txt
+D	.omo/evidence/task-4-forbidden-abstractions.txt
+D	.omo/evidence/task-4-id3v22-lyrics-flagged.txt
+D	.omo/evidence/task-4-id3v22-unsupported-flag.txt
+D	.omo/evidence/task-4-text-baseline-diff.txt
+D	.omo/evidence/task-5-cover-security.txt
+D	.omo/evidence/task-5-input-symlink-order-error.txt
+D	.omo/evidence/task-5-input-symlink-order.txt
+D	.omo/evidence/task-5-mp4-lyrics-oversized.txt
+D	.omo/evidence/task-5-mp4-lyrics-utf16.txt
+D	.omo/evidence/task-5-no-cover-side-effect.txt
+D	.omo/evidence/task-6-baseline-actual/flac_flac_picture_desc_truncated.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_picture_image_truncated.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_picture_mime_truncated.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_picture_valid.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_valid_chain.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_key_then_title.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_lyrics_then_title.flac.stdout.actual
+D	.omo/evidence/task-6-baseline-actual/flac_flac_vorbis_invalid_value_then_artist.flac.stdout.actual
+D	.omo/evidence/task-6-covers/72/a745dac99d472921c1abd5cc81f197.png
+D	.omo/evidence/task-6-id3-cover-lyrics.txt
+D	.omo/evidence/task-6-id3-diff.txt
+D	.omo/evidence/task-6-no-iconv-policy-error.txt
+D	.omo/evidence/task-6-no-iconv-policy.txt
+D	.omo/evidence/task-6-ogg-nontarget-safe.txt
+D	.omo/evidence/task-6-ogg-resource-limit.txt
+D	.omo/evidence/task-6-ogg-vorbis-musictag.txt
+D	.omo/evidence/task-7-cover-export-policy-error.txt
+D	.omo/evidence/task-7-cover-export-policy.txt
+D	.omo/evidence/task-7-lrc-bracket-plain.txt
+D	.omo/evidence/task-7-lrc-timed.txt
+D	.omo/evidence/task-7-vorbis-diff.txt
+D	.omo/evidence/task-7-vorbis-invalid-entry.txt
+D	.omo/evidence/task-8-flac-diff.txt
+D	.omo/evidence/task-8-flac-malformed.txt
+D	.omo/evidence/task-8-full-integration-error.txt
+D	.omo/evidence/task-8-full-integration.txt
+D	.omo/evidence/task-8-mp4-size0-hidden-sibling.txt
+D	.omo/evidence/task-8-mp4-size0-tail.txt
+D	.omo/evidence/task-9-ogg-diff.txt
+D	.omo/evidence/task-9-ogg-malformed.txt
+D	.omo/evidence/task-P1-green.txt
+D	.omo/evidence/task-P1-red.txt
+D	.omo/evidence/task-P2-green.txt
+D	.omo/evidence/task-P2-red.txt
+D	.omo/evidence/task-S1-green.txt
+D	.omo/evidence/task-S1-red.txt
+D	.omo/evidence/task-S2-green.txt
+D	.omo/evidence/task-S2-red.txt
+D	.omo/evidence/task-S3-green.txt
+D	.omo/evidence/task-S3-red.txt
+D	.omo/notepads/analysis-bugfix-plan/decisions.md
+D	.omo/notepads/analysis-bugfix-plan/issues.md
+D	.omo/notepads/analysis-bugfix-plan/learnings.md
+D	.omo/notepads/analysis-bugfix-plan/problems.md
+D	.omo/notepads/analysis-bugfix/learnings.md
+D	.omo/notepads/analysis-fix-plan/decisions.md
+D	.omo/notepads/analysis-fix-plan/issues.md
+D	.omo/notepads/analysis-fix-plan/learnings.md
+D	.omo/notepads/analysis-fix-plan/problems.md
+D	.omo/notepads/ape-tag-support/decisions.md
+D	.omo/notepads/ape-tag-support/issues.md
+D	.omo/notepads/ape-tag-support/learnings.md
+D	.omo/notepads/bug-report-fixes/decisions.md
+D	.omo/notepads/bug-report-fixes/issues.md
+D	.omo/notepads/bug-report-fixes/learnings.md
+D	.omo/notepads/bug-report-fixes/problems.md
+D	.omo/notepads/bugfix-sprint/decisions.md
+D	.omo/notepads/bugfix-sprint/issues.md
+D	.omo/notepads/bugfix-sprint/learnings.md
+D	.omo/notepads/tagreader-refactor-implementation/decisions.md
+D	.omo/notepads/tagreader-refactor-implementation/issues.md
+D	.omo/notepads/tagreader-refactor-implementation/learnings.md
+D	.omo/notepads/tagreader-refactor-implementation/problems.md
+D	.omo/notepads/tagreader-security-fixes/learnings.md
+D	.omo/notepads/topplan-phases-0-5/decisions.md
+D	.omo/notepads/topplan-phases-0-5/issues.md
+D	.omo/notepads/topplan-phases-0-5/learnings.md
+D	.omo/notepads/topplan-phases-0-5/problems.md
+D	.omo/plans/analysis-bugfix-plan.md
+D	.omo/plans/analysis-bugfix.md
+D	.omo/plans/analysis-fix-plan.md
+D	.omo/plans/ape-tag-support.md
+D	.omo/plans/bug-report-fixes.md
+D	.omo/plans/bugfix-sprint.md
+D	.omo/plans/tagreader-refactor-implementation.md
+D	.omo/plans/tagreader-security-fixes.md
+D	.omo/plans/topplan-phases-0-5.md
+D	.omo/run-continuation/ses_12275b6eaffeEX3BbrOWgsWtcQ.json
+D	.omo/run-continuation/ses_12829a8cbffeAyeAN5BMCajhG6.json
+D	.omo/run-continuation/ses_12b972f7cffeo3eW402PQ8TD0f.json
+D	.omo/run-continuation/ses_12b97ede6ffeTrOHIu5iEQq2zm.json
+D	.omo/run-continuation/ses_1545dbb2bffeA55wC8mRQPkHY5.json
+D	.omo/run-continuation/ses_15473b44cffegziAj3d3VQfB7o.json
+D	.omo/run-continuation/ses_1553b5a7effehBH9eebf49lhXS.json
+D	.omo/run-continuation/ses_155537fe7ffeYVsnP8NmuFojRd.json
+D	.omo/run-continuation/ses_155aafb89ffejbQmKDbG4q6t7T.json
+D	.omo/run-continuation/ses_159815338ffeXK9B3GedIt1ex1.json
+D	.omo/run-continuation/ses_159f20313ffewKLfjBryf5oYq6.json
+D	.omo/run-continuation/ses_15a4cbeacffeVZywYVfRxrfK3y.json
+D	.omo/run-continuation/ses_15a5810f3ffepD1JVnLH10znUQ.json
+D	.omo/run-continuation/ses_15a58bf41ffeQ0UNSu49VOldOI.json
+D	.omo/run-continuation/ses_16f9729f3ffe1L9H9Mprj76eyZ.json
+D	.omo/run-continuation/ses_174e97bddffeMaLXyZlsWvMiOj.json
+D	.omo/run-continuation/ses_17e2d1d07ffe5Q61oS33R7lR7U.json
+D	.omo/run-continuation/ses_17e900a5effegFHVv4aDpe5i3g.json
+D	.omo/run-continuation/ses_183c44b07ffeAqkIXGfMeNX1Il.json
+D	.omo/run-continuation/ses_184233d0effeyBfGL95OU8I67C.json
+D	.omo/run-continuation/ses_186fae984ffer6uI50CMtr0MyZ.json
+D	.omo/run-continuation/ses_18706db8effeo6e1MWiwmBxHqu.json
+```
+
+Command: `git diff --name-status -- CMakeLists.txt test docs AGENTS.md CMakePresets.json .clangd`
+```text
+M	AGENTS.md
+M	docs/DESIGN.md
+M	test/corpus/generate_corpus.py
+M	test/regression/regression_tests.cpp
+M	test/security/generate_samples.py
+```
+
+Isolation strategy for later migration commits:
+- Never stage `.omo` paths in the Catch2/CTest migration commits unless doing a dedicated cleanup commit for `.omo` only.
+- Use explicit positive pathspecs for migration work, for example `git add CMakeLists.txt CMakePresets.json .clangd test/... docs/DESIGN.md` and avoid `git add .` / `git add -A`.
+- If a commit must exclude `.omo`, use a scoped add like `git add -- ':! .omo'` only after verifying the shell/pathspec form in the current git version; otherwise stage by exact file paths.
+- Keep the existing `.omo` deletion state out of the migration series; if cleanup is ever needed, commit it separately before any Catch2/CTest work.
+
+Acceptance check:
+- The required status and diff evidence is recorded here.
+- The worktree is still dirty outside `.omo`; that is expected for Todo 0 because this task only establishes the isolation boundary.

@@ -1,3 +1,0 @@
-expectation failed: later valid FLAC Vorbis comment block should provide title
-expectation failed: later valid FLAC Vorbis comment block should provide artist
-picture-cover-cache-propagated error=invalid cover cache file /tmp/tagreader_flac_malformed_metadata_tests/picture-error/covers-picture/4f/f6ab670a58c14270e034e2090d9a432caa263a14e0a25785386b0c12f880b5.png: bytes do not match current cover
