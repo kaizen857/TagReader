@@ -98,6 +98,7 @@ add_library(TagReaderCore STATIC
     src/formats/cue/CueReader.cpp
     src/formats/cue/CueParser.cpp
     src/formats/cue/CueTextLoader.cpp
+    src/formats/cue/CuePathResolver.cpp
 )
 
 tagreader_enable_sanitizers(TagReaderCore)

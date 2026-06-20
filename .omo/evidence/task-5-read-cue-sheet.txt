@@ -1,0 +1,26 @@
+Task 5 evidence
+
+Changed files:
+- src/formats/cue/CuePathResolver.hpp
+- src/formats/cue/CuePathResolver.cpp
+- src/formats/cue/CueReader.cpp
+- CMakeLists.txt
+- test/CMakeLists.txt
+- test/regression/cue_catch2_tests.cpp
+- test/regression/cue_path_catch2_tests.cpp
+- .omo/notepads/read-cue-sheet/learnings.md
+
+Verification:
+- `cmake --build --preset default` ✅
+- `ctest --test-dir build/default -R 'cue file resolver|cue parser handles multi file and quoted fields' --output-on-failure` ✅
+- Pure LOC: `CuePathResolver.cpp` 91, `CueReader.cpp` 46, `cue_catch2_tests.cpp` 211, `cue_path_catch2_tests.cpp` 69
+
+Behavior covered:
+- safe relative FILE resolution
+- multi-file association
+- absolute path rejection
+- `..` rejection
+- symlink rejection
+- directory rejection
+- missing file classification
+- self-reference rejection
