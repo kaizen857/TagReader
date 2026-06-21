@@ -1,0 +1,15 @@
+Task 8 evidence
+
+Changed files:
+- src/formats/cue/CueReader.cpp
+- test/regression/cue_catch2_tests.cpp
+
+Verification:
+- `cmake --build --preset default` ✅
+- `ctest --preset default --output-on-failure -R 'Cue.*Cover|Cue.*ReadUnchanged'` ✅
+- manual CLI QA: `TagReaderTest` on the cue cover fallback sample exported the expected PNG into the caller-provided export dir
+
+Behavior covered:
+- same-directory cover fallback when embedded cover is absent
+- embedded cover wins over sidecar images
+- cover export dir is honored for fallback PNG output

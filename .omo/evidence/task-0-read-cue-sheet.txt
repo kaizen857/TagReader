@@ -1,0 +1,15 @@
+git status --short:
+ M .omo/boulder.json
+?? .omo/drafts/read-cue-sheet.md
+?? .omo/evidence/plan-review-read-cue-sheet.txt
+?? .omo/notepads/read-cue-sheet/
+?? .omo/plans/read-cue-sheet.md
+?? .omo/run-continuation/ses_11c626988ffe5O4OW9h4PiMzoe.json
+?? .omo/run-continuation/ses_11c7abc54ffeekENCKhJi9OSFv.json
+?? .omo/run-continuation/ses_120139828ffe6FFEJKNMyJUGP2.json
+?? CUE_HANDLING_RESEARCH.md
+
+scope decision:
+- protected/unrelated paths: `.omo/boulder.json`, `.omo/run-continuation/*`, `.omo/drafts/read-cue-sheet.md`, `.omo/plans/read-cue-sheet.md`, `.omo/evidence/plan-review-read-cue-sheet.txt`, `CUE_HANDLING_RESEARCH.md`
+- allowed future CUE work families: `include/`, `src/`, `test/`, `docs/`, `AGENTS.md`, `CUE_HANDLING_RESEARCH.md`, `CMakeLists.txt`, `test/CMakeLists.txt`, `.omo/drafts/read-cue-sheet.md`, `.omo/plans/read-cue-sheet.md`, `.omo/evidence`
+- execution rule: do not touch product files outside the allowed families; do not modify or restore user-owned unrelated work

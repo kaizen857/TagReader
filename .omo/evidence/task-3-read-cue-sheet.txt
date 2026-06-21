@@ -1,0 +1,15 @@
+cmake --build --preset default --target TagReaderCueCatch2Tests
+-> passed
+
+ctest --test-dir build/default -R 'cue' --output-on-failure
+-> passed (4/4 tests)
+
+Implemented files:
+- src/formats/cue/CueTextLoader.hpp
+- src/formats/cue/CueTextLoader.cpp
+- src/formats/cue/CueReader.hpp
+- src/formats/cue/CueReader.cpp
+- src/TagReader.cpp
+- CMakeLists.txt
+- test/CMakeLists.txt
+- test/regression/cue_catch2_tests.cpp

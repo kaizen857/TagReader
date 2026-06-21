@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "active_work_id": "catch2-ctest-presets-051f512e",
+  "active_work_id": "read-cue-sheet-249382df",
   "works": {
     "catch2-ctest-presets-bb0c4f8d": {
       "work_id": "catch2-ctest-presets-bb0c4f8d",
@@ -190,176 +190,418 @@
       },
       "ended_at": "2026-06-20T04:43:09.219Z",
       "elapsed_ms": 10984629
+    },
+    "read-cue-sheet-1ea0d485": {
+      "work_id": "read-cue-sheet-1ea0d485",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T11:32:24.768Z",
+      "updated_at": "2026-06-20T11:32:24.768Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-9f4e17d3": {
+      "work_id": "read-cue-sheet-9f4e17d3",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T11:32:24.779Z",
+      "updated_at": "2026-06-20T11:32:24.779Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-0e7cf99a": {
+      "work_id": "read-cue-sheet-0e7cf99a",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T11:33:48.913Z",
+      "updated_at": "2026-06-20T11:33:48.913Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-267c7d70": {
+      "work_id": "read-cue-sheet-267c7d70",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T11:33:48.967Z",
+      "updated_at": "2026-06-20T11:33:48.967Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-5dd6584d": {
+      "work_id": "read-cue-sheet-5dd6584d",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T12:42:22.000Z",
+      "updated_at": "2026-06-20T12:42:22.000Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-05d1381a": {
+      "work_id": "read-cue-sheet-05d1381a",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T12:42:22.064Z",
+      "updated_at": "2026-06-20T12:42:22.064Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-44ba3d06": {
+      "work_id": "read-cue-sheet-44ba3d06",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T12:45:40.058Z",
+      "updated_at": "2026-06-20T12:45:40.058Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-271aba74": {
+      "work_id": "read-cue-sheet-271aba74",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T12:45:40.068Z",
+      "updated_at": "2026-06-20T14:20:52.519Z",
+      "session_ids": [
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+      ],
+      "session_origins": {
+        "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:0": {
+          "task_key": "todo:0",
+          "task_label": "0",
+          "task_title": "隔离当前脏工作树并锁定执行范围",
+          "session_id": "opencode:ses_11aedc076ffeBjgxT0IsPctMLF",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T12:48:14.266Z",
+          "started_at": "2026-06-20T12:48:14.266Z",
+          "status": "running"
+        },
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "新增 `ReadCueSheet` public API 骨架与编译期边界测试",
+          "session_id": "opencode:ses_11aeafb16ffeVo2Z8LXAftVj4L",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T12:53:43.085Z",
+          "started_at": "2026-06-20T12:53:43.085Z",
+          "status": "running"
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "实现 CUE 文本读取、编码嗅探与 UTF-8 输入层",
+          "session_id": "opencode:ses_11ae3624dffe2vso0KgB7YejNr",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-20T12:57:40.091Z",
+          "status": "running",
+          "updated_at": "2026-06-20T13:11:34.151Z"
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "实现 bounded CUE parser 与私有中间态",
+          "session_id": "opencode:ses_11ad38b93ffe1fmSJkYK74Q767",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T13:21:31.039Z",
+          "started_at": "2026-06-20T13:21:31.039Z",
+          "status": "running"
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "实现 CUE `FILE` 路径解析与音频引用安全策略",
+          "session_id": "opencode:ses_11ac51be5ffek9xTuN5flhUuc7",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T13:48:45.607Z",
+          "started_at": "2026-06-20T13:48:45.607Z",
+          "status": "running"
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "映射 CUE track 为 `MusicTag` 并复用 `ReadTag()` 补全音频字段",
+          "session_id": "opencode:ses_11ac51be5ffek9xTuN5flhUuc7",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-20T13:54:04.465Z",
+          "status": "running",
+          "updated_at": "2026-06-20T14:02:56.546Z"
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "实现 CUE offset/duration 时间推导",
+          "session_id": "opencode:ses_11ac51be5ffek9xTuN5flhUuc7",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-20T14:05:53.282Z",
+          "status": "running",
+          "updated_at": "2026-06-20T14:17:39.536Z"
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "实现外部封面 fallback 与 cover export 重载语义",
+          "session_id": "opencode:ses_11c626988ffe5O4OW9h4PiMzoe",
+          "agent": "plan",
+          "category": "quick",
+          "started_at": "2026-06-20T14:19:46.007Z",
+          "status": "running",
+          "updated_at": "2026-06-20T14:20:52.519Z"
+        }
+      }
+    },
+    "read-cue-sheet-b969c0fa": {
+      "work_id": "read-cue-sheet-b969c0fa",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:31:06.034Z",
+      "updated_at": "2026-06-20T14:31:06.034Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-e7aff8a2": {
+      "work_id": "read-cue-sheet-e7aff8a2",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:31:06.044Z",
+      "updated_at": "2026-06-20T14:31:06.044Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-bab6921f": {
+      "work_id": "read-cue-sheet-bab6921f",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:31:48.663Z",
+      "updated_at": "2026-06-20T14:31:48.663Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-ff77a93f": {
+      "work_id": "read-cue-sheet-ff77a93f",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:31:48.677Z",
+      "updated_at": "2026-06-20T14:31:48.677Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-4822fac3": {
+      "work_id": "read-cue-sheet-4822fac3",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:34:03.149Z",
+      "updated_at": "2026-06-20T14:34:03.149Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-a2b4672a": {
+      "work_id": "read-cue-sheet-a2b4672a",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "active",
+      "started_at": "2026-06-20T14:34:03.161Z",
+      "updated_at": "2026-06-20T14:34:03.161Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "read-cue-sheet-249382df": {
+      "work_id": "read-cue-sheet-249382df",
+      "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+      "plan_name": "read-cue-sheet",
+      "status": "completed",
+      "started_at": "2026-06-20T14:34:58.895Z",
+      "updated_at": "2026-06-20T15:58:47.910Z",
+      "session_ids": [
+        "opencode:ses_11a943600ffe00okZPY44y0BJe"
+      ],
+      "session_origins": {
+        "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "实现外部封面 fallback 与 cover export 重载语义",
+          "session_id": "opencode:ses_11a8a14acffemjdpusbR7Ndtrz",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-06-20T14:54:16.063Z",
+          "started_at": "2026-06-20T14:54:16.063Z",
+          "status": "running"
+        },
+        "todo:9": {
+          "task_key": "todo:9",
+          "task_label": "9",
+          "task_title": "实现单文件/多文件 CUE 失败策略与 partial return 规则",
+          "session_id": "opencode:ses_11a76b127ffejyFqLkXgTXpSGY",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-06-20T15:00:06.365Z",
+          "status": "running",
+          "updated_at": "2026-06-20T15:03:51.264Z"
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_11a51109effeFrOrcHnyNgqSPq",
+          "agent": "librarian",
+          "started_at": "2026-06-20T15:41:28.724Z",
+          "status": "running",
+          "updated_at": "2026-06-20T15:41:29.211Z"
+        }
+      },
+      "ended_at": "2026-06-20T15:58:47.910Z",
+      "elapsed_ms": 5029015
     }
   },
-  "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/catch2-ctest-presets.md",
-  "started_at": "2026-06-20T01:40:04.590Z",
+  "active_plan": "/home/kaizen857/cppProject(app_and_lib)/TagReader/.omo/plans/read-cue-sheet.md",
+  "started_at": "2026-06-20T14:34:58.895Z",
   "status": "completed",
-  "updated_at": "2026-06-20T04:43:09.219Z",
+  "updated_at": "2026-06-20T15:58:47.910Z",
   "session_ids": [
-    "opencode:ses_120139828ffe6FFEJKNMyJUGP2"
+    "opencode:ses_11a943600ffe00okZPY44y0BJe"
   ],
   "session_origins": {
-    "opencode:ses_120139828ffe6FFEJKNMyJUGP2": "direct"
+    "opencode:ses_11a943600ffe00okZPY44y0BJe": "direct"
   },
-  "plan_name": "catch2-ctest-presets",
+  "plan_name": "read-cue-sheet",
   "task_sessions": {
-    "todo:0": {
-      "task_key": "todo:0",
-      "task_label": "0",
-      "task_title": "隔离当前脏工作树与 `.omo` 删除状态",
-      "session_id": "opencode:ses_11d4d4aabffeEUjAfWGKugySG7",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-low",
-      "updated_at": "2026-06-20T01:46:06.032Z",
-      "started_at": "2026-06-20T01:46:06.032Z",
-      "status": "running"
-    },
-    "todo:1": {
-      "task_key": "todo:1",
-      "task_label": "1",
-      "task_title": "建立 Presets、CTest 与 clangd 编译数据库基础",
-      "session_id": "opencode:ses_11d46a6efffewwUxJ9GFAvUGZ1",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T01:55:57.937Z",
-      "started_at": "2026-06-20T01:55:57.937Z",
-      "status": "running"
-    },
-    "todo:2": {
-      "task_key": "todo:2",
-      "task_label": "2",
-      "task_title": "集成 Catch2 v3 依赖与 CTest 发现骨架",
-      "session_id": "opencode:ses_11d3e76d8ffeYWqwbTpM7SlA77",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T02:06:39.191Z",
-      "started_at": "2026-06-20T02:06:39.191Z",
-      "status": "running"
-    },
-    "todo:4": {
-      "task_key": "todo:4",
-      "task_label": "4",
-      "task_title": "迁移 FLAC malformed 与默认封面目录专项测试",
-      "session_id": "opencode:ses_11d3454baffenYYREHTCIaHGvD",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "started_at": "2026-06-20T02:43:48.532Z",
-      "status": "running",
-      "updated_at": "2026-06-20T02:51:52.997Z"
-    },
-    "todo:3": {
-      "task_key": "todo:3",
-      "task_label": "3",
-      "task_title": "迁移歌词规范化复杂度测试作为 Catch2 样板",
-      "session_id": "opencode:ses_11d3455f5ffeN1D0JfnH1AUY2e",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T02:45:26.284Z",
-      "started_at": "2026-06-20T02:45:26.284Z",
-      "status": "running"
-    },
-    "todo:5": {
-      "task_key": "todo:5",
-      "task_label": "5",
-      "task_title": "迁移 `TR-AUDIT-001..031` 到 Catch2 并保持旧 runner 对照",
-      "session_id": "opencode:ses_11d0d290effeOcV2srA3AgiSnM",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T03:03:39.274Z",
-      "started_at": "2026-06-20T03:03:39.274Z",
-      "status": "running"
-    },
-    "todo:6": {
-      "task_key": "todo:6",
-      "task_label": "6",
-      "task_title": "迁移 `TR-AUDIT-032..056` 到 Catch2 并保持新增格式覆盖",
-      "session_id": "opencode:ses_11d02343affe5OaIcmWYQkRvnL",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T03:11:25.053Z",
-      "started_at": "2026-06-20T03:11:25.053Z",
-      "status": "running"
-    },
-    "todo:7": {
-      "task_key": "todo:7",
-      "task_label": "7",
-      "task_title": "将 security smoke、样本生成和 fuzz preset 纳入 CTest 工作流",
-      "session_id": "opencode:ses_11cfb7295ffeRKrOrtyf4VIrPU",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-20T03:30:14.904Z",
-      "started_at": "2026-06-20T03:30:14.904Z",
-      "status": "running"
-    },
     "todo:8": {
       "task_key": "todo:8",
       "task_label": "8",
-      "task_title": "删除旧自建测试 runner 与根 CMake 测试堆叠",
-      "session_id": "opencode:ses_11ce9acf6ffeFI7txs2imz5pIg",
+      "task_title": "实现外部封面 fallback 与 cover export 重载语义",
+      "session_id": "opencode:ses_11a8a14acffemjdpusbR7Ndtrz",
       "agent": "Sisyphus-Junior",
       "category": "quick",
-      "updated_at": "2026-06-20T03:41:25.551Z",
-      "started_at": "2026-06-20T03:41:25.551Z",
+      "updated_at": "2026-06-20T14:54:16.063Z",
+      "started_at": "2026-06-20T14:54:16.063Z",
       "status": "running"
     },
     "todo:9": {
       "task_key": "todo:9",
       "task_label": "9",
-      "task_title": "更新文档、AGENTS 指令与最终迁移验收",
-      "session_id": "opencode:ses_11ce00cf8ffezqKLWEZ5ywUGav",
+      "task_title": "实现单文件/多文件 CUE 失败策略与 partial return 规则",
+      "session_id": "opencode:ses_11a76b127ffejyFqLkXgTXpSGY",
       "agent": "Sisyphus-Junior",
-      "category": "",
-      "started_at": "2026-06-20T03:50:38.070Z",
+      "category": "quick",
+      "started_at": "2026-06-20T15:00:06.365Z",
       "status": "running",
-      "updated_at": "2026-06-20T03:53:49.646Z"
-    },
-    "final-wave:f4": {
-      "task_key": "final-wave:f4",
-      "task_label": "F4",
-      "task_title": "Scope fidelity",
-      "session_id": "opencode:ses_11cd4bcf9ffeqeVxhAFWbuAllk",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-low",
-      "updated_at": "2026-06-20T04:31:11.357Z",
-      "started_at": "2026-06-20T04:31:11.357Z",
-      "status": "running"
-    },
-    "final-wave:f2": {
-      "task_key": "final-wave:f2",
-      "task_label": "F2",
-      "task_title": "Code quality review",
-      "session_id": "opencode:ses_11cd4beafffeVco4oa2N590wBX",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-low",
-      "updated_at": "2026-06-20T04:31:42.540Z",
-      "started_at": "2026-06-20T04:31:42.540Z",
-      "status": "running"
-    },
-    "final-wave:f3": {
-      "task_key": "final-wave:f3",
-      "task_label": "F3",
-      "task_title": "Real manual QA",
-      "session_id": "opencode:ses_11cd4bd4bffeNSgLKwuh4aIJtR",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-low",
-      "updated_at": "2026-06-20T04:32:06.799Z",
-      "started_at": "2026-06-20T04:32:06.799Z",
-      "status": "running"
+      "updated_at": "2026-06-20T15:03:51.264Z"
     },
     "final-wave:f1": {
       "task_key": "final-wave:f1",
       "task_label": "F1",
       "task_title": "Plan compliance audit",
-      "session_id": "opencode:ses_11cd4bfc3ffemTrs4BqoLqFNPE",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-low",
-      "updated_at": "2026-06-20T04:40:09.137Z",
-      "started_at": "2026-06-20T04:40:09.137Z",
-      "status": "running"
+      "session_id": "opencode:ses_11a51109effeFrOrcHnyNgqSPq",
+      "agent": "librarian",
+      "started_at": "2026-06-20T15:41:28.724Z",
+      "status": "running",
+      "updated_at": "2026-06-20T15:41:29.211Z"
     }
   },
   "agent": "atlas",
-  "ended_at": "2026-06-20T04:43:09.219Z",
-  "elapsed_ms": 10984629
+  "ended_at": "2026-06-20T15:58:47.910Z",
+  "elapsed_ms": 5029015
 }

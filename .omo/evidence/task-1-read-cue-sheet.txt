@@ -1,0 +1,17 @@
+Task 1 evidence
+
+Changed files:
+- `include/TagReader.hpp`
+- `src/TagReader.cpp`
+- `test/regression/regression_tests.cpp`
+- `.omo/notepads/read-cue-sheet/learnings.md`
+
+Implemented:
+- Added `TagReader::ReadCueSheet(const std::filesystem::path &)`.
+- Added `TagReader::ReadCueSheet(const std::filesystem::path &, const std::filesystem::path &)`.
+- Kept `TagReader::Read()` overloads scalar and unchanged.
+- Extended TR-AUDIT-056 compile-time coverage to require batch return types for `ReadCueSheet` and reject batch semantics for `Read()` / `ReadAlbum`.
+
+Verification pending:
+`cmake --build --preset default` failed in existing Catch2 discovery for `TagReaderFlacMalformedMetadataCatch2Tests` because the generated executable was not present at `build/default/test/TagReaderFlacMalformedMetadataCatch2Tests`.
+`ctest --test-dir build/default -R TR-AUDIT-056 --output-on-failure` passed.

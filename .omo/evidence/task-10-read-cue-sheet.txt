@@ -1,0 +1,16 @@
+Task 10 evidence
+
+Changed files:
+- AGENTS.md
+- docs/DESIGN.md
+- CUE_HANDLING_RESEARCH.md
+- test/regression/regression_tests.cpp
+
+Verification:
+- `ctest --test-dir build/default -R TR-AUDIT-056 --output-on-failure` ✅
+- `rg -n "ReadCueSheet|CUE|ctest.*Cue|TR-AUDIT-056" AGENTS.md docs/DESIGN.md CUE_HANDLING_RESEARCH.md test/regression` ✅
+
+Behavior covered:
+- docs now describe explicit `ReadCueSheet`
+- docs still state FLAC binary CUESHEET / directory album scan remain unsupported
+- TR-AUDIT-056 summary markers updated for batch-vs-scalar API boundary

@@ -1,0 +1,15 @@
+Task 9 evidence
+
+Changed files:
+- src/formats/cue/CueReader.cpp
+- test/regression/cue_timing_catch2_tests.cpp
+
+Verification:
+- `cmake --build --preset default` ✅
+- `ctest --test-dir build/default -R 'Cue failure policy fails when the only audio file is missing|Cue failure policy keeps valid tracks when a later file is missing' --output-on-failure` ✅
+- `cmake --preset sanitize && cmake --build --preset sanitize && ctest --preset sanitize --output-on-failure -R 'Cue|TR-AUDIT-056'` ✅
+
+Behavior covered:
+- single-file missing audio fails the whole cue read
+- multi-file missing audio keeps remaining valid tracks
+- TR-AUDIT-056 still enforces the public API boundary

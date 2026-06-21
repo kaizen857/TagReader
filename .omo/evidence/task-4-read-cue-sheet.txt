@@ -1,0 +1,7 @@
+Verified:
+- `cmake --build --preset default --target TagReaderCueCatch2Tests` ✅
+- `ctest --test-dir build/default -R '^cue parser' --output-on-failure` ✅
+
+Notes:
+- New parser tests registered as CTest cases 12-16.
+- Parser state remains private under `src/formats/cue/`.

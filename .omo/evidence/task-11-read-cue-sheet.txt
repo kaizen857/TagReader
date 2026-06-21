@@ -1,0 +1,13 @@
+Task 11 evidence
+
+Verification:
+- `cmake --preset default` ✅
+- `cmake --build --preset default` ✅
+- `ctest --preset default --output-on-failure` ✅
+- `ctest --test-dir build/default -R "Cue|TR-AUDIT-056" --output-on-failure` ✅
+- `cmake --preset sanitize` ✅
+- `cmake --build --preset sanitize` ✅
+- `ctest --preset sanitize --output-on-failure -R "Cue|TR-AUDIT-056"` ✅
+
+Artifact check:
+- `git status --short --untracked-files=all` showed no generated build/sample/cache files under the ignored paths

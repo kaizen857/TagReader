@@ -1,0 +1,7 @@
+Task 2 evidence
+
+- Modified: `test/CMakeLists.txt`, `test/regression/catch2_regression_support.hpp`, `test/regression/catch2_regression_support.cpp`, `test/regression/catch2_sample_support.hpp`, `test/regression/catch2_sample_support.cpp`, `test/regression/cue_catch2_tests.cpp`
+- Build: `cmake --build --preset default --target TagReaderCueCatch2Tests -j1` ✅
+- CTest: `ctest --test-dir build/default -N` ✅ showed `cue sample helpers create temp-only artifacts`
+- Worktree: `git status --short` showed no generated sample binaries tracked
+- Note: full preset build still hits an existing `catch_discover_tests()` busy-file issue in `TagReaderFlacMalformedMetadataCatch2Tests`; the new CUE target itself builds cleanly

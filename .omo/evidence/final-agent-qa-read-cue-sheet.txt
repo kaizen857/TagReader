@@ -1,0 +1,16 @@
+APPROVE
+
+Evidence:
+- `cmake --preset default`
+- `cmake --build --preset default`
+- `ctest --preset default --output-on-failure`
+- `ctest --test-dir build/default -R "Cue|TR-AUDIT-056" --output-on-failure`
+- `cmake --preset sanitize`
+- `cmake --build --preset sanitize`
+- `ctest --preset sanitize --output-on-failure -R "Cue|TR-AUDIT-056"`
+- `ctest --test-dir build/default -R "Cue.*Cover" --output-on-failure`
+- `git status --short --untracked-files=all`
+
+Result:
+- Default suite passed: `100% tests passed, 0 tests failed out of 93`.
+- Focused Cue/TR-AUDIT-056 and sanitize focused tests passed.

@@ -1,0 +1,13 @@
+Momus high-accuracy plan review for .omo/plans/read-cue-sheet.md
+
+First review verdict: REVISE
+- Blocking issue 1: final verification wave lacked executable invocation/pass criteria/evidence details.
+- Blocking issue 2: Todo 0 did not account for .omo/drafts/read-cue-sheet.md and .omo/plans/read-cue-sheet.md in current worktree state.
+
+Revision applied:
+- Added explicit F1/F2/F3/F4 invocations, pass conditions, and evidence write targets.
+- Updated Todo 0 to include .omo/drafts/read-cue-sheet.md and .omo/plans/read-cue-sheet.md as allowed planning artifacts.
+
+Second review verdict: OKAY
+- Summary: Plan now has executable final verification wave and complete Todo 0 worktree accounting.
+- Remaining blockers: none.

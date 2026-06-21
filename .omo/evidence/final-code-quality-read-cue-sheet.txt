@@ -1,0 +1,10 @@
+APPROVE
+
+Evidence:
+- `src/formats/cue/CueParser.cpp` now rejects `INDEX` minute overflow against `uint16_t`.
+- `src/core/TagPipeline.hpp` exports `IsCoverExportOrCacheError`, removing duplicated classifier logic.
+- `src/formats/cue/CueReader.cpp` keeps cover fallback bounded to the audio file's own directory and applies fallback only after timing validation.
+
+Commands inspected:
+- `read` of `src/formats/cue/CueParser.cpp`, `src/core/TagPipeline.cpp`, `src/core/TagPipeline.hpp`, and `src/formats/cue/CueReader.cpp`.
+- `ctest --preset sanitize --output-on-failure -R "Cue|TR-AUDIT-056"`

@@ -1,0 +1,13 @@
+APPROVE
+
+Evidence:
+- `Read()` remains scalar; `ReadAlbum` is absent.
+- No `AVDictionary` dependency appears in the implementation path.
+- No FLAC binary `CUESHEET` support is claimed for this feature.
+- Path/symlink safety is enforced in `src/formats/cue/CuePathResolver.cpp`.
+- Same-directory cover fallback is bounded and non-recursive, matching the plan's scope.
+
+Commands inspected:
+- `rg -n "ReadCueSheet|ReadAlbum|std::vector<MusicTag>|AVDictionary|CUESHEET|recursive|directory" include src test docs AGENTS.md CUE_HANDLING_RESEARCH.md`
+- `git status --short --untracked-files=all`
+- `ctest --test-dir build/default -R "TR-AUDIT-056|Cue.*Path|Cue.*Symlink|Cue.*ReadUnchanged" --output-on-failure`

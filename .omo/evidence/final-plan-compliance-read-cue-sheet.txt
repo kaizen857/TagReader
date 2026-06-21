@@ -1,0 +1,13 @@
+APPROVE
+
+Evidence:
+- `include/TagReader.hpp` exposes `ReadCueSheet` batch overloads.
+- `src/TagReader.cpp` keeps `Read()` scalar and forwards CUE reads separately.
+- `test/regression/regression_tests.cpp` keeps `TR-AUDIT-056` as the API boundary check.
+- `.omo/evidence/task-0-read-cue-sheet.txt` through `.omo/evidence/task-11-read-cue-sheet.txt` are present.
+- `docs/DESIGN.md` and `AGENTS.md` describe `ReadCueSheet` and preserve the unsupported boundaries.
+
+Commands inspected:
+- `git status --short`
+- `git diff --stat -- ':!node_modules'`
+- `read` of the plan, API, implementation, docs, and evidence files.
