@@ -91,6 +91,29 @@ tagreader_enable_sanitizers(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
 catch_discover_tests(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
+add_executable(TagReaderSidecarCoverCatch2Tests
+    regression/catch2_regression_support.cpp
+    regression/catch2_sample_support.cpp
+    regression/sidecar_cover_catch2_tests.cpp
+)
+
+target_link_libraries(TagReaderSidecarCoverCatch2Tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        TagReaderCore
+)
+
+target_include_directories(TagReaderSidecarCoverCatch2Tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+tagreader_enable_sanitizers(TagReaderSidecarCoverCatch2Tests)
+
+catch_discover_tests(TagReaderSidecarCoverCatch2Tests)
+
 add_executable(TagReaderCueCatch2Tests
     regression/catch2_regression_support.cpp
     regression/catch2_sample_support.cpp

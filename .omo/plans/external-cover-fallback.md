@@ -64,7 +64,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
 ## Todos
 > Implementation + Test = ONE todo. Never separate.
 <!-- APPEND TASK BATCHES BELOW THIS LINE WITH edit/apply_patch - never rewrite the headers above. -->
-- [ ] 1. 新增普通格式 sidecar cover 回归测试（先失败）
+- [x] 1. 新增普通格式 sidecar cover 回归测试（先失败）
   What to do / Must NOT do: 在 `test/regression/sidecar_cover_catch2_tests.cpp` 新增独立测试，并在 `test/CMakeLists.txt` 新增 `TagReaderSidecarCoverCatch2Tests` target：包含 `regression/catch2_regression_support.cpp`、`regression/catch2_sample_support.cpp`、新测试文件，链接 `Catch2::Catch2WithMain` 和 `TagReaderCore`，调用 `tagreader_enable_sanitizers()`、`target_include_directories()`、`catch_discover_tests()`。测试名必须包含 `Sidecar`，保证 `ctest -R Sidecar` 可发现。测试必须通过 `TagReader::Read(audioPath, exportDir)` 覆盖普通单文件 MP3：无内嵌封面时同目录 `cover.jpg` 生效；同目录同时存在 `folder.png` 与 `cover.jpg` 时 `cover` 优先；音频已有 APIC 时外部 `cover.jpg` 不覆盖。不得依赖人工样本；使用 `GenerateBaseMp3()`、`GenerateCoverSample()`、`OneByOnePng()`、`OneByOneJpeg()`。
   Parallelization: Wave 1 | Blocked by: none | Blocks: 2,3,4
   References (executor has NO interview context - be exhaustive): `test/regression/catch2_sample_support.cpp:7`, `test/regression/catch2_sample_support.cpp:61`, `test/regression/catch2_sample_support.cpp:79`, `test/regression/cue_catch2_tests.cpp:268`, `test/regression/cue_catch2_tests.cpp:293`, `test/CMakeLists.txt:77`, `test/CMakeLists.txt:94`。
