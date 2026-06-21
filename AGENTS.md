@@ -25,9 +25,9 @@
 
 ## 封面副作用
 
-- `Read(path)` 也会导出封面：优先 `XDG_RUNTIME_DIR/tagreader-covers`，否则回退到用户私有临时目录（POSIX 为 `temp_directory_path()/tagreader-covers-$UID`）。默认目录会被创建、拒绝 symlink 并硬化为当前用户私有。
-- `Read(path, coverExportDir)` 会创建并探测调用方目录；显式目录 symlink 会被拒绝。
-- 封面缓存是 content-addressed PNG storage，key 基于内嵌图片原始字节，路径为 `coverExportDir / first2hex / rest.png`；已有缓存直接复用，不重复解码或重写。
+- `Read(path)` 也会导出封面：若文件本身没有可用内嵌封面，则会在同目录尝试 sidecar 图片（`cover/front/folder/album/artwork`），并优先导出到 `XDG_RUNTIME_DIR/tagreader-covers`，否则回退到用户私有临时目录（POSIX 为 `temp_directory_path()/tagreader-covers-$UID`）。默认目录会被创建、拒绝 symlink 并硬化为当前用户私有。
+- `Read(path, coverExportDir)` 会创建并探测调用方目录；显式目录 symlink 会被拒绝。sidecar fallback 与内嵌封面导出共用同一 `coverExportDir`。
+- 封面缓存是 content-addressed PNG storage，key 基于内嵌图片原始字节；sidecar 图片经解码后同样写入 `coverExportDir / first2hex / rest.png`。已有缓存直接复用，不重复解码或重写。
 
 ## 构建与验证
 

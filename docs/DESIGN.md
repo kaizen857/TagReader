@@ -114,7 +114,7 @@
 - FFmpeg 用于输入 probe、容器识别、主音频流定位、基础媒体信息读取，以及封面图像解码和 PNG 编码。
 - 标题、歌手、专辑、歌词、封面块等标签字段不使用 `AVDictionary` 作为元数据来源。
 - 元数据和歌词解析优先通过 `ReadContext::input` 直接读取文件原始字节，再按 ID3、Vorbis/FLAC、Ogg Vorbis、MP4 atom、APE tag 等格式规则解释。
-- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)` 等格式分支；未传入 `coverExportDir` 时导出到系统临时目录下 TagReader 自有子目录，传入时导出到调用方目录。
+- 封面块来自 ID3 `PIC/APIC`、FLAC `PICTURE`、MP4 `covr`、APE `COVER ART (FRONT/BACK)` 等格式分支；若这些内嵌来源都不可用，则 `Read()` 会在文件同目录尝试 sidecar 图片（`cover/front/folder/album/artwork`）作为 fallback。未传入 `coverExportDir` 时导出到系统临时目录下 TagReader 自有子目录，传入时导出到调用方目录。
 
 ## 输入与失败策略
 

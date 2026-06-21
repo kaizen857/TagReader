@@ -72,7 +72,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: `ctest --test-dir build/default -R Sidecar --output-on-failure` 断言无内嵌 MP3 使用 `cover.jpg` 导出的路径等于 `WriteCoverAsPng(exportDir, OneByOneJpeg())`；failure: 同目录 malformed/非图片或无候选时 `coverPath().empty()` 且读取仍返回媒体 tag。Evidence `.omo/evidence/task-1-external-cover-fallback.txt`。
   Commit: Y | test(cover): add sidecar cover fallback coverage
 
-- [ ] 2. 抽出 CUE 外部封面算法为共享 cover helper
+- [x] 2. 抽出 CUE 外部封面算法为共享 cover helper
   What to do / Must NOT do: 新增 `src/cover/SidecarCover.hpp` 与 `src/cover/SidecarCover.cpp`，把 CUE 当前候选名、扩展名、大小限制、目录扫描、排序、读文件、`WriteCoverAsPng()` 调用迁移进去，命名建议 `tagreader_cover::ExportSidecarCover(audioPath, coverExportDir)`。helper 接收已解析音频路径和已校验/已选定的非空 cover export dir；不得在 helper 内调用 `DefaultCoverExportDir()`、`ValidateCoverExportDir()` 或 `ValidateDefaultCoverExportDir()`，避免 core 与 CUE 目录语义分叉。空 `coverExportDir` 只作为防御性分支返回空，不得成为生产调用路径。把新 `.cpp` 加入根 `CMakeLists.txt` 的 `TagReaderCore` 源列表。
   Parallelization: Wave 1 | Blocked by: 1 | Blocks: 3,4
   References (executor has NO interview context - be exhaustive): `src/formats/cue/CueReader.cpp:28`, `src/formats/cue/CueReader.cpp:36`, `src/formats/cue/CueReader.cpp:84`, `src/formats/cue/CueReader.cpp:102`, `src/formats/cue/CueReader.cpp:129`, `src/formats/cue/CueReader.cpp:141`, `src/formats/cue/CueReader.cpp:150`, `src/formats/cue/CueReader.cpp:198`, `src/cover/CoverCache.hpp:10`, `src/cover/CoverCache.cpp:391`, `CMakeLists.txt:71`。
@@ -80,7 +80,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: 临时使用新增 Sidecar tests 构建到链接阶段，确认 helper 可被测试/核心链接；failure: `rg -n "DefaultCoverExportDir|ValidateCoverExportDir|ValidateDefaultCoverExportDir" src/cover/SidecarCover.*` 无命中，确认默认目录选择仍由 caller 完成。Evidence `.omo/evidence/task-2-external-cover-fallback.txt`。
   Commit: Y | refactor(cover): extract sidecar cover helper
 
-- [ ] 3. 在 `ReadTag()` 中统一接入 sidecar fallback
+- [x] 3. 在 `ReadTag()` 中统一接入 sidecar fallback
   What to do / Must NOT do: 修改 `src/core/TagPipeline.cpp` 引入 `cover/SidecarCover.hpp`；在 `RawMetadata metadata = ReadMetadata(context, tagFormat);` 后、`ReadLyrics()` 前或 `BuildMusicTag()` 前检查 `metadata.coverPath.empty()`，仅为空时调用 `tagreader_cover::ExportSidecarCover(context.filePath, context.coverExportDir)` 并写回 `metadata.coverPath`。不得改变 `ReadMetadata()` 分发，不得改变 `BuildMusicTag()` 字段映射，不得让外部封面覆盖内嵌封面。
   Parallelization: Wave 2 | Blocked by: 2 | Blocks: 5,6
   References (executor has NO interview context - be exhaustive): `src/core/TagPipeline.cpp:332`, `src/core/TagPipeline.cpp:533`, `src/core/TagPipeline.cpp:577`, `src/core/TagPipeline.cpp:609`, `src/core/TagPipeline.cpp:617`, `src/core/TagPipeline.cpp:633`, `src/core/TagPipeline.cpp:636`, `src/core/TagPipeline.hpp:17`。
@@ -88,7 +88,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: `TagReader::Read(base.mp3, exportDir)` 在同目录 `cover.jpg` 存在时返回 `coverPath` 且位于 `exportDir` 下；failure: `GenerateCoverSample(audio-with-cover.mp3)` + 外部 `cover.jpg` 时，返回路径等于内嵌 PNG 的缓存路径而不是外部 JPEG；representative: 生成一个非 MP3 样本（推荐 WAV 或 FLAC，优先使用仓库现有样本生成 helper，如无现成 helper 则在测试内用 ffmpeg 生成短音频）并断言 sidecar `cover.jpg` 生效。Evidence `.omo/evidence/task-3-external-cover-fallback.txt`。
   Commit: Y | feat(cover): apply sidecar fallback to ReadTag
 
-- [ ] 4. CUE 改为复用统一 sidecar 逻辑并删除重复 fallback
+- [x] 4. CUE 改为复用统一 sidecar 逻辑并删除重复 fallback
   What to do / Must NOT do: 修改 `src/formats/cue/CueReader.cpp`，删除私有 `kCueCoverNames`、`kCueCoverExtensions`、`EqualsIgnoreCase()`、`IsCueCoverFile()`、`ResolveCueCoverExportDir()`、`ExportCueSidecarCover()` 和两处 `audioTag.coverPath().empty()` fallback 块；保留 `ReadTag(resolution.resolvedPath, coverExportDir)`，因为统一 fallback 后 `audioTag` 已带封面。不得改变 CUE 路径解析、metadata 应用、timing 失败策略，也不得改变 `catch (const std::exception &ex)` 中 `IsCoverExportOrCacheError(ex.what())` 时继续向外抛的边界。
   Parallelization: Wave 2 | Blocked by: 2 | Blocks: 5,6
   References (executor has NO interview context - be exhaustive): `src/formats/cue/CueReader.cpp:1`, `src/formats/cue/CueReader.cpp:8`, `src/formats/cue/CueReader.cpp:28`, `src/formats/cue/CueReader.cpp:116`, `src/formats/cue/CueReader.cpp:129`, `src/formats/cue/CueReader.cpp:275`, `src/formats/cue/CueReader.cpp:294`, `src/formats/cue/CueReader.cpp:310`, `src/formats/cue/CueReader.cpp:331`。
@@ -96,7 +96,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: 既有 `cue read falls back to same-directory cover priority when audio lacks embedded cover` 仍通过；failure: `cue read keeps embedded cover over same-directory fallback` 仍通过。Evidence `.omo/evidence/task-4-external-cover-fallback.txt`。
   Commit: Y | refactor(cue): reuse shared sidecar cover fallback
 
-- [ ] 5. 补齐安全/失败边界测试
+- [x] 5. 补齐安全/失败边界测试
   What to do / Must NOT do: 在 sidecar cover Catch2 测试中增加失败边界：同目录候选为 symlink 时跳过；候选扩展不在允许列表时跳过；候选图像 malformed 时 `coverPath` 为空但 `Read()` 不失败；候选文件大于 64 MiB 时跳过（可用 sparse/seek 写文件，避免提交二进制）。不得要求人工准备文件。
   Parallelization: Wave 2 | Blocked by: 3,4 | Blocks: 6,7
   References (executor has NO interview context - be exhaustive): `src/formats/cue/CueReader.cpp:141`, `src/formats/cue/CueReader.cpp:150`, `src/formats/cue/CueReader.cpp:180`, `src/cover/CoverCache.cpp:391`, `test/regression/catch2_sample_support.cpp:61`, `test/regression/cue_catch2_tests.cpp:304`。
@@ -104,7 +104,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: 合法 `cover.jpg` 被导出；failure: `cover.jpg` symlink、`cover.txt`、`cover.jpg` 非图片、`cover.png` 超 64 MiB 均不产生 `coverPath`，但 `title/format/duration` 等基础读取结果仍可用；error-propagation: 显式 `coverExportDir` 为 symlink 或不可用路径时，仍通过现有 `ValidateCoverExportDir()` / cover cache 路径抛出错误而不是被 sidecar helper 吞掉。Evidence `.omo/evidence/task-5-external-cover-fallback.txt`。
   Commit: Y | test(cover): cover sidecar failure boundaries
 
-- [ ] 6. 更新文档与仓库 agent notes
+- [x] 6. 更新文档与仓库 agent notes
   What to do / Must NOT do: 更新 `AGENTS.md` 的“封面副作用”段落和 `docs/DESIGN.md` 中相关边界，说明 `Read(path)` / `Read(path, coverExportDir)` 在无内嵌封面时会查找音频同目录外部封面；CUE 只是复用同一规则。不得把目录扫描、递归扫描、跨目录封面写成支持能力。
   Parallelization: Wave 2 | Blocked by: 3,4 | Blocks: 7
   References (executor has NO interview context - be exhaustive): `AGENTS.md` 当前“封面副作用”段落，`docs/DESIGN.md` 当前 CUE 边界段落，`src/core/TagPipeline.cpp:609`, `src/formats/cue/CueReader.cpp:294`。
@@ -112,7 +112,7 @@ Your next move: 如果同意该计划，请用 `$start-work` 或“开始执行�
   QA scenarios (name the exact tool + invocation): happy: 文档描述普通 `Read()` 与 CUE 一致；failure: 搜索确认没有“目录级扫描已支持”“递归封面查找”等越界表述。Evidence `.omo/evidence/task-6-external-cover-fallback.txt`。
   Commit: Y | docs(cover): document sidecar cover semantics
 
-- [ ] 7. 执行默认与 sanitizer 验证并整理提交
+- [x] 7. 执行默认与 sanitizer 验证并整理提交
   What to do / Must NOT do: 按项目入口运行默认配置、默认构建、定向测试、全量默认测试、sanitizer 定向测试。只修复本计划引入的问题；不要顺手修改无关格式解析或历史测试。
   Parallelization: Wave 3 | Blocked by: 5,6 | Blocks: final wave
   References (executor has NO interview context - be exhaustive): `AGENTS.md` 构建与验证段落，`CMakeLists.txt:16`, `test/CMakeLists.txt:274`。

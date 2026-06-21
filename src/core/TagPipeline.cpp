@@ -14,10 +14,12 @@
 #include "media/ContainerDetector.hpp"
 #include "media/FfmpegSession.hpp"
 #include "media/MediaInfoReader.hpp"
+#include "cover/SidecarCover.hpp"
 #include "text/TextCodec.hpp"
 #include "text/TextNormalize.hpp"
 
 #include <stdexcept>
+#include <optional>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -630,7 +632,15 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     context.detectedContainer = tagreader_media::ContainerFromTagFormat(tagFormat);
 
     const RawMediaInfo mediaInfo = tagreader_media::ReadMediaInfo(context);
-    const RawMetadata metadata = ReadMetadata(context, tagFormat);
+    RawMetadata metadata = ReadMetadata(context, tagFormat);
+    if (metadata.coverPath.empty())
+    {
+        const std::optional<std::filesystem::path> sidecarCoverPath = tagreader_cover::ExportSidecarCover(context.filePath, context.coverExportDir);
+        if (sidecarCoverPath.has_value())
+        {
+            metadata.coverPath = *sidecarCoverPath;
+        }
+    }
     const RawLyrics lyrics = ReadLyrics(context, tagFormat);
 
     return BuildMusicTag(context, mediaInfo, metadata, lyrics);

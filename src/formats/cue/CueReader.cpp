@@ -25,24 +25,6 @@
 
 namespace
 {
-constexpr std::array<std::string_view, 5> kCueCoverNames{
-    "cover",
-    "front",
-    "folder",
-    "album",
-    "artwork",
-};
-
-constexpr std::array<std::string_view, 7> kCueCoverExtensions{
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".bmp",
-    ".webp",
-    ".gif",
-    ".tiff",
-};
-
 std::string TrimAscii(std::string_view text)
 {
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())) != 0)
@@ -97,113 +79,6 @@ bool EqualsIgnoreCase(std::string_view left, std::string_view right)
     }
 
     return true;
-}
-
-bool IsCueCoverFile(const std::filesystem::path &path)
-{
-    const std::string extension = path.extension().string();
-    for (const std::string_view allowedExtension : kCueCoverExtensions)
-    {
-        if (EqualsIgnoreCase(extension, allowedExtension))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-std::filesystem::path ResolveCueCoverExportDir(const std::filesystem::path &coverExportDir)
-{
-    if (!coverExportDir.empty())
-    {
-        tagreader_core::ValidateCoverExportDir(coverExportDir);
-        return coverExportDir;
-    }
-
-    const std::filesystem::path defaultCoverExportDir = tagreader_core::DefaultCoverExportDir();
-    tagreader_core::ValidateDefaultCoverExportDir(defaultCoverExportDir);
-    return defaultCoverExportDir;
-}
-
-std::optional<std::filesystem::path> ExportCueSidecarCover(const std::filesystem::path &audioPath, const std::filesystem::path &coverExportDir)
-{
-    const std::filesystem::path resolvedCoverExportDir = ResolveCueCoverExportDir(coverExportDir);
-    const std::filesystem::path audioDirectory = audioPath.parent_path();
-    if (audioDirectory.empty())
-    {
-        return std::nullopt;
-    }
-
-    std::error_code ec;
-    std::array<std::vector<std::filesystem::path>, kCueCoverNames.size()> candidatesPerPriority{};
-    std::size_t candidateCount = 0;
-    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(audioDirectory, ec))
-    {
-        if (ec || candidateCount >= 256)
-        {
-            break;
-        }
-
-        std::error_code entryEc;
-        const std::filesystem::file_status status = entry.symlink_status(entryEc);
-        if (entryEc || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status) || !IsCueCoverFile(entry.path()))
-        {
-            continue;
-        }
-
-        const std::string stem = entry.path().stem().string();
-        for (std::size_t priority = 0; priority < kCueCoverNames.size(); ++priority)
-        {
-            if (EqualsIgnoreCase(stem, kCueCoverNames[priority]))
-            {
-                candidatesPerPriority[priority].push_back(entry.path());
-                ++candidateCount;
-                break;
-            }
-        }
-    }
-
-    for (auto &candidates : candidatesPerPriority)
-    {
-        std::sort(candidates.begin(), candidates.end(), [](const std::filesystem::path &left, const std::filesystem::path &right)
-        {
-            return left.filename().string() < right.filename().string();
-        });
-    }
-
-    for (const auto &candidates : candidatesPerPriority)
-    {
-        for (const std::filesystem::path &candidatePath : candidates)
-        {
-            std::error_code sizeEc;
-            const std::uintmax_t fileSize = std::filesystem::file_size(candidatePath, sizeEc);
-            if (sizeEc || fileSize == 0 || fileSize > 64ULL * 1024ULL * 1024ULL)
-            {
-                continue;
-            }
-
-            std::ifstream input(candidatePath, std::ios::binary);
-            if (!input)
-            {
-                continue;
-            }
-
-            std::vector<std::uint8_t> bytes(static_cast<std::size_t>(fileSize));
-            if (!input.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
-            {
-                continue;
-            }
-
-            const std::filesystem::path coverPath = tagreader_cover::WriteCoverAsPng(resolvedCoverExportDir, bytes.data(), bytes.size());
-            if (!coverPath.empty())
-            {
-                return coverPath;
-            }
-        }
-    }
-
-    return std::nullopt;
 }
 
 void ApplyCueMetadata(const tagreader_cue::CueGlobal &global, const tagreader_cue::CueFile &file, const tagreader_cue::CueTrack &track, MusicTag &tag)
@@ -307,14 +182,6 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
             continue;
         }
 
-        if (audioTag.coverPath().empty())
-        {
-            const std::optional<std::filesystem::path> sidecarCoverPath = ExportCueSidecarCover(resolution.resolvedPath, coverExportDir);
-            if (sidecarCoverPath.has_value())
-            {
-                audioTag.setCoverPath(*sidecarCoverPath);
-            }
-        }
         std::vector<MusicTag> fileTags;
         fileTags.reserve(file.tracks.size());
         for (const auto &track : file.tracks)
@@ -327,17 +194,6 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
         if (!ApplyCueTiming(file, fileTags))
         {
             return {};
-        }
-        if (audioTag.coverPath().empty())
-        {
-            const std::optional<std::filesystem::path> sidecarCoverPath = ExportCueSidecarCover(resolution.resolvedPath, coverExportDir);
-            if (sidecarCoverPath.has_value())
-            {
-                for (MusicTag &cueTag : fileTags)
-                {
-                    cueTag.setCoverPath(*sidecarCoverPath);
-                }
-            }
         }
         tags.insert(tags.end(), std::make_move_iterator(fileTags.begin()), std::make_move_iterator(fileTags.end()));
     }

@@ -79,6 +79,7 @@ add_library(TagReaderCore STATIC
     src/text/TextNormalize.cpp
     src/cover/CoverCache.cpp
     src/cover/CoverDecoder.cpp
+    src/cover/SidecarCover.cpp
     src/formats/id3/Id3Parser.cpp
     src/formats/id3/Id3Frames.cpp
     src/formats/vorbis/VorbisCommentParser.cpp
