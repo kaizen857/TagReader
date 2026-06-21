@@ -122,3 +122,40 @@ TEST_CASE("cue timing rejects invalid backward and overflow indexes", "[cue][tim
     REQUIRE(tagreader_test_support::WriteTextFile(root / "overflow.cue", overflowCue));
     REQUIRE(TagReader::ReadCueSheet(root / "overflow.cue").empty());
 }
+
+TEST_CASE("Cue failure policy fails when the only audio file is missing", "[cue][failure-policy][missing-audio]")
+{
+    const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("cue_failure_policy_single_missing");
+    REQUIRE(EnsureCleanRoot(root));
+
+    const std::string cue = "FILE \"missing.mp3\" MP3\n"
+                            "  TRACK 01 AUDIO\n"
+                            "    INDEX 01 00:00:00\n";
+    REQUIRE(tagreader_test_support::WriteTextFile(root / "album.cue", cue));
+
+    REQUIRE(TagReader::ReadCueSheet(root / "album.cue").empty());
+}
+
+TEST_CASE("Cue failure policy keeps valid tracks when a later file is missing", "[cue][failure-policy][missing-audio]")
+{
+    const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("cue_failure_policy_partial_return");
+    REQUIRE(EnsureCleanRoot(root));
+
+    const std::filesystem::path keepAudioPath = root / "keep.mp3";
+    WriteAudio(keepAudioPath);
+
+    const std::string cue = "FILE \"keep.mp3\" MP3\n"
+                            "  TRACK 01 AUDIO\n"
+                            "    TITLE \"Keep\"\n"
+                            "    INDEX 01 00:00:00\n"
+                            "FILE \"missing.mp3\" MP3\n"
+                            "  TRACK 02 AUDIO\n"
+                            "    TITLE \"Drop\"\n"
+                            "    INDEX 01 00:00:00\n";
+    REQUIRE(tagreader_test_support::WriteTextFile(root / "album.cue", cue));
+
+    const std::vector<MusicTag> tags = TagReader::ReadCueSheet(root / "album.cue");
+    REQUIRE(tags.size() == 1);
+    REQUIRE(tags.front().filePath() == keepAudioPath);
+    REQUIRE(tags.front().title() == "Keep");
+}

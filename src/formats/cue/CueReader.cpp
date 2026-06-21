@@ -275,15 +275,38 @@ void ApplyCueMetadata(const tagreader_cue::CueGlobal &global, const tagreader_cu
 std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const tagreader_cue::ParsedCueSheet &parsedSheet, const std::filesystem::path &coverExportDir)
 {
     std::vector<MusicTag> tags;
+    const bool singleAudioFile = parsedSheet.files.size() == 1;
     for (const auto &file : parsedSheet.files)
     {
         const tagreader_cue::CuePathResolution resolution = tagreader_cue::ResolveCueFileReference(cuePath, file.name);
         if (resolution.status != tagreader_cue::CuePathResolutionStatus::Resolved)
         {
+            if (singleAudioFile)
+            {
+                return {};
+            }
             continue;
         }
 
-        MusicTag audioTag = tagreader_core::ReadTag(resolution.resolvedPath, coverExportDir);
+        MusicTag audioTag;
+        try
+        {
+            audioTag = tagreader_core::ReadTag(resolution.resolvedPath, coverExportDir);
+        }
+        catch (const std::exception &ex)
+        {
+            if (tagreader_core::IsCoverExportOrCacheError(ex.what()))
+            {
+                throw;
+            }
+
+            if (singleAudioFile)
+            {
+                return {};
+            }
+            continue;
+        }
+
         if (audioTag.coverPath().empty())
         {
             const std::optional<std::filesystem::path> sidecarCoverPath = ExportCueSidecarCover(resolution.resolvedPath, coverExportDir);
@@ -304,6 +327,17 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
         if (!ApplyCueTiming(file, fileTags))
         {
             return {};
+        }
+        if (audioTag.coverPath().empty())
+        {
+            const std::optional<std::filesystem::path> sidecarCoverPath = ExportCueSidecarCover(resolution.resolvedPath, coverExportDir);
+            if (sidecarCoverPath.has_value())
+            {
+                for (MusicTag &cueTag : fileTags)
+                {
+                    cueTag.setCoverPath(*sidecarCoverPath);
+                }
+            }
         }
         tags.insert(tags.end(), std::make_move_iterator(fileTags.begin()), std::make_move_iterator(fileTags.end()));
     }
@@ -328,14 +362,6 @@ std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath)
         return {};
     }
 
-    for (const auto &file : parsedSheet->files)
-    {
-        if (ResolveCueFileReference(cuePath, file.name).status != CuePathResolutionStatus::Resolved)
-        {
-            return {};
-        }
-    }
-
     return BuildCueTags(cuePath, *parsedSheet, {});
 }
 
@@ -351,14 +377,6 @@ std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath, const s
     if (!parsedSheet.has_value())
     {
         return {};
-    }
-
-    for (const auto &file : parsedSheet->files)
-    {
-        if (ResolveCueFileReference(cuePath, file.name).status != CuePathResolutionStatus::Resolved)
-        {
-            return {};
-        }
     }
 
     return BuildCueTags(cuePath, *parsedSheet, coverExportDir);

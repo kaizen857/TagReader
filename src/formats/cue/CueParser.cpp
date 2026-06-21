@@ -142,7 +142,7 @@ std::optional<CueIndex> ParseIndexValue(std::string_view indexNumberText, std::s
     const std::string_view minuteText = timeText.substr(0, firstColon);
     const std::string_view secondText = timeText.substr(firstColon + 1, secondColon - firstColon - 1);
     const std::string_view frameText = timeText.substr(secondColon + 1);
-    const std::optional<std::uint32_t> minute = ParseUnsigned(minuteText, std::numeric_limits<std::uint32_t>::max());
+    const std::optional<std::uint32_t> minute = ParseUnsigned(minuteText, std::numeric_limits<std::uint16_t>::max());
     const std::optional<std::uint32_t> second = ParseUnsigned(secondText, 59);
     const std::optional<std::uint32_t> frame = ParseUnsigned(frameText, 74);
     if (!minute.has_value() || !second.has_value() || !frame.has_value())

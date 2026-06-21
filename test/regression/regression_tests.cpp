@@ -7666,21 +7666,26 @@ bool RunTrAudit056()
     passed = Expect(!HasReadAlbumMember<TagReader>, "TagReader should not expose ReadAlbum in the public API") && passed;
     passed = Expect(ReadPathReturnsMusicTag<TagReader>, "Read(path) should continue returning MusicTag") && passed;
     passed = Expect(ReadPathAndCoverDirReturnsMusicTag<TagReader>, "Read(path, coverExportDir) should continue returning MusicTag") && passed;
+    passed = Expect(ReadCuePathReturnsBatch<TagReader>, "ReadCueSheet(path) should return a batch of MusicTag") && passed;
+    passed = Expect(ReadCuePathAndCoverDirReturnsBatch<TagReader>, "ReadCueSheet(path, coverExportDir) should return a batch of MusicTag") && passed;
     passed = Expect(!ReadPathReturnsBatch<TagReader>, "Read(path) should not return a batch of MusicTag") && passed;
     passed = Expect(!ReadPathAndCoverDirReturnsBatch<TagReader>, "Read(path, coverExportDir) should not return a batch of MusicTag") && passed;
 
     const std::string stdoutLike =
         "TR-AUDIT-056 no-readcue-readalbum-public-api\n"
+        "TR-AUDIT-056 read-cuesheet-overloads-return-batch\n"
         "TR-AUDIT-056 read-overloads-return-musictag\n"
         "TR-AUDIT-056 no-batch-read-public-api\n"
         "TR-AUDIT-056 PASS\n";
     const std::string summary =
         "case=TR-AUDIT-056\n"
-        "marker=cue-album-api-absence\n"
+        "marker=cue-album-api-boundary\n"
         "hasReadCue=false\n"
         "hasReadAlbum=false\n"
         "readPathReturnsMusicTag=true\n"
         "readPathAndCoverDirReturnsMusicTag=true\n"
+        "readCuePathReturnsBatch=true\n"
+        "readCuePathAndCoverDirReturnsBatch=true\n"
         "readPathReturnsBatch=false\n"
         "readPathAndCoverDirReturnsBatch=false\n";
     const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
@@ -7693,6 +7698,7 @@ bool RunTrAudit056()
     if (passed)
     {
         std::cout << "TR-AUDIT-056 no-readcue-readalbum-public-api\n";
+        std::cout << "TR-AUDIT-056 read-cuesheet-overloads-return-batch\n";
         std::cout << "TR-AUDIT-056 read-overloads-return-musictag\n";
         std::cout << "TR-AUDIT-056 no-batch-read-public-api\n";
     }

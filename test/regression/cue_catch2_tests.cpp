@@ -262,6 +262,7 @@ TEST_CASE("cue parser rejects invalid index values", "[cue][parser][invalid]")
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:00:75\n").has_value());
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 00:60:00\n").has_value());
     REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 999999999999:00:00\n").has_value());
+    REQUIRE_FALSE(tagreader_cue::ParseCueSheet("FILE \"f.flac\" FLAC\nTRACK 01 AUDIO\nINDEX 01 70000:00:00\n").has_value());
 }
 
 TEST_CASE("cue read falls back to same-directory cover priority when audio lacks embedded cover", "[cue][cover]")

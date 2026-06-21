@@ -41,8 +41,6 @@
 
 namespace tagreader_core
 {
-namespace
-{
 using tagreader_text::NormalizeLyrics;
 using tagreader_text::NormalizeMetadata;
 using tagreader_text::TrimText;
@@ -51,6 +49,9 @@ bool IsCoverExportOrCacheError(std::string_view message)
 {
     return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
 }
+
+namespace
+{
 
 #if TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR
 class FileDescriptor
