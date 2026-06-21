@@ -55,11 +55,10 @@
 
 - `dts`、`ac3`、`truehd` 的裸流不规划独立 tag parser，也不把它们写成当前或近期的 standalone 能力。
 - 这些裸流如果有元数据，只能通过外层已支持容器承载后再读取，例如 `mka`、`webm`、`m4a` 这类容器内的元数据路径。
-- Phase 6 的 `CUE` 仍然未实现，当前不支持 CUE 读取入口、album 级读取入口、目录输入，也不支持返回批量 `MusicTag` 的 public API。
 - `TagLib` 只保留为后续架构讨论和决策上下文，当前没有引入该依赖，也不把它写成现有能力或现有 parser 架构的一部分。
-- `CUE` 仍是 Phase 6 的未实现项；文档和实现都不应把它写成已支持，也不应声称目录级扫描或专辑级批量读取已经可用。
-- 未来 Phase 6 若落地，应在独立入口中把 CUE track 字段并入现有中间态，继续复用 `NormalizeMetadata()`、`NormalizeLyrics()`、`ReadMediaInfo()` 得到的媒体参数，以及基于内嵌图片原始字节的封面 PNG 缓存；不得改变当前单文件 `Read()` 的返回语义。
-- Task 14 的边界审计结论是，当前 `Read()` 仍只接受普通单文件路径；未来若需要目录或 sidecar 聚合，只能在独立专辑级入口内解析 CUE 和目录索引，并把每首虚拟 track 转成内部元数据/歌词中间态后进入现有规范化链路。
+- `CUE` 已通过显式 `ReadCueSheet` 支持 sidecar / album-level 输入；文档和实现都应写成 `ReadCueSheet`，而不是把目录级扫描或批量读取塞进 `Read()`。
+- `ReadCueSheet` 继续复用 `NormalizeMetadata()`、`NormalizeLyrics()`、`ReadMediaInfo()` 得到的媒体参数，以及基于内嵌图片原始字节的封面 PNG 缓存；`Read()` 仍保持单文件语义不变。
+- `Read()` 仍只接受普通单文件路径；目录或 sidecar 聚合只允许在 `ReadCueSheet` 内解析 CUE 和目录索引，并把每首虚拟 track 转成内部元数据/歌词中间态后进入现有规范化链路。
 
 ## 项目最终目标覆盖范围
 
