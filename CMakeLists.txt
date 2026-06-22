@@ -63,6 +63,7 @@ if(NOT Catch2_FOUND)
     FetchContent_Declare(
         Catch2
         URL https://github.com/catchorg/Catch2/archive/refs/tags/v${CATCH2_VERSION}.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(Catch2)
 endif()
