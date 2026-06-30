@@ -24,6 +24,7 @@ extern "C"
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -516,6 +517,17 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     if (ToLower(coverPath.extension().string()) != ".png")
     {
         throw std::runtime_error("cover export path must use .png extension: " + coverPath.string());
+    }
+
+    static std::array<std::mutex, 256> coverMutexes;
+    const auto coverHash = coverPath.filename().string();
+    const auto mutexIndex = std::hash<std::string>{}(coverHash) % 256;
+
+    std::lock_guard<std::mutex> lock(coverMutexes[mutexIndex]);
+
+    if (std::filesystem::exists(coverPath))
+    {
+        return coverPath;
     }
 
     std::vector<uint8_t> png = DecodeAndEncodeCoverPng(data, size);
