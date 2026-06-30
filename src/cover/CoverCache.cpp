@@ -2,6 +2,7 @@
 
 #include "common/ParseHelpers.hpp"
 #include "cover/CoverDecoder.hpp"
+#include "profiling/Profiling.hpp"
 #include "TagReaderInternal.hpp"
 
 #ifdef __cplusplus
@@ -30,6 +31,7 @@ extern "C"
 #include <vector>
 
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -41,6 +43,7 @@ using tagreader_common::ToLower;
 
 constexpr tagreader_internal::CoverDecodeLimits kCoverDecodeLimits{};
 constexpr std::size_t kMaxCoverInputBytes = 64z * 1024 * 1024;
+constexpr std::array<uint8_t, 8> kPngSignature{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
 std::string HexEncode(const std::array<uint8_t, 32> &digest)
 {
@@ -309,6 +312,104 @@ void ValidateExistingCoverCacheFile(const std::filesystem::path &path, const std
     }
 }
 
+bool IsReusableCoverCacheFile(const std::filesystem::path &path, const std::vector<uint8_t> &expectedBytes)
+{
+    std::error_code statusEc;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(path, statusEc);
+    if (statusEc)
+    {
+        if (statusEc == std::errc::no_such_file_or_directory)
+        {
+            return false;
+        }
+        throw std::runtime_error("cover cache failed to query file " + path.string() + ": " + statusEc.message());
+    }
+    if (!std::filesystem::exists(status))
+    {
+        return false;
+    }
+    if (std::filesystem::is_symlink(status))
+    {
+        ThrowCoverCacheValidationError(path, "symlink is not trusted");
+    }
+    if (!std::filesystem::is_regular_file(status))
+    {
+        ThrowCoverCacheValidationError(path, "path is not a regular file");
+    }
+
+    int flags = O_RDONLY | O_CLOEXEC;
+#if defined(O_NOFOLLOW)
+    flags |= O_NOFOLLOW;
+#endif
+    FileDescriptor fd(::open(path.c_str(), flags));
+    if (fd.get() < 0)
+    {
+        ThrowCoverCacheValidationError(path, "failed to open for validation");
+    }
+
+    struct stat statBuffer
+    {
+    };
+    if (::fstat(fd.get(), &statBuffer) != 0)
+    {
+        ThrowCoverCacheValidationError(path, "failed to stat opened file");
+    }
+    if (!S_ISREG(statBuffer.st_mode))
+    {
+        ThrowCoverCacheValidationError(path, "opened path is not a regular file");
+    }
+    if (statBuffer.st_size <= 0)
+    {
+        ThrowCoverCacheValidationError(path, "invalid file size");
+    }
+    if (static_cast<std::uintmax_t>(statBuffer.st_size) > kCoverDecodeLimits.maxOutputBytes)
+    {
+        ThrowCoverCacheValidationError(path, "file is oversized");
+    }
+
+    if (static_cast<std::uintmax_t>(statBuffer.st_size) != expectedBytes.size())
+    {
+        std::error_code removeEc;
+        std::filesystem::remove(path, removeEc);
+        return false;
+    }
+
+    std::vector<uint8_t> existingBytes(expectedBytes.size());
+    std::size_t readBytes = 0;
+    while (readBytes < existingBytes.size())
+    {
+        const std::size_t remaining = existingBytes.size() - readBytes;
+        const std::size_t chunk = std::min<std::size_t>(remaining, static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+        const ssize_t result = ::read(fd.get(), existingBytes.data() + readBytes, chunk);
+        if (result < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            std::error_code removeEc;
+            std::filesystem::remove(path, removeEc);
+            return false;
+        }
+        if (result == 0)
+        {
+            std::error_code removeEc;
+            std::filesystem::remove(path, removeEc);
+            return false;
+        }
+        readBytes += static_cast<std::size_t>(result);
+    }
+
+    if (existingBytes != expectedBytes)
+    {
+        std::error_code removeEc;
+        std::filesystem::remove(path, removeEc);
+        return false;
+    }
+
+    return true;
+}
+
 bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8_t *data, std::size_t size)
 {
     if (data == nullptr || size == 0)
@@ -390,6 +491,8 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
 
 std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDir, const uint8_t *data, std::size_t size)
 {
+    TAGREADER_PROFILE_FUNCTION();
+
     if (coverExportDir.empty() || data == nullptr || size == 0 || size > kMaxCoverInputBytes)
     {
         return {};
@@ -421,16 +524,20 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
         return {};
     }
 
-    std::error_code statusEc;
-    const std::filesystem::file_status status = std::filesystem::symlink_status(coverPath, statusEc);
-    if (statusEc && statusEc != std::errc::no_such_file_or_directory)
+    const std::filesystem::path lockPath = coverPath.string() + ".lock";
+    FileDescriptor lockFd(::open(lockPath.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, 0600));
+    if (lockFd.get() < 0)
     {
-        throw std::runtime_error("cover cache failed to query file " + coverPath.string() + ": " + statusEc.message());
+        throw std::runtime_error("cover cache failed to create lock file " + lockPath.string() + ": " + std::strerror(errno));
     }
-    if (!statusEc && std::filesystem::exists(status))
+
+    if (::flock(lockFd.get(), LOCK_EX) != 0)
     {
-        // Hash collisions or pre-existing files are treated as untrusted until bytes match.
-        ValidateExistingCoverCacheFile(coverPath, png);
+        throw std::runtime_error("cover cache failed to acquire lock " + lockPath.string() + ": " + std::strerror(errno));
+    }
+
+    if (IsReusableCoverCacheFile(coverPath, png))
+    {
         return coverPath;
     }
 

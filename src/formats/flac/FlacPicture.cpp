@@ -2,6 +2,7 @@
 
 #include "cover/CoverCache.hpp"
 #include "io/ByteReader.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -29,6 +30,8 @@ namespace tagreader_flac
 {
 void ReadFlacPictureEntry(tagreader_core::ReadContext &context, tagreader_core::RawMetadata &metadata, const uint8_t *pictureData, std::size_t pictureSize)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (pictureData == nullptr || pictureSize < 32)
     {
         return;

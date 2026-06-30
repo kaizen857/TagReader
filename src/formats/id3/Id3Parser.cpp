@@ -4,6 +4,7 @@
 #include "common/ParseHelpers.hpp"
 #include "io/ByteReader.hpp"
 #include "text/TextCodec.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <array>
 #include <cctype>
@@ -28,6 +29,8 @@ namespace tagreader_id3
 {
 void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (!context.input.is_open() || context.fileSize < 128)
     {
         return;
@@ -86,6 +89,8 @@ void ReadID3v1Metadata(ReadContext &context, RawMetadata &metadata)
 
 void ReadID3v2Metadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     Id3TagView tagView{};
     if (!ReadId3TagBytes(context, tagView))
     {

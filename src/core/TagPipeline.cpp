@@ -17,6 +17,7 @@
 #include "cover/SidecarCover.hpp"
 #include "text/TextCodec.hpp"
 #include "text/TextNormalize.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <stdexcept>
 #include <optional>
@@ -333,6 +334,8 @@ void ValidateDefaultCoverExportDirImpl(const std::filesystem::path &coverExportD
 
 RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("ReadMetadata", TAGREADER_COLOR_PARSE);
+    
     if (context.formatContext == nullptr)
     {
         throw std::runtime_error("format context is not initialized");
@@ -461,6 +464,8 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
 
 RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("ReadLyrics", TAGREADER_COLOR_PARSE);
+    
     RawLyrics lyrics{};
     if (!context.input.is_open())
     {
@@ -534,6 +539,8 @@ RawLyrics ReadLyrics(ReadContext &context, TagFormat tagFormat)
 
 MusicTag BuildMusicTag(const ReadContext &context, const RawMediaInfo &mediaInfo, const RawMetadata &metadata, const RawLyrics &lyrics)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("BuildMusicTag", TAGREADER_COLOR_CONVERT);
+    
     MusicTag tag{};
 
     tag.setTitle(metadata.title);
@@ -610,11 +617,21 @@ void ValidateDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
 
 MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     tagreader_media::RegisterAllFormatsIfNeeded();
 
-    ValidatePath(filePath);
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("ValidatePath", TAGREADER_COLOR_VALIDATE);
+        ValidatePath(filePath);
+    }
 
-    ReadContext context = tagreader_media::OpenContext(filePath);
+    ReadContext context;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("OpenContext", TAGREADER_COLOR_FFMPEG);
+        context = tagreader_media::OpenContext(filePath);
+    }
+    
     const bool useDefaultCoverExportDir = coverExportDir.empty();
     context.coverExportDir = useDefaultCoverExportDir ? DefaultCoverExportDir() : coverExportDir;
     if (useDefaultCoverExportDir)
@@ -625,24 +642,44 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     {
         ValidateCoverExportDir(context.coverExportDir);
     }
-    tagreader_media::DetectStream(context);
+    
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("DetectStream", TAGREADER_COLOR_DETECT);
+        tagreader_media::DetectStream(context);
+    }
 
-    const TagFormat tagFormat = tagreader_media::DetectTagFormat(context);
-    // Use raw-byte tag detection for parser dispatch and user-facing format normalization.
-    context.detectedContainer = tagreader_media::ContainerFromTagFormat(tagFormat);
+    TagFormat tagFormat;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("DetectTagFormat", TAGREADER_COLOR_DETECT);
+        tagFormat = tagreader_media::DetectTagFormat(context);
+        // Use raw-byte tag detection for parser dispatch and user-facing format normalization.
+        context.detectedContainer = tagreader_media::ContainerFromTagFormat(tagFormat);
+    }
 
-    const RawMediaInfo mediaInfo = tagreader_media::ReadMediaInfo(context);
+    RawMediaInfo mediaInfo;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("ReadMediaInfo", TAGREADER_COLOR_FFMPEG);
+        mediaInfo = tagreader_media::ReadMediaInfo(context);
+    }
+    
     RawMetadata metadata = ReadMetadata(context, tagFormat);
+    
     if (metadata.coverPath.empty())
     {
+        TAGREADER_PROFILE_SCOPE_COLOR("SidecarCover", TAGREADER_COLOR_CACHE);
         const std::optional<std::filesystem::path> sidecarCoverPath = tagreader_cover::ExportSidecarCover(context.filePath, context.coverExportDir);
         if (sidecarCoverPath.has_value())
         {
             metadata.coverPath = *sidecarCoverPath;
         }
     }
+    
     const RawLyrics lyrics = ReadLyrics(context, tagFormat);
 
-    return BuildMusicTag(context, mediaInfo, metadata, lyrics);
+    MusicTag tag = BuildMusicTag(context, mediaInfo, metadata, lyrics);
+    
+    TAGREADER_PROFILE_FRAME_MARK();
+    
+    return tag;
 }
 }

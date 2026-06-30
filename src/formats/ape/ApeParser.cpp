@@ -1,5 +1,6 @@
 #include "formats/ape/ApeLimits.hpp"
 #include "formats/ape/ApeParser.hpp"
+#include "profiling/Profiling.hpp"
 
 #include "common/ParseHelpers.hpp"
 #include "cover/CoverCache.hpp"
@@ -212,6 +213,8 @@ namespace tagreader_ape
 
 void ReadApeMetadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (context.fileSize < 32)
     {
         return;

@@ -1,4 +1,5 @@
 #include "media/FfmpegSession.hpp"
+#include "profiling/Profiling.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -221,6 +222,8 @@ void RegisterAllFormatsIfNeeded()
 
 tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("OpenContext", TAGREADER_COLOR_FFMPEG);
+    
     tagreader_core::ReadContext context{};
     context.filePath = filePath;
 

@@ -1,4 +1,5 @@
 #include "media/MediaInfoReader.hpp"
+#include "profiling/Profiling.hpp"
 
 #include "common/ParseHelpers.hpp"
 
@@ -176,6 +177,8 @@ void DetectStream(tagreader_core::ReadContext &context)
 
 tagreader_core::RawMediaInfo ReadMediaInfo(const tagreader_core::ReadContext &context)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("ReadMediaInfo", TAGREADER_COLOR_FFMPEG);
+    
     if (context.formatContext == nullptr)
     {
         throw std::runtime_error("format context is not initialized");

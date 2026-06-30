@@ -1,13 +1,21 @@
 #include "formats/ogg-vorbis/OggVorbisParser.hpp"
+#include "profiling/Profiling.hpp"
 
 #include "formats/flac/FlacPicture.hpp"
+#include "profiling/Profiling.hpp"
 #include "formats/vorbis/VorbisCommentLimits.hpp"
+#include "profiling/Profiling.hpp"
 #include "formats/vorbis/VorbisCommentParser.hpp"
+#include "profiling/Profiling.hpp"
 #include "io/ByteReader.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <array>
+#include "profiling/Profiling.hpp"
 #include <cstddef>
+#include "profiling/Profiling.hpp"
 #include <cstdint>
+#include "profiling/Profiling.hpp"
 #include <functional>
 #include <optional>
 #include <string>
@@ -427,6 +435,8 @@ namespace tagreader_ogg_vorbis
 {
 void ReadOggVorbisMetadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     const bool ok = ReadOggVorbisCommentEntries(context, [&](std::string_view entry)
                                                 {
         tagreader_vorbis::ReadVorbisCommentEntry(metadata, entry);

@@ -1,4 +1,5 @@
 #include "io/ByteReader.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <cerrno>
 #include <limits>
@@ -164,6 +165,9 @@ bool TryAddSize(std::size_t base, std::size_t delta, std::size_t &result)
 
 std::vector<uint8_t> ReadRange(FileInput &input, std::uintmax_t offset, std::size_t size, std::size_t maxSize)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("ReadRange", TAGREADER_COLOR_IO);
+    TAGREADER_PROFILE_VALUE(size);
+    
     if (size > maxSize)
     {
         return {};

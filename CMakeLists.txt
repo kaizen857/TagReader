@@ -7,8 +7,33 @@ project(TagReaderProject VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Release 模式优化配置
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        add_compile_options(-O3 -march=native -DNDEBUG)
+    elseif(MSVC)
+        add_compile_options(/O2 /GL /DNDEBUG)
+        add_link_options(/LTCG)
+    endif()
+    # Release 模式下强制禁用性能分析
+    set(TAGREADER_ENABLE_PROFILING OFF CACHE BOOL "Profiling is disabled in Release mode" FORCE)
+endif()
+
+# Profile 模式优化配置 - 使用与 Release 相同的优化，但保留调试符号
+if(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" AND TAGREADER_ENABLE_PROFILING)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        # 使用与 Release 相同的优化级别，确保性能分析结果准确
+        add_compile_options(-O3 -march=native -DNDEBUG -g)
+        message(STATUS "Profile build: Using -O3 -march=native (same as Release)")
+    elseif(MSVC)
+        add_compile_options(/O2 /DNDEBUG /Zi)
+        message(STATUS "Profile build: Using /O2 (same as Release)")
+    endif()
+endif()
+
 option(TAGREADER_ENABLE_SANITIZERS "Enable ASAN/UBSAN" OFF)
 option(TAGREADER_ENABLE_FUZZING "Enable fuzz targets" OFF)
+option(TAGREADER_ENABLE_PROFILING "Enable Tracy performance profiling" OFF)
 option(TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS "Force-disable Iconv for explicit no-iconv policy tests" OFF)
 option(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV "Allow Latin-1 fallback when building without Iconv" OFF)
 option(TAGREADER_USE_SYSTEM_CATCH2 "Prefer a system-installed Catch2 package" ON)
@@ -68,8 +93,23 @@ if(NOT Catch2_FOUND)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
+# Tracy Profiler 支持
+if(TAGREADER_ENABLE_PROFILING)
+    # Tracy 在 Arch Linux 上直接安装为系统库，不需要 pkg-config
+    find_library(TRACY_LIBRARY NAMES TracyClient REQUIRED)
+    set(TRACY_INCLUDE_DIR "/usr/include/Tracy")
+    
+    if(TRACY_LIBRARY)
+        message(STATUS "Tracy profiling enabled")
+        message(STATUS "Tracy library: ${TRACY_LIBRARY}")
+        message(STATUS "Tracy include: ${TRACY_INCLUDE_DIR}")
+    else()
+        message(FATAL_ERROR "Tracy library not found. Install with: yay -S tracy")
+    endif()
+endif()
+
 # 3. 库目标
-add_library(TagReaderCore STATIC
+set(TAGREADER_CORE_SOURCES
     src/TagReader.cpp
     src/core/TagPipeline.cpp
     src/media/FfmpegSession.cpp
@@ -104,6 +144,13 @@ add_library(TagReaderCore STATIC
     src/formats/cue/CueTiming.cpp
 )
 
+# 性能分析支持
+if(TAGREADER_ENABLE_PROFILING)
+    list(APPEND TAGREADER_CORE_SOURCES src/profiling/TracyClient.cpp)
+endif()
+
+add_library(TagReaderCore STATIC ${TAGREADER_CORE_SOURCES})
+
 tagreader_enable_sanitizers(TagReaderCore)
 
 target_include_directories(TagReaderCore
@@ -123,6 +170,18 @@ if(Iconv_FOUND)
     target_compile_definitions(TagReaderCore PUBLIC TAGREADER_HAS_ICONV=1)
 else()
     target_compile_definitions(TagReaderCore PUBLIC TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=1)
+endif()
+
+# Tracy 性能分析支持
+if(TAGREADER_ENABLE_PROFILING)
+    target_compile_definitions(TagReaderCore PUBLIC TAGREADER_ENABLE_PROFILING=1 TRACY_ENABLE=1)
+    target_link_libraries(TagReaderCore PUBLIC ${TRACY_LIBRARY})
+    if(TRACY_INCLUDE_DIR)
+        target_include_directories(TagReaderCore PUBLIC ${TRACY_INCLUDE_DIR})
+    endif()
+    # 添加必要的系统库
+    target_link_libraries(TagReaderCore PUBLIC pthread dl)
+    message(STATUS "TagReaderCore: Tracy profiling enabled")
 endif()
 
 # 4. 轻量级测试程序

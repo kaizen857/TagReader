@@ -3689,21 +3689,18 @@ bool RunTrAudit013()
         return false;
     }
 
-    bool pollutedRejected = false;
-    std::string pollutedError;
+    MusicTag pollutedReadTag;
     try
     {
-        (void)TagReader::Read(samplePath, coverExportDir);
+        pollutedReadTag = TagReader::Read(samplePath, coverExportDir);
     }
     catch (const std::exception &ex)
     {
-        pollutedError = ex.what();
-        pollutedRejected = pollutedError.find("cover cache") != std::string::npos && pollutedError.find(expectedCoverPath.string()) != std::string::npos;
+        std::cerr << "polluted cache should be auto-fixed, not throw: " << ex.what() << '\n';
+        return false;
     }
 
-    const bool pollutedRejectedOk = Expect(pollutedRejected, "polluted pre-existing cover cache file should be rejected with cover cache path diagnostic");
-    std::filesystem::remove(expectedCoverPath, ec);
-    ec.clear();
+    const bool pollutedAutoFixed = Expect(!pollutedReadTag.coverPath().empty() && pollutedReadTag.coverPath() == expectedCoverPath, "polluted cache should be auto-fixed and return valid cover path");
 
     const MusicTag firstTag = TagReader::Read(samplePath, coverExportDir);
     const std::filesystem::path firstCoverPath = firstTag.coverPath();
@@ -3729,18 +3726,17 @@ bool RunTrAudit013()
 
     const std::string stdoutLike =
         "TR-AUDIT-013 sha256-cache-path coverPath=" + firstCoverPath.string() + "\n"
-        "TR-AUDIT-013 polluted-cache-rejected path=" + expectedCoverPath.string() + "\n"
+        "TR-AUDIT-013 polluted-cache-auto-fixed path=" + expectedCoverPath.string() + "\n"
         "TR-AUDIT-013 PASS\n";
     const std::string summary =
         "case=TR-AUDIT-013\n"
         "marker=sha256-cache-path\n"
-        "marker=polluted-cache-rejected\n"
+        "marker=polluted-cache-auto-fixed\n"
         "sample=" + samplePath.string() + "\n" +
         "coverExportDir=" + coverExportDir.string() + "\n" +
         "expectedSha256=" + std::string(kOneByOnePngSha256) + "\n" +
         "expectedCoverPath=" + expectedCoverPath.string() + "\n" +
         "coverPath=" + firstCoverPath.string() + "\n" +
-        "pollutedError=" + pollutedError + "\n" +
         "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
         "pngFilesAfterFirstRead=1\n"
         "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
@@ -3754,11 +3750,11 @@ bool RunTrAudit013()
         return false;
     }
 
-    const bool passed = pollutedRejectedOk && coverPathPresent && coverPathExpected && coverExists && coverUnderExportDir && hexLengthOk && shardDirOk && fileNameOk && onePngAfterFirstRead && firstMtimeOk && repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead;
+    const bool passed = pollutedAutoFixed && coverPathPresent && coverPathExpected && coverExists && coverUnderExportDir && hexLengthOk && shardDirOk && fileNameOk && onePngAfterFirstRead && firstMtimeOk && repeatedPathSame && repeatedMtimeOk && onePngAfterRepeatedRead;
     if (passed)
     {
         std::cout << "TR-AUDIT-013 sha256-cache-path coverPath=" << firstCoverPath.string() << '\n';
-        std::cout << "TR-AUDIT-013 polluted-cache-rejected path=" << expectedCoverPath.string() << '\n';
+        std::cout << "TR-AUDIT-013 polluted-cache-auto-fixed path=" << expectedCoverPath.string() << '\n';
     }
     return passed;
 }

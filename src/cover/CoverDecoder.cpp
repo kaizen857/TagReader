@@ -1,5 +1,6 @@
 #include "cover/CoverDecoder.hpp"
 
+#include "profiling/Profiling.hpp"
 #include "TagReaderInternal.hpp"
 
 #ifdef __cplusplus
@@ -15,6 +16,7 @@ extern "C"
 
 #include <array>
 #include <cstring>
+#include <span>
 #include <limits>
 #include <memory>
 
@@ -135,6 +137,8 @@ bool DecodedFrameWithinCoverLimits(const AVFrame *frame)
 
 std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
 {
+    TAGREADER_PROFILE_FUNCTION();
+
     const AVCodec *encoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
     if (encoder == nullptr)
     {
@@ -151,14 +155,20 @@ std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
     encoderContext->height = frame->height;
     encoderContext->pix_fmt = AV_PIX_FMT_RGB24;
     encoderContext->time_base = AVRational{1, 1};
-    if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
     {
-        return {};
+        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_open2", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
+        {
+            return {};
+        }
     }
 
-    if (avcodec_send_frame(encoderContext.get(), frame) < 0)
     {
-        return {};
+        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_send_frame", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_send_frame(encoderContext.get(), frame) < 0)
+        {
+            return {};
+        }
     }
 
     std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
@@ -167,16 +177,103 @@ std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
         return {};
     }
 
-    if (avcodec_receive_packet(encoderContext.get(), packet.get()) < 0)
     {
-        return {};
+        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_receive_packet", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_receive_packet(encoderContext.get(), packet.get()) < 0)
+        {
+            return {};
+        }
     }
 
     return std::vector<uint8_t>(packet->data, packet->data + packet->size);
 }
 
+bool CopyImageBytesToPacket(AVPacket *packet, std::span<const uint8_t> bytes)
+{
+    TAGREADER_PROFILE_FUNCTION();
+
+    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        return false;
+    }
+    if (av_new_packet(packet, static_cast<int>(bytes.size())) < 0)
+    {
+        return false;
+    }
+
+    std::memcpy(packet->data, bytes.data(), bytes.size());
+    return true;
+}
+
+bool DecodePacketToFrame(AVCodecContext *decoderContext, AVPacket *packet, AVFrame *decodedFrame)
+{
+    TAGREADER_PROFILE_FUNCTION();
+
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("image avcodec_send_packet", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_send_packet(decoderContext, packet) < 0)
+        {
+            return false;
+        }
+    }
+
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("image avcodec_receive_frame", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_receive_frame(decoderContext, decodedFrame) < 0)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ConvertFrameToRgb24(const AVFrame *decodedFrame, AVFrame *rgbFrame)
+{
+    TAGREADER_PROFILE_FUNCTION();
+
+    rgbFrame->format = AV_PIX_FMT_RGB24;
+    rgbFrame->width = decodedFrame->width;
+    rgbFrame->height = decodedFrame->height;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("rgb av_frame_get_buffer", TAGREADER_COLOR_DECODE);
+        if (av_frame_get_buffer(rgbFrame, 1) < 0)
+        {
+            return false;
+        }
+    }
+
+    std::unique_ptr<SwsContext, SwsContextDeleter> swsContext;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("rgb sws_getContext", TAGREADER_COLOR_DECODE);
+        swsContext.reset(sws_getContext(decodedFrame->width,
+                                        decodedFrame->height,
+                                        static_cast<AVPixelFormat>(decodedFrame->format),
+                                        rgbFrame->width,
+                                        rgbFrame->height,
+                                        AV_PIX_FMT_RGB24,
+                                        SWS_BILINEAR,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr));
+    }
+    if (swsContext == nullptr)
+    {
+        return false;
+    }
+
+    int scaledRows = 0;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("rgb sws_scale", TAGREADER_COLOR_DECODE);
+        scaledRows = sws_scale(swsContext.get(), decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, rgbFrame->data, rgbFrame->linesize);
+    }
+    return scaledRows == decodedFrame->height;
+}
+
 std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AVCodecID codecId)
 {
+    TAGREADER_PROFILE_FUNCTION();
+
     if (data == nullptr || size == 0 || size > kCoverDecodeLimits.maxInputBytes || size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
     {
         return {};
@@ -189,9 +286,17 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
     }
 
     std::unique_ptr<AVCodecContext, AvCodecContextDeleter> decoderContext(avcodec_alloc_context3(decoder));
-    if (decoderContext == nullptr || avcodec_open2(decoderContext.get(), decoder, nullptr) < 0)
+    if (decoderContext == nullptr)
     {
         return {};
+    }
+
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("image avcodec_open2", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_open2(decoderContext.get(), decoder, nullptr) < 0)
+        {
+            return {};
+        }
     }
 
     std::unique_ptr<AVFrame, AvFrameDeleter> decodedFrame(av_frame_alloc());
@@ -205,13 +310,11 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
     {
         return {};
     }
-    if (av_new_packet(packet.get(), static_cast<int>(size)) < 0)
+    if (!CopyImageBytesToPacket(packet.get(), std::span<const uint8_t>(data, size)))
     {
         return {};
     }
-    std::memcpy(packet->data, data, size);
-
-    if (avcodec_send_packet(decoderContext.get(), packet.get()) < 0 || avcodec_receive_frame(decoderContext.get(), decodedFrame.get()) < 0)
+    if (!DecodePacketToFrame(decoderContext.get(), packet.get(), decodedFrame.get()))
     {
         return {};
     }
@@ -226,31 +329,7 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
     {
         return {};
     }
-    rgbFrame->format = AV_PIX_FMT_RGB24;
-    rgbFrame->width = decodedFrame->width;
-    rgbFrame->height = decodedFrame->height;
-    if (av_frame_get_buffer(rgbFrame.get(), 1) < 0)
-    {
-        return {};
-    }
-
-    std::unique_ptr<SwsContext, SwsContextDeleter> swsContext(sws_getContext(decodedFrame->width,
-                                                                             decodedFrame->height,
-                                                                             static_cast<AVPixelFormat>(decodedFrame->format),
-                                                                             rgbFrame->width,
-                                                                             rgbFrame->height,
-                                                                             AV_PIX_FMT_RGB24,
-                                                                             SWS_BILINEAR,
-                                                                             nullptr,
-                                                                             nullptr,
-                                                                             nullptr));
-    if (swsContext == nullptr)
-    {
-        return {};
-    }
-
-    const int scaledRows = sws_scale(swsContext.get(), decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, rgbFrame->data, rgbFrame->linesize);
-    if (scaledRows != decodedFrame->height)
+    if (!ConvertFrameToRgb24(decodedFrame.get(), rgbFrame.get()))
     {
         return {};
     }
@@ -267,6 +346,8 @@ std::vector<uint8_t> ConvertImageToPng(const uint8_t *data, std::size_t size, AV
 
 std::vector<uint8_t> DecodeAndEncodeCoverPng(const uint8_t *data, std::size_t size)
 {
+    TAGREADER_PROFILE_FUNCTION();
+
     const ImageFormat format = DetectImageFormat(data, size);
     std::vector<uint8_t> png;
     if (format == ImageFormat::Png)

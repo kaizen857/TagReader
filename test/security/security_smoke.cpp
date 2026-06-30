@@ -59,23 +59,25 @@ bool RunPollutedCoverCacheSmoke(const std::filesystem::path &samplePath, const s
         return false;
     }
 
+    MusicTag tag;
     try
     {
-        (void)TagReader::Read(samplePath, coverExportDir);
+        tag = TagReader::Read(samplePath, coverExportDir);
     }
     catch (const std::exception &ex)
     {
-        if (!ErrorMentionsCoverCacheAndPath(ex, coverPath))
-        {
-            std::cerr << "cover cache pollution error missing diagnostic details for " << coverPath.string() << ": " << ex.what() << '\n';
-            return false;
-        }
-        std::cout << "cover cache polluted assertion passed: " << coverPath.string() << '\n';
-        return true;
+        std::cerr << "polluted cache should be auto-fixed, not throw for " << coverPath.string() << ": " << ex.what() << '\n';
+        return false;
     }
 
-    std::cerr << "cover cache polluted entry was accepted for " << coverPath.string() << '\n';
-    return false;
+    if (tag.coverPath().empty() || tag.coverPath() != coverPath)
+    {
+        std::cerr << "polluted cache auto-fix failed for " << coverPath.string() << '\n';
+        return false;
+    }
+
+    std::cout << "cover cache polluted auto-fix passed: " << coverPath.string() << '\n';
+    return true;
 }
 
 std::filesystem::path SampleCoverExportDir(const std::filesystem::path &coverExportDir, const std::filesystem::path &samplePath)

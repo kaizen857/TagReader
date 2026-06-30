@@ -11,6 +11,16 @@
       }
     },
     {
+      "name": "release",
+      "displayName": "Release",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
       "name": "sanitize",
       "displayName": "Sanitize",
       "generator": "Unix Makefiles",
@@ -28,6 +38,17 @@
       "cacheVariables": {
         "TAGREADER_ENABLE_FUZZING": "ON"
       }
+    },
+    {
+      "name": "profile",
+      "displayName": "Profile",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "TAGREADER_ENABLE_PROFILING": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -36,18 +57,33 @@
       "configurePreset": "default"
     },
     {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
       "name": "sanitize",
       "configurePreset": "sanitize"
     },
     {
       "name": "fuzz",
       "configurePreset": "fuzz"
+    },
+    {
+      "name": "profile",
+      "configurePreset": "profile"
     }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
       "output": {
         "outputOnFailure": true
       }
@@ -62,6 +98,13 @@
     {
       "name": "fuzz",
       "configurePreset": "fuzz",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "profile",
+      "configurePreset": "profile",
       "output": {
         "outputOnFailure": true
       }

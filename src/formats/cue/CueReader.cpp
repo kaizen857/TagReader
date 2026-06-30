@@ -6,6 +6,7 @@
 
 #include "core/TagPipeline.hpp"
 #include "cover/CoverCache.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <algorithm>
 #include <array>
@@ -206,6 +207,8 @@ namespace tagreader_cue
 {
 std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     const std::optional<std::string> cueText = LoadCueTextUtf8(cuePath);
     if (!cueText.has_value())
     {

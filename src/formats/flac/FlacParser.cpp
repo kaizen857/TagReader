@@ -4,6 +4,7 @@
 #include "formats/vorbis/VorbisCommentLimits.hpp"
 #include "formats/vorbis/VorbisCommentParser.hpp"
 #include "io/ByteReader.hpp"
+#include "profiling/Profiling.hpp"
 
 #include <stdexcept>
 #include <string_view>
@@ -81,6 +82,8 @@ bool ForEachFlacVorbisCommentEntry(const uint8_t *data, std::size_t size, Handle
 
 void ReadFlacMetadataBlocks(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (!context.input.is_open() || context.fileSize < 8)
     {
         return;
@@ -180,6 +183,8 @@ namespace tagreader_flac
 {
 void ReadFlacMetadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (!context.input.is_open())
     {
         return;

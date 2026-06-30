@@ -230,16 +230,19 @@ bool RunFlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root
         return false;
     }
 
-    std::string error;
+    MusicTag result;
     try
     {
-        (void)TagReader::Read(samplePath, coverExportDir);
+        result = TagReader::Read(samplePath, coverExportDir);
     }
     catch (const std::exception &ex)
     {
-        error = ex.what();
+        return Expect(false, std::string("FLAC PICTURE polluted cache should be auto-fixed, not throw: ") + ex.what());
     }
 
-    return Expect(error.find("cover cache") != std::string::npos && error.find(expectedCoverPath.string()) != std::string::npos, "FLAC PICTURE cover cache failure should propagate to caller");
+    const bool coverPathPresent = Expect(!result.coverPath().empty(), "polluted cache should be replaced with valid cover");
+    const bool coverPathExpected = Expect(result.coverPath() == expectedCoverPath, "cover path should match expected SHA-256 cache path");
+    const bool validCoverExists = Expect(std::filesystem::is_regular_file(expectedCoverPath, ec), "valid cover should exist after auto-fix");
+    return coverPathPresent && coverPathExpected && validCoverExists;
 }
 }

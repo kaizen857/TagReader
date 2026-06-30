@@ -1,4 +1,5 @@
 #include "formats/mp4/Mp4Parser.hpp"
+#include "profiling/Profiling.hpp"
 
 #include "common/ParseHelpers.hpp"
 #include "cover/CoverCache.hpp"
@@ -328,6 +329,8 @@ namespace tagreader_mp4
 {
 void ReadMp4Metadata(ReadContext &context, RawMetadata &metadata)
 {
+    TAGREADER_PROFILE_FUNCTION();
+    
     if (!context.input.is_open())
     {
         return;

@@ -3,7 +3,7 @@
 - 当前目录就是项目根目录；不要扫描、读取或推断上级目录内容。
 - 面向用户的回答和仓库文档修改使用中文；面向用户的文档除 `AGENTS.md` 外放在 `docs/`。
 - `README.md` 只有标题；查事实优先看 `CMakeLists.txt`、`CMakePresets.json`、公共头文件、`src/`、`test/`，再看 `docs/DESIGN.md`。若文档和代码/构建脚本冲突，信可执行来源。
-- 仓库目前没有 CI、lint、formatter、repo-local OpenCode 配置或其它指令文件；不要编造这些入口。
+- 仓库目前没有 CI、lint、formatter 或其它指令文件；不要编造这些入口。`.clangd` 指向 `build/default` 的 `compile_commands.json`。
 - 这是 C++23 项目（`CMAKE_CXX_STANDARD 23` 且 required）；不要把实现降到 C++17/C++20 写法。
 
 ## API 与主流程
@@ -33,7 +33,17 @@
 
 - 依赖由 `pkg-config` 查找 FFmpeg（`libavformat`、`libavcodec`、`libavutil`、`libswscale`）；`Iconv` 默认必需，除非显式 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON`。
 - 默认入口：`cmake --preset default`、`cmake --build --preset default`、`ctest --preset default --output-on-failure`；`clangd` 读取 `build/default/compile_commands.json`。
+- Release 优化构建：`cmake --preset release`、`cmake --build --preset release`、`ctest --preset release --output-on-failure`；Clang/GCC 使用 `-O3 -march=native -DNDEBUG`，MSVC 使用 `/O2 /GL /LTCG`。
 - Sanitizer / fuzz 入口：`cmake --preset sanitize`、`cmake --build --preset sanitize`、`ctest --preset sanitize --output-on-failure`；`cmake --preset fuzz`、`cmake --build --preset fuzz`。`TagReaderFuzz` 只在 Clang/libFuzzer 下生成。
+- **性能分析构建**：`cmake --preset profile`、`cmake --build --preset profile`；需要系统安装 Tracy（`pkg-config --modversion tracy`）。启用 `TAGREADER_ENABLE_PROFILING` 后，使用 `tracy` GUI 查看器捕获性能数据。详见 `docs/PROFILING.md`。
 - 单测/回归测试走 Catch2 + CTest；不要要求用 `TagReaderTest` 替代 `ctest`。`TagReaderTest` 是人工验收 CLI：`./build/default/TagReaderTest <audio-file-path> [cover-export-dir]`。
 - `TagReaderSecuritySmoke` 由 CTest 包装；样本由 `python3 test/security/generate_samples.py` 生成，默认输出 `/tmp/opencode/tagreader_security_samples`，缺少 `ffmpeg` CLI 或 codec 时相关样本可能跳过或失败。
 - fuzz corpus 由 `python3 test/corpus/generate_corpus.py [--out-dir DIR]` 生成，默认输出 `/tmp/opencode/tagreader_fuzz_corpus`；仓库不提交二进制 seed。
+
+## 性能分析
+
+- 项目集成了 Tracy Profiler（0.1-1% 开销，微秒级精度）用于细粒度性能追踪。
+- 性能分析宏在 `src/profiling/Profiling.hpp`；只有 `TAGREADER_ENABLE_PROFILING=ON` 时生效，否则编译为空操作。
+- 关键宏：`TAGREADER_PROFILE_FUNCTION()` 追踪整个函数，`TAGREADER_PROFILE_SCOPE_COLOR(name, color)` 追踪代码块并按阶段着色。
+- 预定义颜色：`TAGREADER_COLOR_IO`（I/O）、`TAGREADER_COLOR_PARSE`（解析）、`TAGREADER_COLOR_FFMPEG`（FFmpeg）、`TAGREADER_COLOR_DECODE`（解码）等，用于在 Tracy 时间线中区分不同阶段。
+- 完整使用指南见 `docs/PROFILING.md`，实施总结见 `docs/PROFILING_SUMMARY.md`。
