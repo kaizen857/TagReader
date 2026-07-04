@@ -7,6 +7,22 @@ project(TagReaderProject VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# 多线程编译配置
+include(ProcessorCount)
+ProcessorCount(N)
+if(NOT N EQUAL 0)
+    set(CMAKE_BUILD_PARALLEL_LEVEL ${N} CACHE STRING "Number of parallel build jobs" FORCE)
+    message(STATUS "Detected ${N} CPU cores, enabling parallel build with ${N} jobs")
+    
+    # MSVC 特定：设置 /MP 标志以启用多核编译
+    if(MSVC)
+        add_compile_options(/MP${N})
+        message(STATUS "MSVC: Enabled multi-processor compilation with /MP${N}")
+    endif()
+else()
+    message(WARNING "Could not detect CPU count, parallel build may not be optimal")
+endif()
+
 # Release 模式优化配置
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
