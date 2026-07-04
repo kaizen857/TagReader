@@ -403,4 +403,335 @@ std::vector<uint8_t> DecodeAndEncodeCoverPng(const uint8_t *data, std::size_t si
     return png;
 }
 
+
+DecodedImage DecodeImageToRgb24Direct(const uint8_t *data, std::size_t size)
+{
+    TAGREADER_PROFILE_FUNCTION();
+    
+    if (data == nullptr || size == 0 || size > kCoverDecodeLimits.maxInputBytes || size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    {
+        return {};
+    }
+    
+    const ImageFormat format = DetectImageFormat(data, size);
+    AVCodecID codecId = AV_CODEC_ID_NONE;
+    
+    if (format == ImageFormat::Png)
+    {
+        codecId = AV_CODEC_ID_PNG;
+    }
+    else if (format == ImageFormat::Jpeg)
+    {
+        codecId = AV_CODEC_ID_MJPEG;
+    }
+    else if (format == ImageFormat::Bmp)
+    {
+        codecId = AV_CODEC_ID_BMP;
+    }
+    else if (format == ImageFormat::Webp)
+    {
+        codecId = AV_CODEC_ID_WEBP;
+    }
+    else if (format == ImageFormat::Gif)
+    {
+        codecId = AV_CODEC_ID_GIF;
+    }
+    else if (format == ImageFormat::Tiff)
+    {
+        codecId = AV_CODEC_ID_TIFF;
+    }
+    else
+    {
+        return {};
+    }
+    
+    const AVCodec *decoder = avcodec_find_decoder(codecId);
+    if (decoder == nullptr)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVCodecContext, AvCodecContextDeleter> decoderContext(avcodec_alloc_context3(decoder));
+    if (decoderContext == nullptr)
+    {
+        return {};
+    }
+    
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("image avcodec_open2", TAGREADER_COLOR_FFMPEG);
+        if (avcodec_open2(decoderContext.get(), decoder, nullptr) < 0)
+        {
+            return {};
+        }
+    }
+    
+    std::unique_ptr<AVFrame, AvFrameDeleter> decodedFrame(av_frame_alloc());
+    if (decodedFrame == nullptr)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
+    if (packet == nullptr)
+    {
+        return {};
+    }
+    if (!CopyImageBytesToPacket(packet.get(), std::span<const uint8_t>(data, size)))
+    {
+        return {};
+    }
+    if (!DecodePacketToFrame(decoderContext.get(), packet.get(), decodedFrame.get()))
+    {
+        return {};
+    }
+    
+    if (!DecodedFrameWithinCoverLimits(decodedFrame.get()))
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVFrame, AvFrameDeleter> rgbFrame(av_frame_alloc());
+    if (rgbFrame == nullptr)
+    {
+        return {};
+    }
+    if (!ConvertFrameToRgb24(decodedFrame.get(), rgbFrame.get()))
+    {
+        return {};
+    }
+    
+    DecodedImage result;
+    result.frame = rgbFrame.release();
+    result.width = result.frame->width;
+    result.height = result.frame->height;
+    return result;
+}
+
+DecodedImage DecodeImage(const uint8_t *data, std::size_t size)
+{
+    TAGREADER_PROFILE_FUNCTION();
+    
+    if (data == nullptr || size == 0 || size > kCoverDecodeLimits.maxInputBytes)
+    {
+        return {};
+    }
+    
+    std::vector<uint8_t> png = DecodeAndEncodeCoverPng(data, size);
+    if (png.empty())
+    {
+        return {};
+    }
+    
+    const AVCodec *decoder = avcodec_find_decoder(AV_CODEC_ID_PNG);
+    if (decoder == nullptr)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVCodecContext, AvCodecContextDeleter> decoderContext(avcodec_alloc_context3(decoder));
+    if (decoderContext == nullptr)
+    {
+        return {};
+    }
+    
+    if (avcodec_open2(decoderContext.get(), decoder, nullptr) < 0)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVFrame, AvFrameDeleter> frame(av_frame_alloc());
+    if (frame == nullptr)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVPacket, AvPacketDeleter> pkt(av_packet_alloc());
+    if (pkt == nullptr)
+    {
+        return {};
+    }
+    
+    if (av_new_packet(pkt.get(), static_cast<int>(png.size())) < 0)
+    {
+        return {};
+    }
+    
+    std::memcpy(pkt->data, png.data(), png.size());
+    
+    if (avcodec_send_packet(decoderContext.get(), pkt.get()) < 0)
+    {
+        return {};
+    }
+    
+    if (avcodec_receive_frame(decoderContext.get(), frame.get()) < 0)
+    {
+        return {};
+    }
+    
+    DecodedImage result;
+    result.frame = frame.release();
+    result.width = result.frame->width;
+    result.height = result.frame->height;
+    return result;
+}
+
+void FreeDecodedImage(DecodedImage &image)
+{
+    if (image.frame != nullptr)
+    {
+        av_frame_free(&image.frame);
+        image.frame = nullptr;
+        image.width = 0;
+        image.height = 0;
+    }
+}
+
+DecodedImage GenerateThumbnail(const DecodedImage &original, const ThumbnailOptions &options)
+{
+    TAGREADER_PROFILE_SCOPE("GenerateThumbnail");
+    
+    if (original.frame == nullptr || original.width <= 0 || original.height <= 0)
+    {
+        return {};
+    }
+    
+    int targetWidth = static_cast<int>(options.maxWidth);
+    int targetHeight = static_cast<int>(options.maxHeight);
+    
+    if (options.maintainAspectRatio)
+    {
+        const double aspectRatio = static_cast<double>(original.width) / static_cast<double>(original.height);
+        if (aspectRatio > 1.0)
+        {
+            targetHeight = static_cast<int>(static_cast<double>(targetWidth) / aspectRatio);
+        }
+        else
+        {
+            targetWidth = static_cast<int>(static_cast<double>(targetHeight) * aspectRatio);
+        }
+        
+        if (targetWidth <= 0) targetWidth = 1;
+        if (targetHeight <= 0) targetHeight = 1;
+    }
+    
+    if (original.width <= targetWidth && original.height <= targetHeight)
+    {
+        std::unique_ptr<AVFrame, AvFrameDeleter> clonedFrame(av_frame_clone(original.frame));
+        if (clonedFrame == nullptr)
+        {
+            return {};
+        }
+        
+        DecodedImage result;
+        result.frame = clonedFrame.release();
+        result.width = result.frame->width;
+        result.height = result.frame->height;
+        return result;
+    }
+    
+    std::unique_ptr<AVFrame, AvFrameDeleter> scaledFrame(av_frame_alloc());
+    if (scaledFrame == nullptr)
+    {
+        return {};
+    }
+    
+    scaledFrame->format = AV_PIX_FMT_RGB24;
+    scaledFrame->width = targetWidth;
+    scaledFrame->height = targetHeight;
+    
+    if (av_frame_get_buffer(scaledFrame.get(), 1) < 0)
+    {
+        return {};
+    }
+    
+    int swsFlags = SWS_FAST_BILINEAR;
+    if (options.scalingQuality == 1)
+    {
+        swsFlags = SWS_BILINEAR;
+    }
+    else if (options.scalingQuality == 2)
+    {
+        swsFlags = SWS_LANCZOS;
+    }
+    
+    std::unique_ptr<SwsContext, SwsContextDeleter> swsContext;
+    swsContext.reset(sws_getContext(original.width,
+                                    original.height,
+                                    AV_PIX_FMT_RGB24,
+                                    targetWidth,
+                                    targetHeight,
+                                    AV_PIX_FMT_RGB24,
+                                    swsFlags,
+                                    nullptr,
+                                    nullptr,
+                                    nullptr));
+    if (swsContext == nullptr)
+    {
+        return {};
+    }
+    
+    int scaledRows = sws_scale(swsContext.get(), original.frame->data, original.frame->linesize, 0, original.height, scaledFrame->data, scaledFrame->linesize);
+    
+    if (scaledRows != targetHeight)
+    {
+        return {};
+    }
+    
+    DecodedImage result;
+    result.frame = scaledFrame.release();
+    result.width = result.frame->width;
+    result.height = result.frame->height;
+    return result;
+}
+
+std::vector<uint8_t> EncodePngWithOptions(const DecodedImage &image, const PngEncodeOptions &options)
+{
+    TAGREADER_PROFILE_FUNCTION();
+    
+    if (image.frame == nullptr || image.width <= 0 || image.height <= 0)
+    {
+        return {};
+    }
+    
+    const AVCodec *encoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
+    if (encoder == nullptr)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVCodecContext, AvCodecContextDeleter> encoderContext(avcodec_alloc_context3(encoder));
+    if (encoderContext == nullptr)
+    {
+        return {};
+    }
+    
+    encoderContext->width = image.frame->width;
+    encoderContext->height = image.frame->height;
+    encoderContext->pix_fmt = AV_PIX_FMT_RGB24;
+    encoderContext->time_base = AVRational{1, 1};
+    encoderContext->compression_level = options.compressionLevel;
+    
+    if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
+    {
+        return {};
+    }
+    
+    if (avcodec_send_frame(encoderContext.get(), image.frame) < 0)
+    {
+        return {};
+    }
+    
+    std::unique_ptr<AVPacket, AvPacketDeleter> outputPacket(av_packet_alloc());
+    if (outputPacket == nullptr)
+    {
+        return {};
+    }
+    
+    if (avcodec_receive_packet(encoderContext.get(), outputPacket.get()) < 0)
+    {
+        return {};
+    }
+    
+    return std::vector<uint8_t>(outputPacket->data, outputPacket->data + outputPacket->size);
+}
 }

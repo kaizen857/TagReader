@@ -4,6 +4,8 @@
 #include "cover/CoverDecoder.hpp"
 #include "profiling/Profiling.hpp"
 #include "TagReaderInternal.hpp"
+#include "TagReader.hpp"
+#include "core/ReadContext.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -22,6 +24,7 @@ extern "C"
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -519,9 +522,9 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
         throw std::runtime_error("cover export path must use .png extension: " + coverPath.string());
     }
 
-    static std::array<std::mutex, 256> coverMutexes;
+    static std::array<std::mutex, 4096> coverMutexes;
     const auto coverHash = coverPath.filename().string();
-    const auto mutexIndex = std::hash<std::string>{}(coverHash) % 256;
+    const auto mutexIndex = std::hash<std::string>{}(coverHash) % 4096;
 
     std::lock_guard<std::mutex> lock(coverMutexes[mutexIndex]);
 
@@ -530,7 +533,23 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
         return coverPath;
     }
 
-    std::vector<uint8_t> png = DecodeAndEncodeCoverPng(data, size);
+    // 优化：直接解码到 RGB24，跳过中间 PNG 往返
+    DecodedImage decoded = DecodeImageToRgb24Direct(data, size);
+    if (decoded.frame == nullptr)
+    {
+        // Fallback 到旧路径
+        decoded = DecodeImage(data, size);
+        if (decoded.frame == nullptr)
+        {
+            return {};
+        }
+    }
+
+    PngEncodeOptions encOpts;
+    encOpts.compressionLevel = 6;
+    std::vector<uint8_t> png = EncodePngWithOptions(decoded, encOpts);
+    FreeDecodedImage(decoded);
+
     if (png.empty())
     {
         return {};
@@ -559,5 +578,147 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     }
     ValidateExistingCoverCacheFile(coverPath, png);
     return coverPath;
+}
+
+std::filesystem::path BuildThumbnailCachePath(const std::filesystem::path &coverExportDir, std::string_view hex)
+{
+    if (coverExportDir.empty() || hex.size() < 3)
+    {
+        return {};
+    }
+
+    return coverExportDir / "thumbnails" / std::string(hex.substr(0, 2)) / (std::string(hex.substr(2)) + ".png");
+}
+
+CoverPaths WriteCoverWithThumbnail(const std::filesystem::path &coverExportDir, const uint8_t *data, std::size_t size, const CoverProcessingOptions &options)
+{
+    TAGREADER_PROFILE_FUNCTION();
+
+    if (coverExportDir.empty() || data == nullptr || size == 0 || size > kMaxCoverInputBytes)
+    {
+        return {};
+    }
+
+    const std::string contentHash = HashEmbeddedImageBytes(data, size);
+    const std::filesystem::path fullPath = BuildCoverCachePath(coverExportDir, contentHash);
+    const std::filesystem::path thumbPath = options.generateThumbnail ? BuildThumbnailCachePath(coverExportDir, contentHash) : std::filesystem::path{};
+
+    std::error_code ec;
+    if (std::filesystem::exists(fullPath, ec) && (!options.generateThumbnail || std::filesystem::exists(thumbPath, ec)))
+    {
+        return {fullPath, thumbPath};
+    }
+
+    // 方案 B：解码和缩放移出锁外，减小临界区
+    // 优化：优先尝试直接解码到 RGB24，跳过中间 PNG 编码/解码
+    DecodedImage decoded = DecodeImageToRgb24Direct(data, size);
+    if (decoded.frame == nullptr)
+    {
+        // Fallback 到旧路径（中间 PNG）
+        decoded = DecodeImage(data, size);
+        if (decoded.frame == nullptr)
+        {
+            return {};
+        }
+    }
+
+    DecodedImage thumbnail;
+    if (options.generateThumbnail)
+    {
+        ThumbnailOptions thumbOpts;
+        thumbOpts.maxWidth = options.thumbnailSize.width;
+        thumbOpts.maxHeight = options.thumbnailSize.height;
+        thumbOpts.maintainAspectRatio = options.thumbnailSize.maintainAspectRatio;
+        thumbOpts.scalingQuality = static_cast<int>(options.scalingQuality);
+
+        thumbnail = GenerateThumbnail(decoded, thumbOpts);
+        if (thumbnail.frame == nullptr)
+        {
+            FreeDecodedImage(decoded);
+            return {};
+        }
+    }
+
+    // 方案 A：扩大分片锁到 4096（从 256）
+    static std::array<std::mutex, 4096> coverMutexes;
+    const auto mutexIndex = std::hash<std::string>{}(contentHash) % 4096;
+    std::lock_guard<std::mutex> lock(coverMutexes[mutexIndex]);
+
+    // 双重检查（在锁内）
+    if (std::filesystem::exists(fullPath, ec) && (!options.generateThumbnail || std::filesystem::exists(thumbPath, ec)))
+    {
+        FreeDecodedImage(decoded);
+        if (thumbnail.frame != nullptr)
+        {
+            FreeDecodedImage(thumbnail);
+        }
+        return {fullPath, thumbPath};
+    }
+
+    std::future<bool> fullFuture = std::async(std::launch::async, [&]() {
+        if (std::filesystem::exists(fullPath))
+        {
+            return true;
+        }
+
+        PngEncodeOptions encOpts;
+        encOpts.compressionLevel = 6;
+        std::vector<uint8_t> png = EncodePngWithOptions(decoded, encOpts);
+        if (png.empty())
+        {
+            return false;
+        }
+
+        return AtomicWriteFileIfAbsent(fullPath, png.data(), png.size());
+    });
+
+    std::future<bool> thumbFuture;
+    if (options.generateThumbnail && thumbnail.frame != nullptr)
+    {
+        thumbFuture = std::async(std::launch::async, [&]() {
+            if (std::filesystem::exists(thumbPath))
+            {
+                return true;
+            }
+
+            PngEncodeOptions encOpts;
+            encOpts.compressionLevel = static_cast<int>(options.pngCompression);
+            std::vector<uint8_t> png = EncodePngWithOptions(thumbnail, encOpts);
+            if (png.empty())
+            {
+                return false;
+            }
+
+            return AtomicWriteFileIfAbsent(thumbPath, png.data(), png.size());
+        });
+    }
+
+    const bool fullSuccess = fullFuture.get();
+    const bool thumbSuccess = !options.generateThumbnail || (thumbFuture.valid() && thumbFuture.get());
+
+    FreeDecodedImage(decoded);
+    if (options.generateThumbnail)
+    {
+        FreeDecodedImage(thumbnail);
+    }
+
+    if (!fullSuccess || !thumbSuccess)
+    {
+        return {};
+    }
+
+    return {fullPath, thumbPath};
+}
+
+CoverPaths ExportCoverFromContext(const tagreader_core::ReadContext &context, const uint8_t *data, std::size_t size)
+{
+    if (context.coverOptions != nullptr && context.coverOptions->generateThumbnail)
+    {
+        return WriteCoverWithThumbnail(context.coverExportDir, data, size, *context.coverOptions);
+    }
+    else
+    {
+        return {WriteCoverAsPng(context.coverExportDir, data, size), {}};
+    }
 }
 }
