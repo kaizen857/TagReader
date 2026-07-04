@@ -546,7 +546,6 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     }
 
     PngEncodeOptions encOpts;
-    encOpts.compressionLevel = 6;
     std::vector<uint8_t> png = EncodePngWithOptions(decoded, encOpts);
     FreeDecodedImage(decoded);
 
@@ -662,7 +661,6 @@ CoverPaths WriteCoverWithThumbnail(const std::filesystem::path &coverExportDir, 
         }
 
         PngEncodeOptions encOpts;
-        encOpts.compressionLevel = 6;
         std::vector<uint8_t> png = EncodePngWithOptions(decoded, encOpts);
         if (png.empty())
         {

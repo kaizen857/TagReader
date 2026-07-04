@@ -9,6 +9,7 @@ extern "C"
 #endif
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
 #include <libswscale/swscale.h>
 #ifdef __cplusplus
 }
@@ -710,6 +711,8 @@ std::vector<uint8_t> EncodePngWithOptions(const DecodedImage &image, const PngEn
     encoderContext->pix_fmt = AV_PIX_FMT_RGB24;
     encoderContext->time_base = AVRational{1, 1};
     encoderContext->compression_level = options.compressionLevel;
+    
+    av_opt_set_int(encoderContext.get(), "pred", static_cast<int>(options.prediction), 0);
     
     if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
     {

@@ -26,9 +26,20 @@ struct ThumbnailOptions
     int scalingQuality{2};
 };
 
+enum class PngPrediction
+{
+    None = 0,
+    Sub = 1,
+    Up = 2,
+    Avg = 3,
+    Paeth = 4,
+    Mixed = 5
+};
+
 struct PngEncodeOptions
 {
-    int compressionLevel{6};
+    int compressionLevel{1};
+    PngPrediction prediction{PngPrediction::Sub};
 };
 
 DecodedImage DecodeImage(const uint8_t *data, std::size_t size);

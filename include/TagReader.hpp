@@ -27,8 +27,8 @@ struct CoverProcessingOptions
     enum class PngCompressionLevel
     {
         Fast = 1,
-        Balanced = 6,
-        Best = 9
+        Balanced = 3,
+        Best = 6
     } pngCompression{PngCompressionLevel::Fast};
 };
 
