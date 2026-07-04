@@ -26,7 +26,7 @@ using tagreader_core::DecodedField;
 using tagreader_core::RawLyrics;
 using tagreader_core::RawMetadata;
 using tagreader_core::ReadContext;
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 using tagreader_io::ReadBE16;
 using tagreader_io::ReadBE32;
 using tagreader_mp4::AtomTypeIs;
@@ -190,11 +190,12 @@ void ReadMp4DataAtom(ReadContext &context, RawMetadata &metadata, std::string_vi
             return;
         }
 
-        const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, payload, payloadSize);
-        if (!coverPath.empty())
-        {
-            metadata.coverPath = coverPath;
-        }
+        const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, payload, payloadSize);
+        if (!paths.fullSizePath.empty())
+    {
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
+    }
     }
 }
 

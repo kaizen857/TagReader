@@ -40,7 +40,7 @@ using tagreader_common::ParseUInt16;
 using tagreader_common::ParseYearOnly;
 using tagreader_common::ToLower;
 using tagreader_text::TrimText;
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 
 constexpr std::size_t kMaxId3TagBytes = 16z * 1024 * 1024;
 constexpr std::size_t kMaxLyricLines = 20000;
@@ -1150,10 +1150,11 @@ void ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const u
     }
 
     (void)imageFormat;
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, payload + cursor, payloadSize - cursor);
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, payload + cursor, payloadSize - cursor);
+    if (!paths.fullSizePath.empty())
     {
-        metadata.coverPath = coverPath;
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
     }
 }
 
@@ -1283,10 +1284,11 @@ void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::stri
     }
 
     (void)mimeType;
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, imageData, imageSize);
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageData, imageSize);
+    if (!paths.fullSizePath.empty())
     {
-        metadata.coverPath = coverPath;
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
     }
 }
 

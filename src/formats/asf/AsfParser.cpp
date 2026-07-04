@@ -25,7 +25,7 @@ using tagreader_common::ParseYearOnly;
 using tagreader_core::RawLyrics;
 using tagreader_core::RawMetadata;
 using tagreader_core::ReadContext;
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 using tagreader_text::ReadLyricsFromPlainText;
 using tagreader_text::ReadUtf16Text;
 
@@ -247,10 +247,11 @@ void ProcessPictureDescriptor(ReadContext &context, RawMetadata *metadata, std::
         return;
     }
 
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, bytes.data() + imageOffset, *imageSize);
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, bytes.data() + imageOffset, *imageSize);
+    if (!paths.fullSizePath.empty())
     {
-        metadata->coverPath = coverPath;
+        metadata->coverPath = paths.fullSizePath;
+        metadata->thumbnailPath = paths.thumbnailPath;
     }
 }
 

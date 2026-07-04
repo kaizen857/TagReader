@@ -10,6 +10,7 @@
 #include <string>
 
 struct AVFormatContext;
+struct CoverProcessingOptions;
 
 namespace tagreader_core
 {
@@ -40,6 +41,7 @@ struct ReadContext
 
     std::filesystem::path filePath;
     std::filesystem::path coverExportDir;
+    const CoverProcessingOptions *coverOptions{nullptr};
     tagreader_io::FileInput input;
     std::uintmax_t fileSize{};
     std::filesystem::file_time_type lastModified{};

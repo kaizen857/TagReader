@@ -26,6 +26,7 @@ private:
     // 文件信息
     std::filesystem::path filePath_{};               // 文件路径
     std::filesystem::path coverPath_{};              // 封面路径
+    std::filesystem::path thumbnailPath_{};          // 缩略图路径
     int64_t duration_{};                             // 时长(单位微秒)
     int64_t offset_{};                               // 偏移量(单位微秒)
     std::filesystem::file_time_type lastModified_{}; // 最后修改时间
@@ -104,6 +105,11 @@ public:
     { return coverPath_; }
     void setCoverPath(std::filesystem::path value)
     { coverPath_ = std::move(value); }
+
+    const std::filesystem::path &thumbnailPath() const noexcept
+    { return thumbnailPath_; }
+    void setThumbnailPath(std::filesystem::path value)
+    { thumbnailPath_ = std::move(value); }
 
     int64_t duration() const noexcept
     { return duration_; }

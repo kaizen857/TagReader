@@ -240,4 +240,10 @@ std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath, const s
 
     return BuildCueTags(cuePath, *parsedSheet, coverExportDir);
 }
+
+std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
+{
+    (void)options;
+    return ReadCueSheet(cuePath, coverExportDir);
+}
 }

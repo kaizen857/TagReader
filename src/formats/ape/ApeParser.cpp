@@ -27,7 +27,7 @@ using tagreader_common::ParseYearOnly;
 using tagreader_core::RawLyrics;
 using tagreader_core::RawMetadata;
 using tagreader_core::ReadContext;
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 using tagreader_io::ReadLE32;
 using tagreader_io::ReadRange;
 using tagreader_text::ReadLyricsFromPlainText;
@@ -199,10 +199,11 @@ void ProcessApeCoverItem(ReadContext &context, RawMetadata &metadata,
         return;
     }
 
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, imageData, imageSize);
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageData, imageSize);
+    if (!paths.fullSizePath.empty())
     {
-        metadata.coverPath = coverPath;
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
     }
 }
 

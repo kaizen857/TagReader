@@ -13,7 +13,7 @@
 
 namespace
 {
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 using tagreader_io::ByteCursor;
 
 constexpr std::size_t kMaxCoverInputBytes = 64z * 1024 * 1024;
@@ -90,10 +90,11 @@ void ReadFlacPictureEntry(tagreader_core::ReadContext &context, tagreader_core::
         return;
     }
 
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, imageBytes->data(), imageBytes->size());
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageBytes->data(), imageBytes->size());
+    if (!paths.fullSizePath.empty())
     {
-        metadata.coverPath = coverPath;
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
     }
 }
 }

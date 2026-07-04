@@ -1,5 +1,6 @@
 #include "core/TagPipeline.hpp"
 
+#include "TagReader.hpp"
 #include "formats/aiff/AiffParser.hpp"
 #include "formats/asf/AsfParser.hpp"
 #include "formats/dsd/DsdParser.hpp"
@@ -584,6 +585,7 @@ MusicTag BuildMusicTag(const ReadContext &context, const RawMediaInfo &mediaInfo
 
     tag.setFilePath(context.filePath);
     tag.setCoverPath(metadata.coverPath);
+    tag.setThumbnailPath(metadata.thumbnailPath);
     tag.setDuration(mediaInfo.duration);
     tag.setOffset(mediaInfo.offset);
     tag.setLastModified(context.lastModified);
@@ -617,6 +619,12 @@ void ValidateDefaultCoverExportDir(const std::filesystem::path &coverExportDir)
 
 MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir)
 {
+    static const CoverProcessingOptions defaultOptions{};
+    return ReadTag(filePath, coverExportDir, defaultOptions);
+}
+
+MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
+{
     TAGREADER_PROFILE_FUNCTION();
     
     tagreader_media::RegisterAllFormatsIfNeeded();
@@ -634,6 +642,7 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     
     const bool useDefaultCoverExportDir = coverExportDir.empty();
     context.coverExportDir = useDefaultCoverExportDir ? DefaultCoverExportDir() : coverExportDir;
+    context.coverOptions = &options;
     if (useDefaultCoverExportDir)
     {
         ValidateDefaultCoverExportDir(context.coverExportDir);

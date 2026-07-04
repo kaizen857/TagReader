@@ -21,7 +21,7 @@ using tagreader_common::ParseSlashNumber;
 using tagreader_common::ParseYearOnly;
 using tagreader_core::RawMetadata;
 using tagreader_core::ReadContext;
-using tagreader_cover::WriteCoverAsPng;
+using tagreader_cover::ExportCoverFromContext;
 using tagreader_text::ReadUtf8Text;
 using tagreader_text::TrimText;
 
@@ -254,10 +254,11 @@ void ExportAttachedImage(ReadContext &context, RawMetadata &metadata, const Atta
         return;
     }
 
-    const std::filesystem::path coverPath = WriteCoverAsPng(context.coverExportDir, bytes.data(), bytes.size());
-    if (!coverPath.empty())
+    const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, bytes.data(), bytes.size());
+    if (!paths.fullSizePath.empty())
     {
-        metadata.coverPath = coverPath;
+        metadata.coverPath = paths.fullSizePath;
+        metadata.thumbnailPath = paths.thumbnailPath;
     }
 }
 

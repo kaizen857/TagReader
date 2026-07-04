@@ -36,6 +36,7 @@ struct RawMetadata
     uint32_t playCount{};
     uint8_t rating{};
     std::filesystem::path coverPath;
+    std::filesystem::path thumbnailPath;
 };
 
 struct RawLyrics
