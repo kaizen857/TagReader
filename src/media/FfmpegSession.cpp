@@ -316,7 +316,11 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     AVIOContext *avioContext = CreateAvioContext(context.input.get(), context.fileSize);
     formatContext->pb = avioContext;
 
-    const int openResult = avformat_open_input(&formatContext, nullptr, nullptr, nullptr);
+    int openResult;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("avformat_open_input", TAGREADER_COLOR_FFMPEG);
+        openResult = avformat_open_input(&formatContext, nullptr, nullptr, nullptr);
+    }
     formatContextGuard.Reset(formatContext);
     if (openResult < 0)
     {
@@ -330,7 +334,11 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
         throw std::runtime_error("avformat_open_input failed: " + MakeFFmpegError(openResult));
     }
 
-    const int infoResult = avformat_find_stream_info(formatContext, nullptr);
+    int infoResult;
+    {
+        TAGREADER_PROFILE_SCOPE_COLOR("avformat_find_stream_info", TAGREADER_COLOR_FFMPEG);
+        infoResult = avformat_find_stream_info(formatContext, nullptr);
+    }
     if (infoResult < 0)
     {
         formatContextGuard.Release();

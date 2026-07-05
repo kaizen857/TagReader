@@ -415,6 +415,9 @@ bool IsReusableCoverCacheFile(const std::filesystem::path &path, const std::vect
 
 bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8_t *data, std::size_t size)
 {
+    TAGREADER_PROFILE_SCOPE_COLOR("AtomicWriteFileIfAbsent", TAGREADER_COLOR_IO);
+    TAGREADER_PROFILE_VALUE(size);
+    
     if (data == nullptr || size == 0)
     {
         return false;
@@ -463,10 +466,16 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
 
         try
         {
-            WriteAll(fd.get(), data, size, tempPath);
-            if (::fsync(fd.get()) != 0)
             {
-                throw std::runtime_error("cover export failed to fsync cover file: " + tempPath.string() + ": " + std::strerror(errno));
+                TAGREADER_PROFILE_SCOPE_COLOR("WriteAll", TAGREADER_COLOR_IO);
+                WriteAll(fd.get(), data, size, tempPath);
+            }
+            {
+                TAGREADER_PROFILE_SCOPE_COLOR("fsync", TAGREADER_COLOR_IO);
+                if (::fsync(fd.get()) != 0)
+                {
+                    throw std::runtime_error("cover export failed to fsync cover file: " + tempPath.string() + ": " + std::strerror(errno));
+                }
             }
             if (::close(fd.release()) != 0)
             {
@@ -480,7 +489,11 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
             throw;
         }
 
-        const PublishResult publishResult = PublishFileIfAbsent(tempPath, finalPath);
+        PublishResult publishResult;
+        {
+            TAGREADER_PROFILE_SCOPE_COLOR("PublishFileIfAbsent", TAGREADER_COLOR_IO);
+            publishResult = PublishFileIfAbsent(tempPath, finalPath);
+        }
         if (publishResult == PublishResult::Published || publishResult == PublishResult::AlreadyExists)
         {
             return true;
