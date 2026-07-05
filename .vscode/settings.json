@@ -1,0 +1,6 @@
+{
+    "cmake.buildArgs": [
+        "-j32"
+    ],
+    "cmake.parallelJobs": 32
+}
