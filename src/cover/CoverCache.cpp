@@ -24,7 +24,6 @@ extern "C"
 #include <cctype>
 #include <cstring>
 #include <fstream>
-#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -654,45 +653,41 @@ CoverPaths WriteCoverWithThumbnail(const std::filesystem::path &coverExportDir, 
         return {fullPath, thumbPath};
     }
 
-    std::future<bool> fullFuture = std::async(std::launch::async, [&]() {
-        if (std::filesystem::exists(fullPath))
-        {
-            return true;
-        }
-
+    // 顺序编码：先 full-size，后 thumbnail
+    // 避免嵌套并发（scanner 已有 32-way worker pool）
+    bool fullSuccess = false;
+    if (!std::filesystem::exists(fullPath))
+    {
         PngEncodeOptions encOpts;
         std::vector<uint8_t> png = EncodePngWithOptions(decoded, encOpts);
-        if (png.empty())
+        if (!png.empty())
         {
-            return false;
+            fullSuccess = AtomicWriteFileIfAbsent(fullPath, png.data(), png.size());
         }
+    }
+    else
+    {
+        fullSuccess = true;
+    }
 
-        return AtomicWriteFileIfAbsent(fullPath, png.data(), png.size());
-    });
-
-    std::future<bool> thumbFuture;
+    bool thumbSuccess = true;
     if (options.generateThumbnail && thumbnail.frame != nullptr)
     {
-        thumbFuture = std::async(std::launch::async, [&]() {
-            if (std::filesystem::exists(thumbPath))
-            {
-                return true;
-            }
-
+        if (!std::filesystem::exists(thumbPath))
+        {
             PngEncodeOptions encOpts;
             encOpts.compressionLevel = static_cast<int>(options.pngCompression);
             std::vector<uint8_t> png = EncodePngWithOptions(thumbnail, encOpts);
-            if (png.empty())
+            if (!png.empty())
             {
-                return false;
+                thumbSuccess = AtomicWriteFileIfAbsent(thumbPath, png.data(), png.size());
             }
-
-            return AtomicWriteFileIfAbsent(thumbPath, png.data(), png.size());
-        });
+            else
+            {
+                thumbSuccess = false;
+            }
+        }
     }
-
-    const bool fullSuccess = fullFuture.get();
-    const bool thumbSuccess = !options.generateThumbnail || (thumbFuture.valid() && thumbFuture.get());
 
     FreeDecodedImage(decoded);
     if (options.generateThumbnail)
