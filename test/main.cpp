@@ -13,6 +13,12 @@ extern "C"
 #include <filesystem>
 #include <string>
 
+#ifdef TAGREADER_ENABLE_PROFILING
+#include <tracy/tracy/Tracy.hpp>
+#include <thread>
+#include <chrono>
+#endif
+
 namespace
 {
 void PrintTag(const MusicTag &tag)
@@ -51,6 +57,31 @@ int main(int argc, char *argv[])
 {
     av_log_set_level(AV_LOG_QUIET);
 
+#ifdef TAGREADER_ENABLE_PROFILING
+    std::cout << "Tracy profiling enabled. Waiting for profiler connection...\n";
+    std::cout << "Please connect Tracy Profiler within 10 seconds.\n";
+    
+    // 等待 Tracy Profiler 连接（最多 10 秒）
+    const auto start = std::chrono::steady_clock::now();
+    const auto timeout = std::chrono::seconds(10);
+    
+    while (!tracy::ProfilerAvailable())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        if (elapsed >= timeout)
+        {
+            std::cout << "Tracy Profiler not connected after 10 seconds. Proceeding anyway.\n";
+            break;
+        }
+    }
+    
+    if (tracy::ProfilerAvailable())
+    {
+        std::cout << "Tracy Profiler connected! Starting measurement...\n";
+    }
+#endif
+
     if (argc < 2)
     {
         std::cerr << "usage: " << argv[0] << " <audio-file-path> [cover-export-dir]\n";
@@ -69,6 +100,12 @@ int main(int argc, char *argv[])
         std::cerr << "TagReader error: " << ex.what() << '\n';
         return 2;
     }
+
+#ifdef TAGREADER_ENABLE_PROFILING
+    std::cout << "\nProfiling complete. Waiting for Tracy to receive data...\n";
+    // 给 Tracy 时间传输数据
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+#endif
 
     return 0;
 }
