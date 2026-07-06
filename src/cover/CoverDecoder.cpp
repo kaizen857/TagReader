@@ -2,6 +2,7 @@
 
 #include "profiling/Profiling.hpp"
 #include "TagReaderInternal.hpp"
+#include "fpng.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -10,6 +11,7 @@ extern "C"
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/log.h>
 #include <libswscale/swscale.h>
 #ifdef __cplusplus
 }
@@ -27,6 +29,27 @@ namespace
 {
 constexpr tagreader_internal::CoverDecodeLimits kCoverDecodeLimits{};
 constexpr std::size_t kMaxUnknownMagicFallbackCodecs = 2;
+
+static bool g_fpng_initialized = false;
+
+struct FfmpegLogSilencer
+{
+    FfmpegLogSilencer()
+    {
+        av_log_set_level(AV_LOG_QUIET);
+    }
+};
+
+static FfmpegLogSilencer g_ffmpeg_log_silencer;
+
+void EnsureFpngInitialized()
+{
+    if (!g_fpng_initialized)
+    {
+        fpng::fpng_init();
+        g_fpng_initialized = true;
+    }
+}
 
 enum class ImageFormat
 {
@@ -140,53 +163,55 @@ std::vector<uint8_t> EncodeFrameAsPng(const AVFrame *frame)
 {
     TAGREADER_PROFILE_FUNCTION();
 
-    const AVCodec *encoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
-    if (encoder == nullptr)
+    EnsureFpngInitialized();
+
+    if (frame == nullptr || frame->format != AV_PIX_FMT_RGB24)
     {
         return {};
     }
 
-    std::unique_ptr<AVCodecContext, AvCodecContextDeleter> encoderContext(avcodec_alloc_context3(encoder));
-    if (encoderContext == nullptr)
-    {
-        return {};
-    }
+    const int width = frame->width;
+    const int height = frame->height;
+    const int stride = frame->linesize[0];
+    const uint8_t *data = frame->data[0];
 
-    encoderContext->width = frame->width;
-    encoderContext->height = frame->height;
-    encoderContext->pix_fmt = AV_PIX_FMT_RGB24;
-    encoderContext->time_base = AVRational{1, 1};
+    // fpng 要求数据是连续的 RGB24 格式
+    // 如果 stride == width * 3，数据已经是连续的，直接编码
+    // 否则需要复制到连续缓冲区
+    std::vector<uint8_t> pngData;
+    
+    if (stride == width * 3)
     {
-        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_open2", TAGREADER_COLOR_FFMPEG);
-        if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
+        // 数据已经是连续的，直接使用 fpng 编码
+        // 使用 pred=Sub (默认) 以平衡速度和文件大小
+        if (!fpng::fpng_encode_image_to_memory(data, width, height, 3, pngData))
+        {
+            return {};
+        }
+    }
+    else
+    {
+        // 数据不连续，需要复制
+        std::vector<uint8_t> contiguousData(width * height * 3);
+        for (int y = 0; y < height; ++y)
+        {
+            std::memcpy(contiguousData.data() + y * width * 3,
+                       data + y * stride,
+                       width * 3);
+        }
+        
+        if (!fpng::fpng_encode_image_to_memory(contiguousData.data(), width, height, 3, pngData))
         {
             return {};
         }
     }
 
-    {
-        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_send_frame", TAGREADER_COLOR_FFMPEG);
-        if (avcodec_send_frame(encoderContext.get(), frame) < 0)
-        {
-            return {};
-        }
-    }
-
-    std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
-    if (packet == nullptr)
+    if (pngData.size() > kCoverDecodeLimits.maxOutputBytes)
     {
         return {};
     }
 
-    {
-        TAGREADER_PROFILE_SCOPE_COLOR("png avcodec_receive_packet", TAGREADER_COLOR_FFMPEG);
-        if (avcodec_receive_packet(encoderContext.get(), packet.get()) < 0)
-        {
-            return {};
-        }
-    }
-
-    return std::vector<uint8_t>(packet->data, packet->data + packet->size);
+    return pngData;
 }
 
 bool CopyImageBytesToPacket(AVPacket *packet, std::span<const uint8_t> bytes)
@@ -689,52 +714,59 @@ std::vector<uint8_t> EncodePngWithOptions(const DecodedImage &image, const PngEn
 {
     TAGREADER_PROFILE_FUNCTION();
     
+    EnsureFpngInitialized();
+    
     if (image.frame == nullptr || image.width <= 0 || image.height <= 0)
     {
         return {};
     }
     
-    const AVCodec *encoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
-    if (encoder == nullptr)
+    if (image.frame->format != AV_PIX_FMT_RGB24)
     {
         return {};
     }
     
-    std::unique_ptr<AVCodecContext, AvCodecContextDeleter> encoderContext(avcodec_alloc_context3(encoder));
-    if (encoderContext == nullptr)
+    const int width = image.frame->width;
+    const int height = image.frame->height;
+    const int stride = image.frame->linesize[0];
+    const uint8_t *data = image.frame->data[0];
+    
+    std::vector<uint8_t> pngData;
+    
+    uint32_t fpngFlags = 0;
+    if (options.prediction == PngPrediction::None)
+    {
+        fpngFlags = fpng::FPNG_ENCODE_SLOWER;
+    }
+    
+    if (stride == width * 3)
+    {
+        if (!fpng::fpng_encode_image_to_memory(data, width, height, 3, pngData, fpngFlags))
+        {
+            return {};
+        }
+    }
+    else
+    {
+        std::vector<uint8_t> contiguousData(width * height * 3);
+        for (int y = 0; y < height; ++y)
+        {
+            std::memcpy(contiguousData.data() + y * width * 3,
+                       data + y * stride,
+                       width * 3);
+        }
+        
+        if (!fpng::fpng_encode_image_to_memory(contiguousData.data(), width, height, 3, pngData, fpngFlags))
+        {
+            return {};
+        }
+    }
+    
+    if (pngData.size() > kCoverDecodeLimits.maxOutputBytes)
     {
         return {};
     }
     
-    encoderContext->width = image.frame->width;
-    encoderContext->height = image.frame->height;
-    encoderContext->pix_fmt = AV_PIX_FMT_RGB24;
-    encoderContext->time_base = AVRational{1, 1};
-    encoderContext->compression_level = options.compressionLevel;
-    
-    av_opt_set_int(encoderContext.get(), "pred", static_cast<int>(options.prediction), 0);
-    
-    if (avcodec_open2(encoderContext.get(), encoder, nullptr) < 0)
-    {
-        return {};
-    }
-    
-    if (avcodec_send_frame(encoderContext.get(), image.frame) < 0)
-    {
-        return {};
-    }
-    
-    std::unique_ptr<AVPacket, AvPacketDeleter> outputPacket(av_packet_alloc());
-    if (outputPacket == nullptr)
-    {
-        return {};
-    }
-    
-    if (avcodec_receive_packet(encoderContext.get(), outputPacket.get()) < 0)
-    {
-        return {};
-    }
-    
-    return std::vector<uint8_t>(outputPacket->data, outputPacket->data + outputPacket->size);
+    return pngData;
 }
 }

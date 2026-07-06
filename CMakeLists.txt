@@ -158,6 +158,7 @@ set(TAGREADER_CORE_SOURCES
     src/formats/cue/CueTextLoader.cpp
     src/formats/cue/CuePathResolver.cpp
     src/formats/cue/CueTiming.cpp
+    third_party/fpng/fpng.cpp
 )
 
 # 性能分析支持
@@ -167,6 +168,13 @@ endif()
 
 add_library(TagReaderCore STATIC ${TAGREADER_CORE_SOURCES})
 
+# fpng 需要特殊的编译标志以启用 SIMD 优化
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(third_party/fpng/fpng.cpp PROPERTIES COMPILE_FLAGS "-msse4.1 -mpclmul")
+elseif(MSVC)
+    set_source_files_properties(third_party/fpng/fpng.cpp PROPERTIES COMPILE_FLAGS "/arch:AVX")
+endif()
+
 tagreader_enable_sanitizers(TagReaderCore)
 
 target_include_directories(TagReaderCore
@@ -174,6 +182,7 @@ target_include_directories(TagReaderCore
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fpng
 )
 
 target_link_libraries(TagReaderCore
