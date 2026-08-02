@@ -1151,7 +1151,7 @@ void ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const u
 
     (void)imageFormat;
     const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, payload + cursor, payloadSize - cursor);
-    if (!paths.fullSizePath.empty())
+    if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;
@@ -1285,7 +1285,7 @@ void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::stri
 
     (void)mimeType;
     const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageData, imageSize);
-    if (!paths.fullSizePath.empty())
+    if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;

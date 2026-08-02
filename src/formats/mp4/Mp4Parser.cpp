@@ -191,7 +191,7 @@ void ReadMp4DataAtom(ReadContext &context, RawMetadata &metadata, std::string_vi
         }
 
         const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, payload, payloadSize);
-        if (!paths.fullSizePath.empty())
+        if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;

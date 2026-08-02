@@ -2762,7 +2762,7 @@ bool RunTrAudit004()
     const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported MP4 cover should exist on disk");
     ec.clear();
     const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported MP4 cover should stay under cover export directory");
-    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "duplicate invalid MP4 covr should not create a second PNG");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 2, "duplicate invalid MP4 covr should not create a second full or thumbnail PNG");
     const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool firstMtimeOk = Expect(!ec, "exported MP4 cover mtime should be readable");
     ec.clear();
@@ -2772,7 +2772,7 @@ bool RunTrAudit004()
     const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated MP4 cover read should not rewrite cached PNG");
     ec.clear();
-    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated MP4 cover read should still have one PNG");
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 2, "repeated MP4 cover read should still have one full and one thumbnail PNG");
 
     const std::string stdoutLike =
         "TR-AUDIT-004 duplicate MP4 covr skipped\n"
@@ -2787,7 +2787,7 @@ bool RunTrAudit004()
         "dataItems=2\n"
         "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
         "invalidCoverBytes=" + std::to_string(invalidCover.size()) + "\n" +
-        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterFirstRead=2\n"
         "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
 
     const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
@@ -2842,7 +2842,7 @@ bool RunTrAudit005()
     const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported FLAC cover should exist on disk");
     ec.clear();
     const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported FLAC cover should stay under cover export directory");
-    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "duplicate FLAC PICTURE should not create a second PNG");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 2, "duplicate FLAC PICTURE should not create a second full or thumbnail PNG");
     const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool firstMtimeOk = Expect(!ec, "exported FLAC cover mtime should be readable");
     ec.clear();
@@ -2852,7 +2852,7 @@ bool RunTrAudit005()
     const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated FLAC cover read should not rewrite cached PNG");
     ec.clear();
-    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated FLAC cover read should still have one PNG");
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 2, "repeated FLAC cover read should still have one full and one thumbnail PNG");
 
     const std::string stdoutLike =
         "TR-AUDIT-005 duplicate FLAC PICTURE skipped\n"
@@ -2869,7 +2869,7 @@ bool RunTrAudit005()
         "firstPicturePayloadBytes=" + std::to_string(firstPicture.size()) + "\n" +
         "secondPictureImageBytes=" + std::to_string(secondPictureBytes.size()) + "\n" +
         "secondPicturePayloadBytes=" + std::to_string(secondPicture.size()) + "\n" +
-        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterFirstRead=2\n"
         "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
 
     const bool evidenceOk = WriteTextFile(evidenceRoot / "stdout.txt", stdoutLike) &&
@@ -3390,13 +3390,13 @@ bool RunTrAudit011()
     const bool normalCoverExists = Expect(std::filesystem::is_regular_file(normalCoverPath, ec), "normal exported cover should exist on disk");
     ec.clear();
     const bool normalCoverUnderExportDir = Expect(PathIsUnder(normalCoverPath, coverExportDir), "normal exported cover should stay under export directory");
-    const bool onePngAfterNormal = Expect(pngCountAfterNormal == 1, "normal cover sample should create exactly one PNG");
+    const bool onePngAfterNormal = Expect(pngCountAfterNormal == 2, "normal cover sample should create one full and one thumbnail PNG");
 
     const MusicTag malformedTag = TagReader::Read(malformedPath, coverExportDir);
     const std::size_t pngCountAfterMalformed = CountPngFiles(coverExportDir);
     const bool malformedCoverEmpty = Expect(malformedTag.coverPath().empty(), "malformed MP4 cover should produce empty coverPath");
     const bool malformedNoNewPng = Expect(pngCountAfterMalformed == pngCountAfterNormal, "malformed MP4 cover should not add a PNG");
-    const bool malformedCacheUnchanged = Expect(pngCountAfterMalformed == 1, "malformed MP4 cover should leave cache file count unchanged");
+    const bool malformedCacheUnchanged = Expect(pngCountAfterMalformed == 2, "malformed MP4 cover should leave full and thumbnail cache file count unchanged");
 
     const std::string stdoutLike =
         "TR-AUDIT-011 valid-image-exported coverPath=" + normalCoverPath.string() + "\n"
@@ -3487,7 +3487,7 @@ bool RunTrAudit028()
     const bool defaultExists = Expect(std::filesystem::is_regular_file(defaultCoverPath, ec), "default exported PNG cover should exist");
     ec.clear();
     const bool defaultUnderTemp = Expect(PathIsUnder(defaultCoverPath, defaultExportDir), "default exported cover should stay under TagReader temp child");
-    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 1, "default export should create exactly one PNG");
+    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 2, "default export should create one full and one thumbnail PNG");
 
     const MusicTag explicitTag = TagReader::Read(explicitSamplePath, explicitExportDir);
     const std::filesystem::path explicitCoverPath = explicitTag.coverPath();
@@ -3495,12 +3495,12 @@ bool RunTrAudit028()
     const bool explicitExists = Expect(std::filesystem::is_regular_file(explicitCoverPath, ec), "explicit exported JPEG cover should exist as PNG cache");
     ec.clear();
     const bool explicitUnderDir = Expect(PathIsUnder(explicitCoverPath, explicitExportDir), "explicit exported cover should stay under caller directory");
-    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 1, "explicit export should create exactly one PNG");
+    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 2, "explicit export should create one full and one thumbnail PNG");
 
     const MusicTag truncatedTag = TagReader::Read(truncatedSamplePath, explicitExportDir);
     const std::size_t explicitPngCountAfterTruncated = CountPngFiles(explicitExportDir);
     const bool truncatedCoverEmpty = Expect(truncatedTag.coverPath().empty(), "truncated APIC PNG should be skipped without coverPath");
-    const bool truncatedNoNewPng = Expect(explicitPngCountAfterTruncated == 1, "truncated APIC PNG should not add a cache file");
+    const bool truncatedNoNewPng = Expect(explicitPngCountAfterTruncated == 2, "truncated APIC PNG should not add a full or thumbnail cache file");
 
     const std::string stdoutLike =
         "TR-AUDIT-028 default-temp-safe\n"
@@ -3677,7 +3677,7 @@ bool RunTrAudit013()
         return false;
     }
 
-    const std::filesystem::path expectedCoverPath = coverExportDir / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
+    const std::filesystem::path expectedCoverPath = coverExportDir / "artwork" / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
     std::filesystem::create_directories(expectedCoverPath.parent_path(), ec);
     if (ec)
     {
@@ -3712,7 +3712,7 @@ bool RunTrAudit013()
     const bool hexLengthOk = Expect(kOneByOnePngSha256.size() == 64, "hardcoded SHA-256 hex should be 64 characters");
     const bool shardDirOk = Expect(firstCoverPath.parent_path().filename().string() == std::string(kOneByOnePngSha256.substr(0, 2)), "cover cache shard directory should be first two hex chars");
     const bool fileNameOk = Expect(firstCoverPath.filename().string() == std::string(kOneByOnePngSha256.substr(2)) + ".png", "cover cache filename should be remaining SHA-256 hex plus .png");
-    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "SHA-256 cover cache should create exactly one PNG");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 2, "SHA-256 cover cache should create one full and one thumbnail PNG");
     const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool firstMtimeOk = Expect(!ec, "SHA-256 cached cover mtime should be readable");
     ec.clear();
@@ -3722,7 +3722,7 @@ bool RunTrAudit013()
     const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated same-image read should not rewrite the cache file");
     ec.clear();
-    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated same-image read should still have one PNG");
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 2, "repeated same-image read should still have one full and one thumbnail PNG");
 
     const std::string stdoutLike =
         "TR-AUDIT-013 sha256-cache-path coverPath=" + firstCoverPath.string() + "\n"
@@ -3738,7 +3738,7 @@ bool RunTrAudit013()
         "expectedCoverPath=" + expectedCoverPath.string() + "\n" +
         "coverPath=" + firstCoverPath.string() + "\n" +
         "validPngBytes=" + std::to_string(validPng.size()) + "\n" +
-        "pngFilesAfterFirstRead=1\n"
+        "pngFilesAfterFirstRead=2\n"
         "pngFilesAfterRepeatedRead=" + std::to_string(CountPngFiles(coverExportDir)) + "\n";
 
     const bool evidenceOk = WriteTextFile(evidenceRoot / "first_read_output.txt", DescribeTag(firstTag)) &&
@@ -3808,7 +3808,7 @@ bool RunTrAudit014()
     const bool pngCoverExists = Expect(std::filesystem::is_regular_file(pngCoverPath, ec), "normal exported PNG cover should exist on disk");
     ec.clear();
     const bool pngCoverUnderExportDir = Expect(PathIsUnder(pngCoverPath, pngCoverExportDir), "normal exported PNG cover should stay under export directory");
-    const bool onePngAfterPngSample = Expect(CountPngFiles(pngCoverExportDir) == 1, "normal PNG cover sample should create exactly one PNG");
+    const bool onePngAfterPngSample = Expect(CountPngFiles(pngCoverExportDir) == 2, "normal PNG cover sample should create one full and one thumbnail PNG");
 
     const MusicTag jpegTag = TagReader::Read(jpegSamplePath, jpegCoverExportDir);
     const std::filesystem::path jpegCoverPath = jpegTag.coverPath();
@@ -3816,7 +3816,7 @@ bool RunTrAudit014()
     const bool jpegCoverExists = Expect(std::filesystem::is_regular_file(jpegCoverPath, ec), "normal exported JPEG cover should exist on disk as PNG cache");
     ec.clear();
     const bool jpegCoverUnderExportDir = Expect(PathIsUnder(jpegCoverPath, jpegCoverExportDir), "normal exported JPEG cover should stay under export directory");
-    const bool onePngAfterJpegSample = Expect(CountPngFiles(jpegCoverExportDir) == 1, "normal JPEG cover sample should create exactly one PNG");
+    const bool onePngAfterJpegSample = Expect(CountPngFiles(jpegCoverExportDir) == 2, "normal JPEG cover sample should create one full and one thumbnail PNG");
 
     const MusicTag malformedTag = TagReader::Read(malformedSamplePath, malformedCoverExportDir);
     const std::size_t malformedPngCount = CountPngFiles(malformedCoverExportDir);
@@ -5339,7 +5339,7 @@ bool RunTrAudit031()
     const bool defaultExists = Expect(std::filesystem::is_regular_file(defaultCoverPath, ec), "default exported cover should exist");
     ec.clear();
     const bool defaultUnderTemp = Expect(PathIsUnder(defaultCoverPath, defaultExportDir), "default cover should stay under TagReader temp child");
-    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 1, "default export should create one PNG");
+    const bool defaultOnePng = Expect(CountPngFiles(defaultExportDir) == 2, "default export should create one full and one thumbnail PNG");
     const bool defaultNoProbe = Expect(!HasProbeFiles(defaultExportDir), "default export should not leave probe files");
 
     const MusicTag explicitTag = TagReader::Read(samplePath, explicitExportDir);
@@ -5348,7 +5348,7 @@ bool RunTrAudit031()
     const bool explicitExists = Expect(std::filesystem::is_regular_file(explicitCoverPath, ec), "explicit exported cover should exist");
     ec.clear();
     const bool explicitUnderDir = Expect(PathIsUnder(explicitCoverPath, explicitExportDir), "explicit cover should stay under caller directory");
-    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 1, "explicit export should create one PNG");
+    const bool explicitOnePng = Expect(CountPngFiles(explicitExportDir) == 2, "explicit export should create one full and one thumbnail PNG");
     const auto explicitMtime = std::filesystem::last_write_time(explicitCoverPath, ec);
     const bool explicitMtimeOk = Expect(!ec, "explicit exported cover mtime should be readable");
     ec.clear();
@@ -5676,28 +5676,28 @@ bool RunTrAudit034()
     const bool firstExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "first cached cover should exist");
     ec.clear();
     const bool firstUnderDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "first cached cover should stay under export dir");
-    const bool onePngAfterFirst = Expect(CountPngFiles(coverExportDir) == 1, "first cover read should create one PNG");
+    const bool onePngAfterFirst = Expect(CountPngFiles(coverExportDir) == 2, "first cover read should create one full and one thumbnail PNG");
     const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool firstMtimeOk = Expect(!ec, "first cached cover mtime should be readable");
     ec.clear();
 
     const MusicTag secondTag = TagReader::Read(sampleBPath, coverExportDir);
     const bool secondPathSame = Expect(secondTag.coverPath() == firstCoverPath, "same embedded image in another file should reuse cache path");
-    const bool onePngAfterSecond = Expect(CountPngFiles(coverExportDir) == 1, "second same-image read should not create another PNG");
+    const bool onePngAfterSecond = Expect(CountPngFiles(coverExportDir) == 2, "second same-image read should not create another full or thumbnail PNG");
     const auto secondMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool secondMtimeOk = Expect(!ec && secondMtime == firstMtime, "second same-image read should not rewrite cached PNG");
     ec.clear();
 
     const MusicTag thirdTag = TagReader::Read(sampleAPath, coverExportDir);
     const bool thirdPathSame = Expect(thirdTag.coverPath() == firstCoverPath, "repeat read should reuse cache path");
-    const bool onePngAfterThird = Expect(CountPngFiles(coverExportDir) == 1, "repeat read should keep one PNG");
+    const bool onePngAfterThird = Expect(CountPngFiles(coverExportDir) == 2, "repeat read should keep one full and one thumbnail PNG");
     const auto thirdMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool thirdMtimeOk = Expect(!ec && thirdMtime == firstMtime, "repeat read should not rewrite cached PNG");
     ec.clear();
 
     const std::string stdoutLike =
         "TR-AUDIT-034 cover-cache-reuse coverPath=" + firstCoverPath.string() + "\n"
-        "TR-AUDIT-034 same-image-no-rewrite pngFiles=1\n"
+        "TR-AUDIT-034 same-image-no-rewrite pngFiles=2\n"
         "TR-AUDIT-034 PASS\n";
     const std::string summary =
         "case=TR-AUDIT-034\n"
@@ -5725,7 +5725,7 @@ bool RunTrAudit034()
     if (passed)
     {
         std::cout << "TR-AUDIT-034 cover-cache-reuse coverPath=" << firstCoverPath.string() << '\n';
-        std::cout << "TR-AUDIT-034 same-image-no-rewrite pngFiles=1\n";
+        std::cout << "TR-AUDIT-034 same-image-no-rewrite pngFiles=2\n";
     }
     return passed;
 }
@@ -6176,7 +6176,7 @@ bool RunTrAudit038()
     const bool coverExists = Expect(std::filesystem::is_regular_file(firstCoverPath, ec), "exported Ogg cover should exist on disk");
     ec.clear();
     const bool coverUnderExportDir = Expect(PathIsUnder(firstCoverPath, coverExportDir), "exported Ogg cover should stay under export directory");
-    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 1, "valid Ogg picture should create one PNG");
+    const bool onePngAfterFirstRead = Expect(CountPngFiles(coverExportDir) == 2, "valid Ogg picture should create one full and one thumbnail PNG");
     const auto firstMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool firstMtimeOk = Expect(!ec, "exported Ogg cover mtime should be readable");
     ec.clear();
@@ -6186,7 +6186,7 @@ bool RunTrAudit038()
     const auto repeatedMtime = std::filesystem::last_write_time(firstCoverPath, ec);
     const bool repeatedMtimeOk = Expect(!ec && repeatedMtime == firstMtime, "repeated Ogg picture read should not rewrite cached PNG");
     ec.clear();
-    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 1, "repeated Ogg picture read should still have one PNG");
+    const bool onePngAfterRepeatedRead = Expect(CountPngFiles(coverExportDir) == 2, "repeated Ogg picture read should still have one full and one thumbnail PNG");
 
     const MusicTag malformedBase64Tag = TagReader::Read(malformedBase64Path, coverExportDir);
     const MusicTag malformedPictureTag = TagReader::Read(malformedPicturePath, coverExportDir);
@@ -6207,7 +6207,7 @@ bool RunTrAudit038()
     const bool malformedPictureNoCover = Expect(malformedPictureTag.coverPath().empty(), "malformed Ogg picture block should not produce coverPath");
     const bool oversizedPictureNoCover = Expect(oversizedPictureTag.coverPath().empty(), "oversized Ogg picture payload should not produce coverPath");
     const bool urlPictureNoCover = Expect(urlPictureTag.coverPath().empty(), "URL Ogg picture marker should not produce coverPath");
-    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 1, "malformed, oversized, and URL Ogg picture samples should not add cache files");
+    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 2, "malformed, oversized, and URL Ogg picture samples should not add full or thumbnail cache files");
 
     const std::string stdoutLike =
         "TR-AUDIT-038 ogg-picture-exported coverPath=" + firstCoverPath.string() + "\n"
@@ -6303,7 +6303,7 @@ bool RunTrAudit039()
     const bool coverExists = Expect(std::filesystem::is_regular_file(coverPath, ec), "exported OpusTags cover should exist on disk");
     ec.clear();
     const bool coverUnderExportDir = Expect(PathIsUnder(coverPath, coverExportDir), "exported OpusTags cover should stay under export directory");
-    const bool onePngAfterValidRead = Expect(CountPngFiles(coverExportDir) == 1, "valid OpusTags picture should create one PNG");
+    const bool onePngAfterValidRead = Expect(CountPngFiles(coverExportDir) == 2, "valid OpusTags picture should create one full and one thumbnail PNG");
 
     const MusicTag truncatedTag = TagReader::Read(truncatedPath, coverExportDir);
     const MusicTag wrongOrderTag = TagReader::Read(wrongOrderPath, coverExportDir);
@@ -6319,7 +6319,7 @@ bool RunTrAudit039()
     const bool truncatedEmpty = Expect(MetadataFieldsAreEmpty(truncatedTag), "truncated OpusTags should produce empty metadata without top-level crash");
     const bool wrongOrderEmpty = Expect(MetadataFieldsAreEmpty(wrongOrderTag), "wrong Opus packet order should produce empty metadata without top-level crash");
     const bool oversizedEmpty = Expect(MetadataFieldsAreEmpty(oversizedTag), "oversized OpusTags comment count should produce empty metadata without top-level crash");
-    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 1, "malformed OpusTags samples should not add cache files");
+    const bool noExtraPng = Expect(pngCountAfterMalformedReads == 2, "malformed OpusTags samples should not add full or thumbnail cache files");
 
     const std::string stdoutLike =
         "TR-AUDIT-039 opustags-fields title=OpusTags Title artist=OpusTags Artist album=OpusTags Album\n"

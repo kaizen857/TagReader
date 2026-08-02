@@ -200,7 +200,7 @@ void ProcessApeCoverItem(ReadContext &context, RawMetadata &metadata,
     }
 
     const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageData, imageSize);
-    if (!paths.fullSizePath.empty())
+    if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;

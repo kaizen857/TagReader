@@ -216,7 +216,7 @@ bool RunFlacPictureCoverCacheFailurePropagates(const std::filesystem::path &root
     const std::filesystem::path basePath = root / "base-picture.flac";
     const std::filesystem::path samplePath = root / "picture.flac";
     const std::filesystem::path coverExportDir = root / "covers-picture";
-    const std::filesystem::path expectedCoverPath = coverExportDir / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
+    const std::filesystem::path expectedCoverPath = coverExportDir / "artwork" / std::string(kOneByOnePngSha256.substr(0, 2)) / (std::string(kOneByOnePngSha256.substr(2)) + ".png");
 
     if (!GenerateFlacSample(basePath) || !ReplaceMetadataTail(basePath, samplePath, {{6, FlacPicturePayload(OneByOnePng())}}))
     {

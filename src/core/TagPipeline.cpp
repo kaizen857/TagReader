@@ -1,6 +1,7 @@
 #include "core/TagPipeline.hpp"
 
 #include "TagReader.hpp"
+#include "core/CoverErrorPolicy.hpp"
 #include "formats/aiff/AiffParser.hpp"
 #include "formats/asf/AsfParser.hpp"
 #include "formats/dsd/DsdParser.hpp"
@@ -49,9 +50,18 @@ using tagreader_text::NormalizeLyrics;
 using tagreader_text::NormalizeMetadata;
 using tagreader_text::TrimText;
 
-bool IsCoverExportOrCacheError(std::string_view message)
+CoverErrorAction ClassifyCoverFailure(const std::exception &ex, const ReadContext &context) noexcept
 {
-    return message.find("cover export") != std::string_view::npos || message.find("cover cache") != std::string_view::npos;
+    if (dynamic_cast<const CoverProcessingError *>(&ex) == nullptr)
+    {
+        return CoverErrorAction::NotACoverError;
+    }
+    const CoverProcessingOptions *options = context.coverOptions;
+    if (options != nullptr && options->failurePolicy == CoverProcessingOptions::CoverFailurePolicy::Ignore)
+    {
+        return CoverErrorAction::Ignored;
+    }
+    return CoverErrorAction::Propagated;
 }
 
 namespace
@@ -344,7 +354,7 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
 
     RawMetadata metadata{};
     context.input.clear();
-    auto ignoreMalformedMetadata = [&context](auto &&readMetadata)
+    auto ignoreMalformedMetadata = [&context, &metadata](auto &&readMetadata)
     {
         try
         {
@@ -358,15 +368,25 @@ RawMetadata ReadMetadata(ReadContext &context, TagFormat tagFormat)
                 *context.diagnostics << "parser metadata error: " << ex.what() << '\n';
             }
         }
+        catch (const CoverProcessingError &ex)
+        {
+            if (context.diagnostics != nullptr)
+            {
+                *context.diagnostics << "parser metadata cover error: " << ex.what() << '\n';
+            }
+            if (ClassifyCoverFailure(ex, context) == CoverErrorAction::Ignored)
+            {
+                metadata.coverPath.clear();
+                metadata.thumbnailPath.clear();
+                return;
+            }
+            throw;
+        }
         catch (const std::runtime_error &ex)
         {
             if (context.diagnostics != nullptr)
             {
                 *context.diagnostics << "parser metadata error: " << ex.what() << '\n';
-            }
-            if (IsCoverExportOrCacheError(ex.what()))
-            {
-                throw;
             }
         }
     };
@@ -639,17 +659,44 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
         TAGREADER_PROFILE_SCOPE_COLOR("OpenContext", TAGREADER_COLOR_FFMPEG);
         context = tagreader_media::OpenContext(filePath);
     }
-    
-    const bool useDefaultCoverExportDir = coverExportDir.empty();
-    context.coverExportDir = useDefaultCoverExportDir ? DefaultCoverExportDir() : coverExportDir;
     context.coverOptions = &options;
-    if (useDefaultCoverExportDir)
+
+    if (options.mode != CoverProcessingOptions::CoverProcessingMode::Disabled)
     {
-        ValidateDefaultCoverExportDir(context.coverExportDir);
-    }
-    else
-    {
-        ValidateCoverExportDir(context.coverExportDir);
+        // Cover-directory resolution/creation/hardening/probe failures are
+        // cover-only: ExportDirectoryUnavailable under Propagate, artwork-free
+        // success under Ignore.
+        std::filesystem::path resolvedCoverExportDir;
+        try
+        {
+            const bool useDefaultCoverExportDir = coverExportDir.empty();
+            resolvedCoverExportDir = useDefaultCoverExportDir ? DefaultCoverExportDir() : coverExportDir;
+            if (useDefaultCoverExportDir)
+            {
+                ValidateDefaultCoverExportDir(resolvedCoverExportDir);
+            }
+            else
+            {
+                ValidateCoverExportDir(resolvedCoverExportDir);
+            }
+            context.coverExportDir = resolvedCoverExportDir;
+        }
+        catch (const CoverProcessingError &)
+        {
+            throw;
+        }
+        catch (const std::exception &ex)
+        {
+            const CoverProcessingError typed{CoverErrorCode::ExportDirectoryUnavailable,
+                                             std::string(ex.what()),
+                                             resolvedCoverExportDir};
+            if (ClassifyCoverFailure(typed, context) != CoverErrorAction::Ignored)
+            {
+                throw typed;
+            }
+            // Ignore: keep metadata/lyrics and process the track as no-art.
+            context.coverExportDir.clear();
+        }
     }
     
     {
@@ -673,13 +720,33 @@ MusicTag ReadTag(const std::filesystem::path &filePath, const std::filesystem::p
     
     RawMetadata metadata = ReadMetadata(context, tagFormat);
     
-    if (metadata.coverPath.empty())
+    if (metadata.coverPath.empty() && metadata.thumbnailPath.empty())
     {
-        TAGREADER_PROFILE_SCOPE_COLOR("SidecarCover", TAGREADER_COLOR_CACHE);
-        const std::optional<std::filesystem::path> sidecarCoverPath = tagreader_cover::ExportSidecarCover(context.filePath, context.coverExportDir);
-        if (sidecarCoverPath.has_value())
+        const CoverProcessingOptions *coverOptions = context.coverOptions;
+        if (coverOptions == nullptr || coverOptions->mode != CoverProcessingOptions::CoverProcessingMode::Disabled)
         {
-            metadata.coverPath = *sidecarCoverPath;
+            TAGREADER_PROFILE_SCOPE_COLOR("SidecarCover", TAGREADER_COLOR_CACHE);
+            try
+            {
+                const tagreader_cover::CoverPaths sidecarCoverPaths = tagreader_cover::ExportSidecarCover(context);
+                if (!sidecarCoverPaths.fullSizePath.empty())
+                {
+                    metadata.coverPath = sidecarCoverPaths.fullSizePath;
+                }
+                if (!sidecarCoverPaths.thumbnailPath.empty())
+                {
+                    metadata.thumbnailPath = sidecarCoverPaths.thumbnailPath;
+                }
+            }
+            catch (const CoverProcessingError &error)
+            {
+                if (ClassifyCoverFailure(error, context) != CoverErrorAction::Ignored)
+                {
+                    throw;
+                }
+                // Ignore: sidecar failures clear only the cover; metadata and
+                // lyrics keep flowing as if the track had no cover.
+            }
         }
     }
     

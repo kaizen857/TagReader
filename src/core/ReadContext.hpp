@@ -42,6 +42,9 @@ struct ReadContext
     std::filesystem::path filePath;
     std::filesystem::path coverExportDir;
     const CoverProcessingOptions *coverOptions{nullptr};
+    // Cumulative encoded source-cover bytes debited against maxSourceCoverBytes
+    // during one read (embedded pictures + sidecar candidates, not PNG outputs).
+    std::uint64_t coverSourceBytesDebited{0};
     tagreader_io::FileInput input;
     std::uintmax_t fileSize{};
     std::filesystem::file_time_type lastModified{};

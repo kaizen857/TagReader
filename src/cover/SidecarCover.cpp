@@ -1,10 +1,12 @@
 #include "cover/SidecarCover.hpp"
 
-#include "cover/CoverCache.hpp"
+#include "TagReader.hpp"
+#include "core/ReadContext.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -32,6 +34,9 @@ constexpr std::array<std::string_view, 7> kSidecarCoverExtensions{
     ".gif",
     ".tiff",
 };
+
+constexpr std::size_t kDefaultMaxSidecarEntries = 4096;
+constexpr std::uint64_t kLegacySingleCandidateLimit = 64ULL * 1024ULL * 1024ULL;
 
 bool EqualsIgnoreCase(std::string_view left, std::string_view right)
 {
@@ -64,50 +69,77 @@ bool IsSidecarCoverFile(const std::filesystem::path &path)
 
     return false;
 }
+
+[[noreturn]] void ThrowSidecarCoverError(CoverErrorCode code, const std::string &message, const std::filesystem::path &path = {})
+{
+    throw CoverProcessingError{code, message, path};
+}
 }
 
 namespace tagreader_cover
 {
-std::optional<std::filesystem::path> ExportSidecarCover(const std::filesystem::path &audioPath, const std::filesystem::path &coverExportDir)
+CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
 {
-    if (audioPath.empty() || coverExportDir.empty())
+    if (context.filePath.empty() || context.coverExportDir.empty())
     {
-        return std::nullopt;
+        return {};
     }
 
-    const std::filesystem::path audioDirectory = audioPath.parent_path();
+    const CoverProcessingOptions *options = context.coverOptions;
+    if (options != nullptr && options->maxSourceCoverBytes == 0)
+    {
+        return {};
+    }
+
+    const std::filesystem::path audioDirectory = context.filePath.parent_path();
     if (audioDirectory.empty())
     {
-        return std::nullopt;
+        return {};
     }
+
+    const std::size_t maxSidecarEntries = (options != nullptr) ? options->maxSidecarEntries : kDefaultMaxSidecarEntries;
 
     std::error_code ec;
     std::array<std::vector<std::filesystem::path>, kSidecarCoverNames.size()> candidatesPerPriority{};
     std::size_t candidateCount = 0;
-    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(audioDirectory, ec))
+
+    std::filesystem::directory_iterator it(audioDirectory, ec);
+    const std::filesystem::directory_iterator end;
+    if (!ec)
     {
-        if (ec || candidateCount >= 256)
+        for (; !ec && it != end; it.increment(ec))
         {
-            break;
-        }
-
-        std::error_code entryEc;
-        const std::filesystem::file_status status = entry.symlink_status(entryEc);
-        if (entryEc || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status) || !IsSidecarCoverFile(entry.path()))
-        {
-            continue;
-        }
-
-        const std::string stem = entry.path().stem().string();
-        for (std::size_t priority = 0; priority < kSidecarCoverNames.size(); ++priority)
-        {
-            if (EqualsIgnoreCase(stem, kSidecarCoverNames[priority]))
+            const std::filesystem::directory_entry &entry = *it;
+            std::error_code entryEc;
+            const std::filesystem::file_status status = entry.symlink_status(entryEc);
+            if (entryEc || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status) || !IsSidecarCoverFile(entry.path()))
             {
-                candidatesPerPriority[priority].push_back(entry.path());
-                ++candidateCount;
-                break;
+                continue;
+            }
+
+            const std::string stem = entry.path().stem().string();
+            for (std::size_t priority = 0; priority < kSidecarCoverNames.size(); ++priority)
+            {
+                if (EqualsIgnoreCase(stem, kSidecarCoverNames[priority]))
+                {
+                    if (candidateCount >= maxSidecarEntries)
+                    {
+                        ThrowSidecarCoverError(CoverErrorCode::SidecarEntryLimitExceeded,
+                                               "sidecar cover candidates exceed maxSidecarEntries",
+                                               audioDirectory);
+                    }
+                    candidatesPerPriority[priority].push_back(entry.path());
+                    ++candidateCount;
+                    break;
+                }
             }
         }
+    }
+    if (ec)
+    {
+        ThrowSidecarCoverError(CoverErrorCode::SidecarDiscoveryFailed,
+                               "sidecar cover discovery failed: " + ec.message(),
+                               audioDirectory);
     }
 
     for (auto &candidates : candidatesPerPriority)
@@ -118,13 +150,15 @@ std::optional<std::filesystem::path> ExportSidecarCover(const std::filesystem::p
         });
     }
 
+    const std::uint64_t singleCandidateLimit = (options != nullptr) ? options->maxSourceCoverBytes : kLegacySingleCandidateLimit;
+
     for (const auto &candidates : candidatesPerPriority)
     {
         for (const std::filesystem::path &candidatePath : candidates)
         {
             std::error_code sizeEc;
             const std::uintmax_t fileSize = std::filesystem::file_size(candidatePath, sizeEc);
-            if (sizeEc || fileSize == 0 || fileSize > 64ULL * 1024ULL * 1024ULL)
+            if (sizeEc || fileSize == 0 || fileSize > singleCandidateLimit)
             {
                 continue;
             }
@@ -141,14 +175,14 @@ std::optional<std::filesystem::path> ExportSidecarCover(const std::filesystem::p
                 continue;
             }
 
-            const std::filesystem::path coverPath = WriteCoverAsPng(coverExportDir, bytes.data(), bytes.size());
-            if (!coverPath.empty())
+            const CoverPaths paths = ExportCoverFromContext(context, bytes.data(), bytes.size());
+            if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
             {
-                return coverPath;
+                return paths;
             }
         }
     }
 
-    return std::nullopt;
+    return {};
 }
 }

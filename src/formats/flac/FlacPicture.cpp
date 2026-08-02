@@ -91,7 +91,7 @@ void ReadFlacPictureEntry(tagreader_core::ReadContext &context, tagreader_core::
     }
 
     const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, imageBytes->data(), imageBytes->size());
-    if (!paths.fullSizePath.empty())
+    if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;

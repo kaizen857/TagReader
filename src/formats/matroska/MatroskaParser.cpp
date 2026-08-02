@@ -255,7 +255,7 @@ void ExportAttachedImage(ReadContext &context, RawMetadata &metadata, const Atta
     }
 
     const tagreader_cover::CoverPaths paths = ExportCoverFromContext(context, bytes.data(), bytes.size());
-    if (!paths.fullSizePath.empty())
+    if (!paths.fullSizePath.empty() || !paths.thumbnailPath.empty())
     {
         metadata.coverPath = paths.fullSizePath;
         metadata.thumbnailPath = paths.thumbnailPath;

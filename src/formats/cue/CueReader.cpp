@@ -5,6 +5,7 @@
 #include "formats/cue/CueTextLoader.hpp"
 
 #include "core/TagPipeline.hpp"
+#include "TagReader.hpp"
 #include "cover/CoverCache.hpp"
 #include "profiling/Profiling.hpp"
 
@@ -148,7 +149,7 @@ void ApplyCueMetadata(const tagreader_cue::CueGlobal &global, const tagreader_cu
     }
 }
 
-std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const tagreader_cue::ParsedCueSheet &parsedSheet, const std::filesystem::path &coverExportDir)
+std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const tagreader_cue::ParsedCueSheet &parsedSheet, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
 {
     std::vector<MusicTag> tags;
     const bool singleAudioFile = parsedSheet.files.size() == 1;
@@ -167,15 +168,14 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
         MusicTag audioTag;
         try
         {
-            audioTag = tagreader_core::ReadTag(resolution.resolvedPath, coverExportDir);
+            audioTag = tagreader_core::ReadTag(resolution.resolvedPath, coverExportDir, options);
         }
-        catch (const std::exception &ex)
+        catch (const CoverProcessingError &)
         {
-            if (tagreader_core::IsCoverExportOrCacheError(ex.what()))
-            {
-                throw;
-            }
-
+            throw;
+        }
+        catch (const std::exception &)
+        {
             if (singleAudioFile)
             {
                 return {};
@@ -201,6 +201,26 @@ std::vector<MusicTag> BuildCueTags(const std::filesystem::path &cuePath, const t
 
     return tags;
 }
+
+// Shared load/parse/build path for every ReadCueSheet overload. The options
+// object is carried into every referenced audio read so the caller's cover
+// mode, failure policy and budget apply per referenced audio file.
+std::vector<MusicTag> ReadCueSheetImpl(const std::filesystem::path &cuePath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
+{
+    const std::optional<std::string> cueText = tagreader_cue::LoadCueTextUtf8(cuePath);
+    if (!cueText.has_value())
+    {
+        return {};
+    }
+
+    const std::optional<tagreader_cue::ParsedCueSheet> parsedSheet = tagreader_cue::ParseCueSheet(*cueText);
+    if (!parsedSheet.has_value())
+    {
+        return {};
+    }
+
+    return BuildCueTags(cuePath, *parsedSheet, coverExportDir, options);
+}
 }
 
 namespace tagreader_cue
@@ -208,42 +228,16 @@ namespace tagreader_cue
 std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath)
 {
     TAGREADER_PROFILE_FUNCTION();
-    
-    const std::optional<std::string> cueText = LoadCueTextUtf8(cuePath);
-    if (!cueText.has_value())
-    {
-        return {};
-    }
-
-    const std::optional<ParsedCueSheet> parsedSheet = ParseCueSheet(*cueText);
-    if (!parsedSheet.has_value())
-    {
-        return {};
-    }
-
-    return BuildCueTags(cuePath, *parsedSheet, {});
+    return ReadCueSheetImpl(cuePath, {}, {});
 }
 
 std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath, const std::filesystem::path &coverExportDir)
 {
-    const std::optional<std::string> cueText = LoadCueTextUtf8(cuePath);
-    if (!cueText.has_value())
-    {
-        return {};
-    }
-
-    const std::optional<ParsedCueSheet> parsedSheet = ParseCueSheet(*cueText);
-    if (!parsedSheet.has_value())
-    {
-        return {};
-    }
-
-    return BuildCueTags(cuePath, *parsedSheet, coverExportDir);
+    return ReadCueSheetImpl(cuePath, coverExportDir, {});
 }
 
 std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &cuePath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
 {
-    (void)options;
-    return ReadCueSheet(cuePath, coverExportDir);
+    return ReadCueSheetImpl(cuePath, coverExportDir, options);
 }
 }

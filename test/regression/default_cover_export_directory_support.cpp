@@ -130,7 +130,7 @@ bool RunDefaultFallbackIgnoresLegacyRootSymlink(const std::filesystem::path &wor
                Expect(PathIsUnder(coverPath, privateDefaultRoot), "default fallback cover should use UID-private directory") &&
                Expect(!PathIsUnder(coverPath, hijackTarget), "default fallback must not write through legacy root symlink") &&
                Expect(CountPngFiles(hijackTarget) == 0, "legacy root symlink hijack target should stay empty") &&
-               Expect(CountPngFiles(privateDefaultRoot) == 1, "UID-private default directory should contain one PNG");
+               Expect(CountPngFiles(privateDefaultRoot) == 2, "UID-private default directory should contain one full and one thumbnail PNG");
     }
     catch (const std::exception &ex)
     {
@@ -156,7 +156,7 @@ bool RunXdgRuntimeDefaultIsPreferred(const std::filesystem::path &workspaceRoot,
         return Expect(!coverPath.empty(), "XDG runtime default should export a cover") &&
                Expect(std::filesystem::is_regular_file(coverPath), "XDG runtime default cover should exist") &&
                Expect(PathIsUnder(coverPath, runtimeDefaultRoot), "XDG_RUNTIME_DIR/tagreader-covers should be preferred") &&
-               Expect(CountPngFiles(runtimeDefaultRoot) == 1, "XDG runtime default directory should contain one PNG");
+               Expect(CountPngFiles(runtimeDefaultRoot) == 2, "XDG runtime default directory should contain one full and one thumbnail PNG");
     }
     catch (const std::exception &ex)
     {

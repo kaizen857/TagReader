@@ -91,6 +91,32 @@ tagreader_enable_sanitizers(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
 catch_discover_tests(TagReaderDefaultCoverExportDirectoryCatch2Tests)
 
+add_executable(TagReaderCoverProcessingContractCatch2Tests
+    regression/catch2_regression_support.cpp
+    regression/catch2_sample_support.cpp
+    regression/cover_processing_contract_catch2_tests.cpp
+    regression/cover_mode_processing_catch2_tests.cpp
+    regression/cover_format_fixtures.cpp
+    regression/cover_format_matrix_catch2_tests.cpp
+)
+
+target_link_libraries(TagReaderCoverProcessingContractCatch2Tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        TagReaderCore
+)
+
+target_include_directories(TagReaderCoverProcessingContractCatch2Tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+tagreader_enable_sanitizers(TagReaderCoverProcessingContractCatch2Tests)
+
+catch_discover_tests(TagReaderCoverProcessingContractCatch2Tests)
+
 add_executable(TagReaderSidecarCoverCatch2Tests
     regression/catch2_regression_support.cpp
     regression/catch2_sample_support.cpp
@@ -118,6 +144,7 @@ add_executable(TagReaderCueCatch2Tests
     regression/catch2_regression_support.cpp
     regression/catch2_sample_support.cpp
     regression/cue_catch2_tests.cpp
+    regression/cue_cover_options_catch2_tests.cpp
 )
 
 target_link_libraries(TagReaderCueCatch2Tests
