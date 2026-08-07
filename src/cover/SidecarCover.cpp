@@ -78,9 +78,9 @@ bool IsSidecarCoverFile(const std::filesystem::path &path)
 
 namespace tagreader_cover
 {
-CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
+CoverPaths ExportSidecarCoverFromDirectory(const std::filesystem::path &directory, tagreader_core::ReadContext &context)
 {
-    if (context.filePath.empty() || context.coverExportDir.empty())
+    if (directory.empty())
     {
         return {};
     }
@@ -91,19 +91,13 @@ CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
         return {};
     }
 
-    const std::filesystem::path audioDirectory = context.filePath.parent_path();
-    if (audioDirectory.empty())
-    {
-        return {};
-    }
-
     const std::size_t maxSidecarEntries = (options != nullptr) ? options->maxSidecarEntries : kDefaultMaxSidecarEntries;
 
     std::error_code ec;
     std::array<std::vector<std::filesystem::path>, kSidecarCoverNames.size()> candidatesPerPriority{};
     std::size_t candidateCount = 0;
 
-    std::filesystem::directory_iterator it(audioDirectory, ec);
+    std::filesystem::directory_iterator it(directory, ec);
     const std::filesystem::directory_iterator end;
     if (!ec)
     {
@@ -126,7 +120,7 @@ CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
                     {
                         ThrowSidecarCoverError(CoverErrorCode::SidecarEntryLimitExceeded,
                                                "sidecar cover candidates exceed maxSidecarEntries",
-                                               audioDirectory);
+                                               directory);
                     }
                     candidatesPerPriority[priority].push_back(entry.path());
                     ++candidateCount;
@@ -139,7 +133,7 @@ CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
     {
         ThrowSidecarCoverError(CoverErrorCode::SidecarDiscoveryFailed,
                                "sidecar cover discovery failed: " + ec.message(),
-                               audioDirectory);
+                               directory);
     }
 
     for (auto &candidates : candidatesPerPriority)
@@ -184,5 +178,21 @@ CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
     }
 
     return {};
+}
+
+CoverPaths ExportSidecarCover(tagreader_core::ReadContext &context)
+{
+    if (context.filePath.empty() || context.coverExportDir.empty())
+    {
+        return {};
+    }
+
+    const std::filesystem::path audioDirectory = context.filePath.parent_path();
+    if (audioDirectory.empty())
+    {
+        return {};
+    }
+
+    return ExportSidecarCoverFromDirectory(audioDirectory, context);
 }
 }

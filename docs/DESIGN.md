@@ -10,7 +10,7 @@ TagReader 是一个 C++23 实现的音频标签读取库：
 - 从常见音频容器中读取元数据、歌词与封面，统一输出 `MusicTag`；文本终态一律 UTF-8。
 - 封面导出为内容寻址 PNG 缓存（全尺寸 + 缩略图），并支持同目录 sidecar 图片回退。
 - 附命令行演示工具 `TagReaderTest` 与基于 Catch2 的测试套件。
-- 是库，无独立启动流程；所有功能经 `Read` / `ReadCueSheet` 两个入口触发。
+- 是库，无独立启动流程；读取功能经 `Read` / `ReadCueSheet` 两个入口触发，另有独立封面导出入口 `ExportFolderCover`（只查找并导出文件夹自身目录的封面图像，不读音频标签，见 4.1）。
 
 技术要点：
 
@@ -22,7 +22,7 @@ TagReader 是一个 C++23 实现的音频标签读取库：
 分层结构（依赖自上而下）：
 
 ```
-公共 API 层      include/TagReader.hpp（Read / ReadCueSheet）
+公共 API 层      include/TagReader.hpp（Read / ReadCueSheet / ExportFolderCover）
 转发层           src/TagReader.cpp（只转发，不含逻辑）
 核心管线         src/core/（ReadTag 固定流程、ReadContext、RawMetadata/RawLyrics）
 支撑层           src/media/  src/io/  src/text/  src/cover/  src/common/
@@ -79,6 +79,7 @@ CMakePresets.json         default / release / sanitize / fuzz / profile
 ### 4.1 公共 API（include/TagReader.hpp）
 
 - `Read` 与 `ReadCueSheet` 各有 3 个重载：`(path)`、`(path, coverExportDir)`、`(path, coverExportDir, CoverProcessingOptions)`。
+- `ExportFolderCover(folderPath, coverExportDir, options)`：独立封面导出入口，只查找 `folderPath` 自身目录中的 `cover`/`front`/`folder`/`album`/`artwork` 图像（名称/扩展名规则、档位优先级与 `Read` 的 sidecar 回退逐字节同源，复用同一内容寻址 PNG 缓存管线，不递归子目录、不查父目录）；返回仅含 `coverPath`/`thumbnailPath`（按 options 模式）的 `MusicTag`；无候选或全部失败返回路径为空的 `MusicTag`，不抛错（`CoverProcessingError` 一律被吞并转空结果）。
 - `CoverProcessingOptions` 已核实字段：`mode`（默认 `FullAndThumbnail`；sidecar 回退仅在 mode != Disabled 时触发）、`failurePolicy`（默认 `Propagate`）、`maxSourceCoverBytes`（默认 64 MiB，内嵌封面与 sidecar 共用）、`maxSidecarEntries`（默认 4096）。完整字段清单以 `include/TagReader.hpp` 为准。
 - `CoverErrorCode`：9 个错误码，包括 `ExportDirectoryUnavailable`、`SidecarDiscoveryFailed`、`SidecarEntryLimitExceeded` 等。
 - `CoverProcessingError`：携带 `CoverErrorCode` 的异常类型，受 `failurePolicy` 调控（`Ignore` 抑制、`Propagate` 抛出）。
@@ -123,7 +124,7 @@ CMakePresets.json         default / release / sanitize / fuzz / profile
 - 默认导出目录：`XDG_RUNTIME_DIR/tagreader-covers`；POSIX 回退 `temp_directory_path()/tagreader-covers-$UID`。默认目录会创建、拒绝 symlink 并硬化为当前用户私有；显式 `coverExportDir` 同样会创建、探测读写并拒绝 symlink。
 - `CoverCache`：SHA-256 内容寻址 PNG 缓存（分片子目录、原子发布）；命中直接复用，不重复解码或改写；`ExportCoverFromContext` 返回 `CoverPaths{fullSizePath, thumbnailPath}`，并对封面源字节做 per-read 预算扣账。
 - `CoverDecoder`：封面解码/像素转换（FFmpeg）与 PNG 编码（fpng）；限制见 `CoverDecodeLimits`（`include/TagReaderInternal.hpp`）：封面编码输入与 PNG 输出各 64 MiB、单边 8192、总像素 32 Mi（32*1024*1024）。
-- `SidecarCover`：内嵌封面缺失时回退同目录图片（见 6.2）。
+- `SidecarCover`：sidecar 封面查找核心 `ExportSidecarCoverFromDirectory(directory, context)`（目录参数化）；`ExportSidecarCover` 以音频文件同目录调用之（`Read` 侧回退，见 6.2），`ExportFolderCover` 以 `folderPath` 自身目录调用之（见 4.1）。
 
 ### 4.8 格式解析层（src/formats/）
 
@@ -153,7 +154,7 @@ CMakePresets.json         default / release / sanitize / fuzz / profile
 ### 4.10 测试（test/）
 
 - Catch2 体系：Catch2 main 由 `Catch2::Catch2WithMain` 提供；`test/main.cpp` 是 `TagReaderTest` 人工 CLI 的入口（CMakeLists.txt:213），不是 Catch2 main。活跃用例在 `*_catch2_tests.cpp`（`test/catch2/` 与 `test/regression/`）；`test/regression/regression_tests.cpp` 不是独立 target，但被 `tr_audit_001_031_catch2_tests.cpp` 与 `tr_audit_032_056_catch2_tests.cpp` 以 `#include` 方式文本包含编译（提供 `RunTrAudit*` 实现），并非"未被编译"。
-- CTest 目标（16 个注册）：smoke、tr-audit（001-056）、cue 系列（Cue/CueMapping/CuePath/CueTiming）、封面契约（CoverProcessingContract）、SidecarCover、DefaultCoverExportDirectory、FlacMalformedMetadata、LyricsNormalizeComplexity、SecurityGenerateSamples、SecuritySmoke、FuzzGenerateCorpus、FuzzBoundedSmoke。（`TagReaderFuzz` 是 fuzz 可执行目标，不是 CTest。）
+- CTest 目标（17 个注册）：smoke、tr-audit（001-056）、cue 系列（Cue/CueMapping/CuePath/CueTiming）、封面契约（CoverProcessingContract）、SidecarCover、TagReaderFolderCover、DefaultCoverExportDirectory、FlacMalformedMetadata、LyricsNormalizeComplexity、SecurityGenerateSamples、SecuritySmoke、FuzzGenerateCorpus、FuzzBoundedSmoke。（`TagReaderFuzz` 是 fuzz 可执行目标，不是 CTest。）
 - 安全测试：样本由 `test/security/generate_samples.py` 生成；缺少 ffmpeg CLI 或 codec 导致无样本时 Smoke 返回 77，CTest 记为 skip。
 - Fuzz：仅 Clang/libFuzzer 下生成 `TagReaderFuzz`；语料由 `test/corpus/generate_corpus.py` 先生成。
 - `TagReaderTest`：人工 CLI，`./build/default/TagReaderTest <audio-file-path> [cover-export-dir]`，不能替代 CTest。
@@ -192,7 +193,8 @@ FileInput（src/io） ──> ReadContext（src/core）
                           ▼
                     BuildMusicTag（src/core/TagPipeline.cpp）──> MusicTag
 封面：各 parser ──ExportCoverFromContext──> CoverCache（SHA-256 PNG，全尺寸+缩略图）
-      └─ 内嵌封面缺失 ──> SidecarCover（同目录 sidecar 图片）
+      └─ 内嵌封面缺失 ──> SidecarCover（音频文件同目录 sidecar 图片）
+ExportFolderCover ──ExportSidecarCoverFromDirectory(folderPath)──> 同一缓存管线
 CUE：ReadCueSheet（src/formats/cue/）──每轨──> tagreader_core::ReadTag
 ```
 
@@ -219,7 +221,7 @@ CUE：ReadCueSheet（src/formats/cue/）──每轨──> tagreader_core::Read
 - 内嵌封面：各 parser 提取封面块 → `ExportCoverFromContext` → 内容寻址缓存（命中直接复用）→ 写入全尺寸 + 缩略图 PNG → `MusicTag::coverPath`/`thumbnailPath`。
 - 默认导出目录：`XDG_RUNTIME_DIR/tagreader-covers`（POSIX 回退 `temp_directory_path()/tagreader-covers-$UID`）；显式目录同样创建、探测读写、拒绝 symlink。
 - sidecar 回退（SidecarCover.cpp）：仅当内嵌封面缺失且 mode != Disabled 触发。
-  - 查找目录 = 音频文件同目录（`context.filePath.parent_path()`）。
+  - 查找目录由调用方决定：`Read` 侧为音频文件同目录（`context.filePath.parent_path()`）；`ExportFolderCover` 侧为 `folderPath` 自身目录（同一查找核心 `ExportSidecarCoverFromDirectory` 复用）。
   - 名称清单（忽略大小写，按优先级）：`cover` / `front` / `folder` / `album` / `artwork`；扩展名清单（忽略大小写）：`.png` `.jpg` `.jpeg` `.bmp` `.webp` `.gif` `.tiff`。
   - 遍历跳过非普通文件与 symlink；同优先级内按文件名字典序；按优先级逐个尝试，首个成功（产生 fullSizePath 或 thumbnailPath）即返回。
   - 候选计数超过 `maxSidecarEntries`（默认 4096）抛 `SidecarEntryLimitExceeded`；目录遍历失败抛 `SidecarDiscoveryFailed`。

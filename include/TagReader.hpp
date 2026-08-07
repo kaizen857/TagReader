@@ -167,6 +167,13 @@ public:
     static std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &filePath);
     static std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir);
     static std::vector<MusicTag> ReadCueSheet(const std::filesystem::path &filePath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options);
+
+    // 只查找 folderPath 自身目录中的 cover/front/folder/album/artwork 图像，
+    // 复用与 Read 相同的 sidecar 查找规则与内容寻址 PNG 缓存。
+    // 无候选或全部失败：返回 thumbnailPath 为空的 MusicTag（不抛错）。
+    static MusicTag ExportFolderCover(std::string folderPath,
+                                      std::string coverExportDir,
+                                      const CoverProcessingOptions &options);
 };
 
 #endif

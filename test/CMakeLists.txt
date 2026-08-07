@@ -140,6 +140,29 @@ tagreader_enable_sanitizers(TagReaderSidecarCoverCatch2Tests)
 
 catch_discover_tests(TagReaderSidecarCoverCatch2Tests)
 
+add_executable(TagReaderFolderCoverCatch2Tests
+    regression/catch2_regression_support.cpp
+    regression/catch2_sample_support.cpp
+    regression/folder_cover_catch2_tests.cpp
+)
+
+target_link_libraries(TagReaderFolderCoverCatch2Tests
+    PRIVATE
+        Catch2::Catch2WithMain
+        TagReaderCore
+)
+
+target_include_directories(TagReaderFolderCoverCatch2Tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+tagreader_enable_sanitizers(TagReaderFolderCoverCatch2Tests)
+
+catch_discover_tests(TagReaderFolderCoverCatch2Tests TEST_PREFIX "TagReaderFolderCover.")
+
 add_executable(TagReaderCueCatch2Tests
     regression/catch2_regression_support.cpp
     regression/catch2_sample_support.cpp

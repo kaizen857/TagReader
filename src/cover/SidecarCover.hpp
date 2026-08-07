@@ -5,6 +5,16 @@
 
 namespace tagreader_cover
 {
+// Directory-parameterized core of ExportSidecarCover: discovers sidecar cover
+// files inside `directory`, reads them in the existing deterministic priority
+// order, debits each actually-read candidate's encoded bytes against the
+// shared per-read source budget, and exports the requested outputs. Returns
+// empty CoverPaths when no candidate produced artwork. Throws
+// CoverProcessingError (SidecarDiscoveryFailed / SidecarEntryLimitExceeded /
+// SourceBudgetExceeded / cover cache failures) according to the active
+// CoverProcessingOptions.
+CoverPaths ExportSidecarCoverFromDirectory(const std::filesystem::path &directory, tagreader_core::ReadContext &context);
+
 // Discovers sidecar cover candidates next to `context.filePath`, reads them in
 // the existing deterministic priority order, debits each actually-read
 // candidate's encoded bytes against the shared per-read source budget, and
