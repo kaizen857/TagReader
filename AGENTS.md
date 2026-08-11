@@ -21,6 +21,7 @@
 
 - `include/TagReader.hpp` 中 `Read` 与 `ReadCueSheet` 均有 `(path)`、`(path, coverExportDir)`、`(path, coverExportDir, CoverProcessingOptions)` 重载。
 - `src/TagReader.cpp` 只转发：`Read()` 到 `tagreader_core::ReadTag()`，`ReadCueSheet()` 到独立的 `tagreader_cue::ReadCueSheet()` 管线；不要把 CUE 塞入 `Read()`。
+- 公共门面还有 `ExportFolderCover(path, coverExportDir, options)`：仅导出文件夹 sidecar 封面，返回空 `MusicTag` 且不抛错；转发到 `tagreader_cover::ExportSidecarCoverFromDirectory`。
 - `ReadTag()` 固定顺序：`ValidatePath()` -> `OpenContext()` -> 封面目录解析/校验/硬化 -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> sidecar fallback -> `ReadLyrics()` -> `BuildMusicTag()`；不要另加 `DetectContainer()`。
 - CUE 文件引用解析拒绝绝对路径、目录逃逸、symlink 和 CUE 自引用。
 
@@ -44,7 +45,7 @@
 ## 构建与验证
 
 - 默认顺序必须是 `cmake --preset default` -> `cmake --build --preset default` -> `ctest --preset default --output-on-failure`。
-- 聚焦测试用 `ctest --preset default -R <regex> --output-on-failure`。Catch2 discovered test 名就是精确 `TEST_CASE` 文本，没有 target 前缀；可用子串如 `TR-AUDIT-001`、`CoverContract:`、`cue file resolver`。
+- 聚焦测试用 `ctest --preset default -R <regex> --output-on-failure`。Catch2 discovered test 名是精确 `TEST_CASE` 文本（唯一例外：`TagReaderFolderCoverCatch2Tests` 目标带 `TagReaderFolderCover.` 前缀）；可用子串如 `TR-AUDIT-001`、`CoverContract:`、`cue file resolver`。
 - 安全测试是 `TagReaderSecurityGenerateSamples` 与 `TagReaderSecuritySmoke`；样本由 `test/security/generate_samples.py` 生成。缺少 `ffmpeg` CLI 或 codec 导致无样本时，Smoke 返回 `77`，CTest 记为 skip。
 - 另有 `release`、`sanitize`、`fuzz`、`profile` presets。Release 强制关闭 profiling；Fuzz 仅在 Clang/libFuzzer 下生成 `TagReaderFuzz`，相关 CTest 先生成 corpus；Profile 依赖系统 TracyClient 与 `/usr/include/Tracy`，不是 pkg-config 入口。
 - FFmpeg 依赖由 pkg-config 解析：`libavformat`、`libavcodec`、`libavutil`、`libswscale`。Iconv 默认必需，只有显式设置 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON` 才允许回退。
