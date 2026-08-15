@@ -21,7 +21,7 @@
 
 - `include/TagReader.hpp` 中 `Read` 与 `ReadCueSheet` 均有 `(path)`、`(path, coverExportDir)`、`(path, coverExportDir, CoverProcessingOptions)` 重载。
 - `src/TagReader.cpp` 只转发：`Read()` 到 `tagreader_core::ReadTag()`，`ReadCueSheet()` 到独立的 `tagreader_cue::ReadCueSheet()` 管线；不要把 CUE 塞入 `Read()`。
-- 公共门面还有 `ExportFolderCover(path, coverExportDir, options)`：仅导出文件夹 sidecar 封面，返回空 `MusicTag` 且不抛错；转发到 `tagreader_cover::ExportSidecarCoverFromDirectory`。
+- 公共门面还有 `ExportFolderCover(path, coverExportDir, options)`：仅导出文件夹 sidecar 封面，命中时返回仅携带封面路径、无元数据的 `MusicTag`，无候选或全部失败时返回空 `MusicTag` 且不抛错；转发到 `tagreader_cover::ExportSidecarCoverFromDirectory`。
 - `ReadTag()` 固定顺序：`ValidatePath()` -> `OpenContext()` -> 封面目录解析/校验/硬化 -> `DetectStream()` -> `DetectTagFormat()` -> `ContainerFromTagFormat()` -> `ReadMediaInfo()` -> `ReadMetadata()` -> sidecar fallback -> `ReadLyrics()` -> `BuildMusicTag()`；不要另加 `DetectContainer()`。
 - CUE 文件引用解析拒绝绝对路径、目录逃逸、symlink 和 CUE 自引用。
 
