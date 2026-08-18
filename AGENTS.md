@@ -3,7 +3,7 @@
 ## 根仓库规则
 
 - 当前目录就是仓库根目录；不得扫描、读取或推断上级目录。`AGENTS.md` 只保留此根文件，不创建子目录版本。
-- 面向用户的回答和仓库文档使用中文；除本文件外，面向用户的文档放在 `docs/`。
+- 面向用户的回答和仓库文档使用中文；除本文件外，面向用户的文档放在 `docs/`。例外：根目录 `ANALYSIS.md` 是已跟踪的安全审计报告（历史文档，非事实来源）；`test/corpus/__pycache__` 是未跟踪的 Python 缓存残留，可删除。
 - 事实以 `CMakeLists.txt`、`CMakePresets.json`、公共头文件、`src/`、`test/` 等可执行来源为准；`README.md`、`docs/DESIGN.md` 冲突时不采信。`docs/DESIGN.md` 是描述长期稳定设计的架构文档（维护规范见下节），不是事实基准，也不是开发日志。
 - 仓库没有 CI、独立 lint/formatter 命令、pre-commit 或 repo-local OpenCode 配置；`.vscode/settings.json` 仅通过 clangd 启用 `--clang-tidy`，不得编造其它入口。
 - 项目强制 C++23，不能降为 C++17/C++20。`.clangd` 指向 `build`，presets 却生成 `build/<preset>/compile_commands.json`，不能假设 LSP 已连接 `build/default`。
