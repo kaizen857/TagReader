@@ -3,6 +3,7 @@
 #include "TagReader.hpp"
 #include "catch2_regression_support.hpp"
 #include "catch2_sample_support.hpp"
+#include "cover_format_fixtures.hpp"
 #include "core/CoverBudget.hpp"
 #include "core/CoverErrorPolicy.hpp"
 #include "core/RawTagData.hpp"
@@ -391,4 +392,234 @@ TEST_CASE("CoverContract: zero source budget does not degrade metadata", "[contr
     const MusicTag tag = TagReader::Read(samplePath, root / "covers", options);
     CHECK(tag.title() == "zero-budget-title");
     CHECK_FALSE(tag.duration() == 0);
+}
+
+// ---------- APIC pictureType 6 (Media) fallback cover (需求10) ----------
+
+namespace
+{
+std::vector<std::uint8_t> BuildApicFrame(uint8_t pictureType, std::string_view mime, const std::vector<std::uint8_t> &imageBytes)
+{
+    std::vector<std::uint8_t> payload{0};
+    tagreader_test_support::AppendBytes(payload, mime);
+    payload.insert(payload.end(), {0, pictureType, 0});
+    payload.insert(payload.end(), imageBytes.begin(), imageBytes.end());
+    return tagreader_test_support::BuildId3v23Frame("APIC", payload);
+}
+
+bool WriteMp3WithId3v23Frames(const std::filesystem::path &path, const std::vector<std::vector<std::uint8_t>> &frames)
+{
+    const std::filesystem::path basePath = path.parent_path() / "apic-fallback-base.mp3";
+    if (!tagreader_test_support::GenerateBaseMp3(basePath))
+    {
+        return false;
+    }
+    const std::vector<std::uint8_t> baseBytes = tagreader_test_support::ReadBinaryFile(basePath);
+    if (baseBytes.empty())
+    {
+        return false;
+    }
+    std::vector<std::uint8_t> allFrames;
+    for (const std::vector<std::uint8_t> &frame : frames)
+    {
+        allFrames.insert(allFrames.end(), frame.begin(), frame.end());
+    }
+    std::vector<std::uint8_t> output = tagreader_test_support::BuildId3v23Tag(allFrames);
+    output.insert(output.end(), baseBytes.begin(), baseBytes.end());
+    return tagreader_test_support::WriteBinaryFile(path, output);
+}
+
+// ID3v2.2 PIC payload: encoding(1) + 3-byte image format + picture type(1) + description(nul) + image data.
+std::vector<std::uint8_t> BuildId3v22PicFrame(uint8_t pictureType, std::string_view imageFormat, const std::vector<std::uint8_t> &imageBytes)
+{
+    std::vector<std::uint8_t> payload{0};
+    tagreader_test_support::AppendBytes(payload, imageFormat);
+    payload.push_back(pictureType);
+    payload.push_back(0);
+    payload.insert(payload.end(), imageBytes.begin(), imageBytes.end());
+    std::vector<std::uint8_t> frame;
+    tagreader_test_support::AppendBytes(frame, "PIC");
+    frame.push_back(static_cast<std::uint8_t>(payload.size() >> 16));
+    frame.push_back(static_cast<std::uint8_t>(payload.size() >> 8));
+    frame.push_back(static_cast<std::uint8_t>(payload.size()));
+    frame.insert(frame.end(), payload.begin(), payload.end());
+    return frame;
+}
+
+std::vector<std::uint8_t> BuildId3v22Tag(const std::vector<std::uint8_t> &frames)
+{
+    std::vector<std::uint8_t> bytes{'I', 'D', '3', 2, 0, 0};
+    const std::uint32_t size = static_cast<std::uint32_t>(frames.size());
+    bytes.push_back(static_cast<std::uint8_t>((size >> 21) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>((size >> 14) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>((size >> 7) & 0x7F));
+    bytes.push_back(static_cast<std::uint8_t>(size & 0x7F));
+    bytes.insert(bytes.end(), frames.begin(), frames.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> FlacPictureBlockPayload(uint8_t pictureType, const std::vector<std::uint8_t> &imageBytes)
+{
+    std::vector<std::uint8_t> payload;
+    tagreader_test_support::AppendU32BE(payload, pictureType);
+    tagreader_test_support::AppendU32BE(payload, 9);
+    tagreader_test_support::AppendBytes(payload, "image/png");
+    tagreader_test_support::AppendU32BE(payload, 0);
+    tagreader_test_support::AppendU32BE(payload, 1);
+    tagreader_test_support::AppendU32BE(payload, 1);
+    tagreader_test_support::AppendU32BE(payload, 32);
+    tagreader_test_support::AppendU32BE(payload, 0);
+    tagreader_test_support::AppendU32BE(payload, static_cast<std::uint32_t>(imageBytes.size()));
+    payload.insert(payload.end(), imageBytes.begin(), imageBytes.end());
+    return payload;
+}
+
+bool InjectFlacPictureBlockWithType(const std::filesystem::path &basePath, const std::filesystem::path &outputPath, uint8_t pictureType, const std::vector<std::uint8_t> &imageBytes)
+{
+    const std::vector<std::uint8_t> data = tagreader_test_support::ReadBinaryFile(basePath);
+    if (data.size() < 42 || std::string_view(reinterpret_cast<const char *>(data.data()), 4) != "fLaC")
+    {
+        return false;
+    }
+    const std::vector<std::uint8_t> picture = FlacPictureBlockPayload(pictureType, imageBytes);
+    if (picture.size() > 0xFFFFFFU)
+    {
+        return false;
+    }
+
+    std::size_t cursor = 4;
+    std::size_t audioStart = data.size();
+    bool foundStreamInfo = false;
+    std::vector<std::uint8_t> output{'f', 'L', 'a', 'C'};
+    while (cursor + 4 <= data.size())
+    {
+        const bool lastBlock = (data[cursor] & 0x80) != 0;
+        const std::uint8_t blockType = data[cursor] & 0x7F;
+        const std::uint32_t blockSize = tagreader_test_support::ReadU24BE(data, cursor + 1);
+        const std::size_t blockPayload = cursor + 4;
+        const std::size_t blockEnd = blockPayload + blockSize;
+        if (blockEnd > data.size())
+        {
+            break;
+        }
+        foundStreamInfo = foundStreamInfo || blockType == 0;
+        output.push_back(blockType);
+        tagreader_test_support::AppendU24BE(output, blockSize);
+        output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(blockPayload), data.begin() + static_cast<std::ptrdiff_t>(blockEnd));
+        cursor = blockEnd;
+        if (lastBlock)
+        {
+            audioStart = cursor;
+            break;
+        }
+    }
+    if (!foundStreamInfo || audioStart > data.size())
+    {
+        return false;
+    }
+    output.push_back(0x80 | 6);
+    tagreader_test_support::AppendU24BE(output, static_cast<std::uint32_t>(picture.size()));
+    output.insert(output.end(), picture.begin(), picture.end());
+    output.insert(output.end(), data.begin() + static_cast<std::ptrdiff_t>(audioStart), data.end());
+    return tagreader_test_support::WriteBinaryFile(outputPath, output);
+}
+} // namespace
+
+TEST_CASE("CoverContract: APIC picture type 6 (Media) exports a cover through the full payload path", "[contract][cover]")
+{
+    const std::filesystem::path root = CaseRoot("apic-type6");
+    REQUIRE(PrepareRoot(root));
+    const std::filesystem::path samplePath = root / "type6-media.mp3";
+    // 与真实故障样本一致：pictureType=6（Media）+ mime 误标 image/jpeg + PNG 内容
+    REQUIRE(WriteMp3WithId3v23Frames(samplePath, {BuildApicFrame(6, "image/jpeg", tagreader_test_support::OneByOnePng())}));
+
+    const std::filesystem::path coverDir = root / "covers";
+    const MusicTag tag = TagReader::Read(samplePath, coverDir);
+    // 走完整 APIC 载荷解析路径（外层 + 内层 ReadID3v2ApicPayload 第二道检查均须放行）：
+    REQUIRE_FALSE(tag.coverPath().empty());
+    CHECK_FALSE(tag.thumbnailPath().empty());
+
+    // 导出文件是真实存在的非空 PNG（ExportCoverFromContext 产物），证明内层检查放行而非仅外层跳过
+    std::error_code ec;
+    const std::uintmax_t size = std::filesystem::file_size(tag.coverPath(), ec);
+    REQUIRE_FALSE(static_cast<bool>(ec));
+    CHECK(size > 0);
+    const std::vector<std::uint8_t> exported = tagreader_test_support::ReadBinaryFile(tag.coverPath());
+    REQUIRE(exported.size() >= 8);
+    CHECK(exported[0] == 0x89);
+    CHECK(exported[1] == 'P');
+    CHECK(exported[2] == 'N');
+    CHECK(exported[3] == 'G');
+}
+
+TEST_CASE("CoverContract: APIC type 3 stays preferred over type 6 when both frames exist", "[contract][cover]")
+{
+    const std::filesystem::path root = CaseRoot("apic-type3-priority");
+    REQUIRE(PrepareRoot(root));
+    const std::vector<std::uint8_t> png = tagreader_test_support::OneByOnePng();
+    const std::vector<std::uint8_t> jpeg = tagreader_test_support::OneByOneJpeg();
+
+    const std::filesystem::path refType3 = root / "ref-type3.mp3";
+    const std::filesystem::path refType6 = root / "ref-type6.mp3";
+    const std::filesystem::path bothType6First = root / "both-type6-first.mp3";
+    const std::filesystem::path bothType3First = root / "both-type3-first.mp3";
+    REQUIRE(WriteMp3WithId3v23Frames(refType3, {BuildApicFrame(3, "image/png", png)}));
+    REQUIRE(WriteMp3WithId3v23Frames(refType6, {BuildApicFrame(6, "image/jpeg", jpeg)}));
+    // 两帧并存，type 6 在前 / type 3 在后（最坏顺序：type 3 后到也必须胜出）
+    REQUIRE(WriteMp3WithId3v23Frames(bothType6First, {BuildApicFrame(6, "image/jpeg", jpeg), BuildApicFrame(3, "image/png", png)}));
+    // type 3 在前 / type 6 在后：type 6 不得覆盖已导出的 type 3
+    REQUIRE(WriteMp3WithId3v23Frames(bothType3First, {BuildApicFrame(3, "image/png", png), BuildApicFrame(6, "image/jpeg", jpeg)}));
+
+    const std::filesystem::path dirRef3 = root / "covers-ref3";
+    const std::filesystem::path dirRef6 = root / "covers-ref6";
+    const std::filesystem::path dirBoth6First = root / "covers-both6-first";
+    const std::filesystem::path dirBoth3First = root / "covers-both3-first";
+    const MusicTag tagRef3 = TagReader::Read(refType3, dirRef3);
+    const MusicTag tagRef6 = TagReader::Read(refType6, dirRef6);
+    REQUIRE_FALSE(tagRef3.coverPath().empty());
+    REQUIRE_FALSE(tagRef6.coverPath().empty());
+    // 内容寻址导出：不同图像字节 -> 不同导出文件名（PNG vs JPEG）
+    CHECK(tagRef3.coverPath().filename() != tagRef6.coverPath().filename());
+
+    const MusicTag tagBoth6First = TagReader::Read(bothType6First, dirBoth6First);
+    const MusicTag tagBoth3First = TagReader::Read(bothType3First, dirBoth3First);
+    // 无论帧顺序如何，最终封面都必须是 type 3 的图像（内容寻址文件名与 ref type3 一致）
+    REQUIRE_FALSE(tagBoth6First.coverPath().empty());
+    REQUIRE_FALSE(tagBoth3First.coverPath().empty());
+    CHECK(tagBoth6First.coverPath().filename() == tagRef3.coverPath().filename());
+    CHECK(tagBoth3First.coverPath().filename() == tagRef3.coverPath().filename());
+}
+
+TEST_CASE("CoverContract: ID3v2.2 PIC picture type 6 (Media) is accepted as fallback cover", "[contract][cover]")
+{
+    const std::filesystem::path root = CaseRoot("id3v22-pic-type6");
+    REQUIRE(PrepareRoot(root));
+    const std::filesystem::path basePath = root / "v22-base.mp3";
+    REQUIRE(tagreader_test_support::GenerateBaseMp3(basePath));
+    const std::vector<std::uint8_t> baseBytes = tagreader_test_support::ReadBinaryFile(basePath);
+    REQUIRE_FALSE(baseBytes.empty());
+
+    const std::vector<std::uint8_t> picFrame = BuildId3v22PicFrame(6, "PNG", tagreader_test_support::OneByOnePng());
+    std::vector<std::uint8_t> output = BuildId3v22Tag(picFrame);
+    output.insert(output.end(), baseBytes.begin(), baseBytes.end());
+    const std::filesystem::path samplePath = root / "v22-pic-type6.mp3";
+    REQUIRE(tagreader_test_support::WriteBinaryFile(samplePath, output));
+
+    const MusicTag tag = TagReader::Read(samplePath, root / "covers");
+    REQUIRE_FALSE(tag.coverPath().empty());
+    CHECK_FALSE(tag.thumbnailPath().empty());
+}
+
+TEST_CASE("CoverContract: FLAC PICTURE type 6 (Media) is accepted as fallback cover", "[contract][cover]")
+{
+    const std::filesystem::path root = CaseRoot("flac-picture-type6");
+    REQUIRE(PrepareRoot(root));
+    const std::filesystem::path basePath = root / "type6-base.flac";
+    REQUIRE(tagreader_test_support::GenerateFlacAudioSample(basePath));
+    const std::filesystem::path samplePath = root / "picture-type6.flac";
+    REQUIRE(InjectFlacPictureBlockWithType(basePath, samplePath, 6, tagreader_test_support::OneByOnePng()));
+
+    const MusicTag tag = TagReader::Read(samplePath, root / "covers");
+    REQUIRE_FALSE(tag.coverPath().empty());
+    CHECK_FALSE(tag.thumbnailPath().empty());
 }

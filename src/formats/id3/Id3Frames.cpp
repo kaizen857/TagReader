@@ -1132,7 +1132,12 @@ void ReadID3v22PictureFrame(ReadContext &context, RawMetadata &metadata, const u
     const uint8_t pictureType = frameData[4];
     const uint8_t *payload = frameData + 5;
     const std::size_t payloadSize = frameSize - 5;
-    if (pictureType != 3)
+    // type 6（Media）仅作 type 3（Front cover）缺失时的兜底，且不覆盖已存在封面。
+    if (pictureType != 3 && pictureType != 6)
+    {
+        return;
+    }
+    if (pictureType == 6 && !metadata.coverPath.empty())
     {
         return;
     }
@@ -1253,7 +1258,8 @@ void ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadata, const ui
     }
 
     const uint8_t pictureType = payload[cursor];
-    if (pictureType != 3)
+    // type 6（Media）仅作 type 3（Front cover）缺失时的兜底；优先级在 ReadID3v2ApicPayload 内保持。
+    if (pictureType != 3 && pictureType != 6)
     {
         return;
     }
@@ -1278,7 +1284,16 @@ void ReadID3v2PictureFrame(ReadContext &context, RawMetadata &metadata, const ui
 
 void ReadID3v2ApicPayload(ReadContext &context, RawMetadata &metadata, std::string_view mimeType, uint8_t pictureType, const uint8_t *imageData, std::size_t imageSize)
 {
-    if (pictureType != 3 || imageData == nullptr || imageSize == 0)
+    if (pictureType != 3 && pictureType != 6)
+    {
+        return;
+    }
+    // type 6 仅是兜底：已有封面（type 3 或更早导出）时不再覆盖，保证 type 3 优先。
+    if (pictureType == 6 && !metadata.coverPath.empty())
+    {
+        return;
+    }
+    if (imageData == nullptr || imageSize == 0)
     {
         return;
     }

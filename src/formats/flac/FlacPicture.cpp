@@ -36,10 +36,6 @@ void ReadFlacPictureEntry(tagreader_core::ReadContext &context, tagreader_core::
     {
         return;
     }
-    if (!metadata.coverPath.empty())
-    {
-        return;
-    }
 
     ByteCursor cursor(pictureData, pictureSize);
     const std::optional<std::uint32_t> pictureType = cursor.readU32Be();
@@ -85,7 +81,12 @@ void ReadFlacPictureEntry(tagreader_core::ReadContext &context, tagreader_core::
         return;
     }
 
-    if (*pictureType != 3)
+    // type 6（Media）仅作 type 3（Front cover）缺失时的兜底；type 3 始终允许覆盖先前的 type 6 结果。
+    if (*pictureType != 3 && *pictureType != 6)
+    {
+        return;
+    }
+    if (*pictureType == 6 && !metadata.coverPath.empty())
     {
         return;
     }
