@@ -3,7 +3,7 @@
 ## 根仓库规则
 
 - 当前目录就是仓库根目录；不得扫描、读取或推断上级目录。`AGENTS.md` 只保留此根文件，不创建子目录版本。
-- 面向用户的回答和仓库文档使用中文；除本文件外，面向用户的文档放在 `docs/`。例外：根目录 `ANALYSIS.md` 是已跟踪的安全审计报告（历史文档，非事实来源）；`test/corpus/__pycache__` 是未跟踪的 Python 缓存残留，可删除。
+- 面向用户的回答和仓库文档使用中文；除本文件外，面向用户的文档放在 `docs/`。例外：根目录 `ANALYSIS.md` 是已跟踪的安全审计报告（历史文档，非事实来源）。
 - 事实以 `CMakeLists.txt`、`CMakePresets.json`、公共头文件、`src/`、`test/` 等可执行来源为准；`README.md`、`docs/DESIGN.md` 冲突时不采信。`docs/DESIGN.md` 是描述长期稳定设计的架构文档（维护规范见下节），不是事实基准，也不是开发日志。
 - 仓库没有 CI、独立 lint/formatter 命令、pre-commit 或 repo-local OpenCode 配置；`.vscode/settings.json` 仅通过 clangd 启用 `--clang-tidy`，不得编造其它入口。
 - 项目强制 C++23，不能降为 C++17/C++20。`.clangd` 指向 `build`，presets 却生成 `build/<preset>/compile_commands.json`，不能假设 LSP 已连接 `build/default`。
@@ -19,6 +19,7 @@
 
 ## API 与主流程
 
+- 公共头共 4 个：`include/TagReader.hpp`（门面）、`include/Tag.hpp`（`MusicTag`）、`include/Lyrics.hpp`（`Lyric`/`Lyrics`，chrono 时间戳同步歌词）、`include/TagReaderInternal.hpp`（`tagreader_internal::CoverDecodeLimits` 等内部常量，位于公共 include 目录）。
 - `include/TagReader.hpp` 中 `Read` 与 `ReadCueSheet` 均有 `(path)`、`(path, coverExportDir)`、`(path, coverExportDir, CoverProcessingOptions)` 重载。
 - `src/TagReader.cpp` 只转发：`Read()` 到 `tagreader_core::ReadTag()`，`ReadCueSheet()` 到独立的 `tagreader_cue::ReadCueSheet()` 管线；不要把 CUE 塞入 `Read()`。
 - 公共门面还有 `ExportFolderCover(path, coverExportDir, options)`：仅导出文件夹 sidecar 封面，命中时返回仅携带封面路径、无元数据的 `MusicTag`，无候选或全部失败时返回空 `MusicTag` 且不抛错；转发到 `tagreader_cover::ExportSidecarCoverFromDirectory`。
@@ -46,9 +47,9 @@
 
 - 默认顺序必须是 `cmake --preset default` -> `cmake --build --preset default` -> `ctest --preset default --output-on-failure`。
 - 聚焦测试用 `ctest --preset default -R <regex> --output-on-failure`。Catch2 discovered test 名是精确 `TEST_CASE` 文本（唯一例外：`TagReaderFolderCoverCatch2Tests` 目标带 `TagReaderFolderCover.` 前缀）；可用子串如 `TR-AUDIT-001`、`CoverContract:`、`cue file resolver`。
-- 安全测试是 `TagReaderSecurityGenerateSamples` 与 `TagReaderSecuritySmoke`；样本由 `test/security/generate_samples.py` 生成。缺少 `ffmpeg` CLI 或 codec 导致无样本时，Smoke 返回 `77`，CTest 记为 skip。
+- 安全测试是 `TagReaderSecurityGenerateSamples` 与 `TagReaderSecuritySmoke`；样本由 `test/security/generate_samples.py` 生成。缺少 `ffmpeg` CLI 或 codec 导致无样本时，Smoke 返回 `77`，CTest 记为 skip。另有 `TagReaderCatch2SmokeTests`（catch2/smoke_test.cpp 的编译冒烟用例）。
 - 另有 `release`、`sanitize`、`fuzz`、`profile` presets。Release 强制关闭 profiling；Fuzz 仅在 Clang/libFuzzer 下生成 `TagReaderFuzz`，相关 CTest 先生成 corpus；Profile 依赖系统 TracyClient 与 `/usr/include/Tracy`，不是 pkg-config 入口。
-- FFmpeg 依赖由 pkg-config 解析：`libavformat`、`libavcodec`、`libavutil`、`libswscale`。Iconv 默认必需，只有显式设置 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON` 才允许回退。
+- FFmpeg 依赖由 pkg-config 解析：`libavformat`、`libavcodec`、`libavutil`、`libswscale`。Iconv 默认必需，只有显式设置 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON` 才允许回退；另有 `TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS` 用于测试无 Iconv 策略路径。
 - Catch2 默认优先系统包（`TAGREADER_USE_SYSTEM_CATCH2=ON`），缺失时 FetchContent 下载 v3.7.1，离线环境首次配置需要网络。
 - `release`/`profile` 编译参数含 `-march=native`，产物仅限本机使用，不可跨机器分发。
 - `test/regression/regression_tests.cpp` 不是独立 target，但被 `tr_audit_001_031_catch2_tests.cpp` 与 `tr_audit_032_056_catch2_tests.cpp` 以 `#include` 方式文本包含编译（提供 `RunTrAudit*` 实现，由 TR-AUDIT-001~056 用例调用）；活跃用例在 `*_catch2_tests.cpp` 中。
