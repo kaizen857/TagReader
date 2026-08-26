@@ -1,4 +1,5 @@
 #include "media/FfmpegSession.hpp"
+#include "platform/PosixCompat.hpp"
 #include "profiling/Profiling.hpp"
 
 #ifdef __cplusplus
@@ -101,14 +102,14 @@ int ReadPacketFromFd(void *opaque, std::uint8_t *buffer, int bufferSize)
 
     const std::uintmax_t remaining = state->fileSize - state->offset;
     const auto bytesToRead = static_cast<std::size_t>(std::min<std::uintmax_t>(remaining, static_cast<std::uintmax_t>(bufferSize)));
-    if (state->offset > static_cast<std::uintmax_t>(std::numeric_limits<off_t>::max()))
+    if (state->offset > static_cast<std::uintmax_t>(std::numeric_limits<std::int64_t>::max()))
     {
         return AVERROR(EOVERFLOW);
     }
 
     while (true)
     {
-        const ssize_t bytesRead = ::pread(state->fd, buffer, bytesToRead, static_cast<off_t>(state->offset));
+        const ssize_t bytesRead = ::pread(state->fd, buffer, bytesToRead, static_cast<std::int64_t>(state->offset));
         if (bytesRead < 0)
         {
             if (errno == EINTR)
@@ -197,9 +198,12 @@ AVIOContext *CreateAvioContext(int fd, std::uintmax_t fileSize)
     return avioContext;
 }
 
-std::filesystem::file_time_type FileTimeFromStat(const struct stat &statBuffer)
+std::filesystem::file_time_type FileTimeFromStat(const tagreader_stat_t &statBuffer)
 {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+    const auto seconds = std::chrono::seconds(statBuffer.st_mtime);
+    const auto nanos = std::chrono::nanoseconds(0);
+#elif defined(__APPLE__)
     const auto seconds = std::chrono::seconds(statBuffer.st_mtimespec.tv_sec);
     const auto nanos = std::chrono::nanoseconds(statBuffer.st_mtimespec.tv_nsec);
 #else
@@ -207,7 +211,10 @@ std::filesystem::file_time_type FileTimeFromStat(const struct stat &statBuffer)
     const auto nanos = std::chrono::nanoseconds(statBuffer.st_mtim.tv_nsec);
 #endif
 
-    const auto systemTime = std::chrono::time_point<std::chrono::system_clock>(seconds + nanos);
+    // MSVC 的 system_clock::period 为 100ns（FILETIME 精度），需要 duration_cast 显式转换；
+    // Linux/macOS 上 period 为 1ns，此转换是 no-op。
+    const std::chrono::system_clock::time_point systemTime(
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(seconds + nanos));
     const auto fileClockTime = systemTime - std::chrono::system_clock::now() + std::filesystem::file_time_type::clock::now();
     return std::chrono::time_point_cast<std::filesystem::file_time_type::duration>(fileClockTime);
 }
@@ -254,6 +261,31 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     context.input.reset(fd);
 
     struct stat statBuffer
+    {
+    };
+    if (::fstat(context.input.get(), &statBuffer) != 0)
+    {
+        throw std::runtime_error("failed to stat opened file input descriptor: " + std::string(std::strerror(errno)));
+    }
+    if (!S_ISREG(statBuffer.st_mode))
+    {
+        throw std::runtime_error("opened input is not a regular file: " + filePath.string());
+    }
+    if (statBuffer.st_size < 0)
+    {
+        throw std::runtime_error("opened input has negative file size: " + filePath.string());
+    }
+    context.fileSize = static_cast<std::uintmax_t>(statBuffer.st_size);
+    context.lastModified = FileTimeFromStat(statBuffer);
+#elif defined(_WIN32)
+    const int fd = ::open(filePath.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        throw std::runtime_error("failed to open file input descriptor: " + std::string(std::strerror(errno)));
+    }
+    context.input.reset(fd);
+
+    tagreader_stat_t statBuffer
     {
     };
     if (::fstat(context.input.get(), &statBuffer) != 0)

@@ -4,6 +4,7 @@
 #include "text/TextCodec.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <vector>
 #include <string_view>
 #include <system_error>
@@ -72,6 +73,26 @@ std::optional<std::string> LoadCueTextUtf8(const std::filesystem::path &cuePath)
     tagreader_io::FileInput input(fd);
     const std::vector<std::uint8_t> bytes = tagreader_io::ReadRange(input, 0, static_cast<std::size_t>(statBuffer.st_size), static_cast<std::size_t>(kMaxCueTextBytes));
     if (bytes.empty() && statBuffer.st_size != 0)
+    {
+        return std::nullopt;
+    }
+    return DecodeBytesToUtf8(bytes);
+#elif defined(_WIN32)
+    std::error_code sizeEc;
+    const std::uintmax_t fileSize = std::filesystem::file_size(cuePath, sizeEc);
+    if (sizeEc || fileSize > kMaxCueTextBytes)
+    {
+        return std::nullopt;
+    }
+
+    std::ifstream stream(cuePath, std::ios::binary);
+    if (!stream)
+    {
+        return std::nullopt;
+    }
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(fileSize));
+    if (!bytes.empty() &&
+        !stream.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
     {
         return std::nullopt;
     }

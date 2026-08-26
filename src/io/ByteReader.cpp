@@ -1,4 +1,5 @@
 #include "io/ByteReader.hpp"
+#include "platform/PosixCompat.hpp"
 #include "profiling/Profiling.hpp"
 
 #include <cerrno>
@@ -51,12 +52,10 @@ int FileInput::release() noexcept
 
 void FileInput::reset(int fd) noexcept
 {
-#if defined(__unix__) || defined(__APPLE__)
     if (fd_ >= 0)
     {
         ::close(fd_);
     }
-#endif
     fd_ = fd;
 }
 
@@ -176,8 +175,8 @@ std::vector<uint8_t> ReadRange(FileInput &input, std::uintmax_t offset, std::siz
     {
         return {};
     }
-#if defined(__unix__) || defined(__APPLE__)
-    if (offset > static_cast<std::uintmax_t>(std::numeric_limits<off_t>::max()))
+#if defined(__unix__) || defined(__APPLE__) || defined(_WIN32)
+    if (offset > static_cast<std::uintmax_t>(std::numeric_limits<std::int64_t>::max()))
     {
         return {};
     }
@@ -190,7 +189,7 @@ std::vector<uint8_t> ReadRange(FileInput &input, std::uintmax_t offset, std::siz
     std::size_t totalRead = 0;
     while (totalRead < size)
     {
-        const auto currentOffset = static_cast<off_t>(offset + totalRead);
+        const auto currentOffset = static_cast<std::int64_t>(offset + totalRead);
         const ssize_t bytesRead = ::pread(input.get(), buffer.data() + totalRead, size - totalRead, currentOffset);
         if (bytesRead < 0)
         {
