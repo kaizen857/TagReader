@@ -545,7 +545,7 @@ bool FfmpegCliAvailable()
 #if defined(_WIN32)
     return CommandSucceeds("where ffmpeg >nul 2>&1");
 #else
-    return FfmpegCliAvailable();
+    return CommandSucceeds("command -v ffmpeg >/dev/null 2>&1");
 #endif
 }
 
