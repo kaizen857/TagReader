@@ -32,7 +32,7 @@ target_link_libraries(TagReaderSecuritySmoke
         TagReaderCore
 )
 
-find_program(Python3_EXECUTABLE NAMES python3 REQUIRED)
+find_program(Python3_EXECUTABLE NAMES python3 python REQUIRED)
 
 set(TAGREADER_SECURITY_SAMPLE_DIR ${CMAKE_CURRENT_BINARY_DIR}/security/samples)
 set(TAGREADER_SECURITY_COVER_DIR ${CMAKE_CURRENT_BINARY_DIR}/security/covers)

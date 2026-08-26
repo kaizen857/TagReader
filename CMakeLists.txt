@@ -15,9 +15,9 @@ if(NOT N EQUAL 0)
     message(STATUS "Detected ${N} CPU cores, enabling parallel build with ${N} jobs")
     
     # MSVC 特定：设置 /MP 标志以启用多核编译
-    if(MSVC)
-        add_compile_options(/MP${N})
-        message(STATUS "MSVC: Enabled multi-processor compilation with /MP${N}")
+if(MSVC)
+add_compile_options(/MP${N} /utf-8 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE)
+message(STATUS "MSVC: Enabled multi-processor compilation with /MP${N}")
     endif()
 else()
     message(WARNING "Could not detect CPU count, parallel build may not be optimal")
