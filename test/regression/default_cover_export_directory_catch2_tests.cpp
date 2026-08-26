@@ -5,6 +5,9 @@
 
 TEST_CASE("DefaultCover: fallback directory ignores legacy root symlink", "[regression][DefaultCover]")
 {
+#if defined(_WIN32)
+    SKIP("default fallback directory fixture relies on POSIX semantics");
+#endif
     const std::filesystem::path root = default_cover_test::MakeCaseRoot("fallback");
     REQUIRE(default_cover_test::PrepareCaseRoot(root));
     const std::filesystem::path samplePath = root / "sample" / "cover-policy.mp3";
@@ -14,6 +17,9 @@ TEST_CASE("DefaultCover: fallback directory ignores legacy root symlink", "[regr
 
 TEST_CASE("DefaultCover: XDG runtime directory is preferred", "[regression][DefaultCover]")
 {
+#if defined(_WIN32)
+    SKIP("XDG runtime directory is POSIX-specific");
+#endif
     const std::filesystem::path root = default_cover_test::MakeCaseRoot("xdg-runtime");
     REQUIRE(default_cover_test::PrepareCaseRoot(root));
     const std::filesystem::path samplePath = root / "sample" / "cover-policy.mp3";
@@ -23,6 +29,9 @@ TEST_CASE("DefaultCover: XDG runtime directory is preferred", "[regression][Defa
 
 TEST_CASE("DefaultCover: default root symlink is rejected", "[regression][DefaultCover]")
 {
+#if defined(_WIN32)
+    SKIP("default root symlink fixture relies on POSIX semantics");
+#endif
     const std::filesystem::path root = default_cover_test::MakeCaseRoot("runtime-symlink");
     REQUIRE(default_cover_test::PrepareCaseRoot(root));
     const std::filesystem::path samplePath = root / "sample" / "cover-policy.mp3";

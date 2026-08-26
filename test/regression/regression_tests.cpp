@@ -37,11 +37,19 @@ extern "C"
 
 #if defined(__unix__) || defined(__APPLE__)
 #define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 1
+#define TAGREADER_REGRESSION_HAS_POSIX_FILE_API 1
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#elif defined(_WIN32)
+// Windows 下文件 API 由 platform/PosixCompat.hpp 提供（open/close/pread/stat 等），
+// 因此文件 API 断言可用；权限语义（chmod/geteuid）仍禁用。
+#define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 0
+#define TAGREADER_REGRESSION_HAS_POSIX_FILE_API 1
+#include "platform/PosixCompat.hpp"
 #else
 #define TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS 0
+#define TAGREADER_REGRESSION_HAS_POSIX_FILE_API 0
 #endif
 
 namespace
@@ -532,9 +540,18 @@ bool CommandSucceeds(const std::string &command)
     return std::system(command.c_str()) == 0;
 }
 
+bool FfmpegCliAvailable()
+{
+#if defined(_WIN32)
+    return CommandSucceeds("where ffmpeg >nul 2>&1");
+#else
+    return FfmpegCliAvailable();
+#endif
+}
+
 bool GenerateBaseM4a(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-001 requires an audio-backed M4A sample\n";
         return false;
@@ -552,7 +569,7 @@ bool GenerateBaseM4a(const std::filesystem::path &path)
 
 bool GenerateBaseAlac(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-037 requires an audio-backed ALAC sample\n";
         return false;
@@ -570,7 +587,7 @@ bool GenerateBaseAlac(const std::filesystem::path &path)
 
 bool GenerateBareAac(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-037 requires an audio-backed bare AAC sample\n";
         return false;
@@ -588,7 +605,7 @@ bool GenerateBareAac(const std::filesystem::path &path)
 
 bool GenerateOggVorbisSample(const std::filesystem::path &path, std::string_view title, std::string_view artist)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-002 requires an audio-backed Ogg Vorbis sample\n";
         return false;
@@ -615,7 +632,7 @@ bool GenerateOggVorbisSample(const std::filesystem::path &path, std::string_view
 
 bool GenerateOggOpusSample(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-039 requires an audio-backed Ogg Opus sample\n";
         return false;
@@ -633,7 +650,7 @@ bool GenerateOggOpusSample(const std::filesystem::path &path)
 
 bool GenerateBaseWav(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; WAV RIFF regression cases require an audio-backed WAV sample\n";
         return false;
@@ -651,7 +668,7 @@ bool GenerateBaseWav(const std::filesystem::path &path)
 
 bool GenerateFlacSample(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-003 requires audio-backed FLAC samples\n";
         return false;
@@ -669,7 +686,7 @@ bool GenerateFlacSample(const std::filesystem::path &path)
 
 bool GenerateBaseMp3(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-006 requires an audio-backed MP3 sample\n";
         return false;
@@ -687,7 +704,7 @@ bool GenerateBaseMp3(const std::filesystem::path &path)
 
 bool GenerateOneByOneJpeg(const std::filesystem::path &path)
 {
-    if (!CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+    if (!FfmpegCliAvailable())
     {
         std::cerr << "ffmpeg CLI not found; TR-AUDIT-014 requires a generated JPEG cover sample\n";
         return false;
@@ -1309,7 +1326,7 @@ bool PatchAiffFormSize(const std::filesystem::path &inputPath, const std::filesy
 
 bool ReadAiffRawMetadataForTest(const std::filesystem::path &path, const std::filesystem::path &coverExportDir, tagreader_core::RawMetadata &rawMetadata)
 {
-#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     std::error_code ec;
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0)
@@ -1344,7 +1361,7 @@ bool ReadDsdRawMetadataForTest(const std::filesystem::path &path,
                                bool dsf,
                                tagreader_core::RawMetadata &rawMetadata)
 {
-#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     std::error_code ec;
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0)
@@ -1387,7 +1404,7 @@ bool ReadAsfRawTagsForTest(const std::filesystem::path &path,
                            tagreader_core::RawMetadata &rawMetadata,
                            tagreader_core::RawLyrics &rawLyrics)
 {
-#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     std::error_code ec;
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0)
@@ -1526,7 +1543,7 @@ std::vector<std::uint8_t> MatroskaFile(const std::vector<std::uint8_t> &segmentP
 
 bool ReadMatroskaRawMetadataForTest(const std::filesystem::path &path, const std::filesystem::path &coverExportDir, tagreader_core::RawMetadata &rawMetadata)
 {
-#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     std::error_code ec;
     const int fd = ::open(path.c_str(), O_RDONLY);
     if (fd < 0)
@@ -2447,7 +2464,7 @@ MusicTag TryReadTagOrEmpty(const std::filesystem::path &path)
 
 std::optional<tagreader_core::TagFormat> DetectTagFormatForTest(const std::filesystem::path &path, std::string containerName)
 {
-#if !TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if !TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     (void)path;
     (void)containerName;
     return std::nullopt;
@@ -4828,7 +4845,7 @@ bool RunTrAudit025()
 
         // ── 2. FLAC + Vorbis Comment ──────────────────────────────
         {
-            if (CommandSucceeds("command -v ffmpeg >/dev/null 2>&1"))
+            if (FfmpegCliAvailable())
             {
                 const std::filesystem::path flacPath =
                     evidenceRoot / (std::string("strict-u16-flac-") + std::string(label) + ".flac");
@@ -5846,7 +5863,7 @@ bool RunTrAudit036()
         return false;
     }
 
-#if !TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if !TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     std::cerr << "TR-AUDIT-036 requires POSIX pread-backed FileInput\n";
     return false;
 #else
@@ -6392,7 +6409,7 @@ bool RunTrAudit040()
 
     const MusicTag tag = TagReader::Read(infoPath);
     tagreader_core::RawMetadata rawMetadata{};
-#if TAGREADER_REGRESSION_HAS_POSIX_PERMISSIONS
+#if TAGREADER_REGRESSION_HAS_POSIX_FILE_API
     const int infoFd = ::open(infoPath.c_str(), O_RDONLY);
     if (infoFd < 0)
     {

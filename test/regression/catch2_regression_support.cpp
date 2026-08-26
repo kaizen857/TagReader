@@ -14,7 +14,11 @@ bool CommandSucceeds(const std::string &command)
 
 bool HasFfmpeg()
 {
+#if defined(_WIN32)
+    return CommandSucceeds("where ffmpeg >nul 2>&1");
+#else
     return CommandSucceeds("command -v ffmpeg >/dev/null 2>&1");
+#endif
 }
 
 bool WriteBinaryFile(const std::filesystem::path &path, const std::vector<std::uint8_t> &bytes)
@@ -138,7 +142,11 @@ bool PrepareSymlink(const std::filesystem::path &target, const std::filesystem::
 
 bool SetEnvironment(std::string_view name, const std::filesystem::path &value)
 {
-#if defined(__unix__) || defined(__APPLE__)
+#if defined(_WIN32)
+    const std::string variable(name);
+    const std::string pathValue = value.string();
+    return ::_putenv_s(variable.c_str(), pathValue.c_str()) == 0;
+#elif defined(__unix__) || defined(__APPLE__)
     return ::setenv(std::string(name).c_str(), value.c_str(), 1) == 0;
 #else
     (void)name;
@@ -149,7 +157,10 @@ bool SetEnvironment(std::string_view name, const std::filesystem::path &value)
 
 bool UnsetEnvironment(std::string_view name)
 {
-#if defined(__unix__) || defined(__APPLE__)
+#if defined(_WIN32)
+    const std::string variable(name);
+    return ::_putenv_s(variable.c_str(), "") == 0;
+#elif defined(__unix__) || defined(__APPLE__)
     return ::unsetenv(std::string(name).c_str()) == 0;
 #else
     (void)name;

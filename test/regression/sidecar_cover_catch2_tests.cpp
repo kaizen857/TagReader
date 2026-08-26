@@ -180,53 +180,17 @@ namespace
 constexpr std::string_view kSidecarStems[] = {"cover", "front", "folder", "album", "artwork"};
 constexpr std::string_view kSidecarExts[] = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif", ".tiff"};
 
-std::size_t LetterCount(std::string_view input)
-{
-    std::size_t count = 0;
-    for (const char c : input)
-    {
-        if (std::isalpha(static_cast<unsigned char>(c)) != 0)
-        {
-            ++count;
-        }
-    }
-    return count;
-}
-
-std::string CaseVariant(std::string_view input, std::size_t mask)
-{
-    std::string out(input);
-    std::size_t letterIndex = 0;
-    for (std::size_t i = 0; i < out.size(); ++i)
-    {
-        if (std::isalpha(static_cast<unsigned char>(out[i])) != 0)
-        {
-            if (((mask >> letterIndex) & 1U) != 0)
-            {
-                out[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[i])));
-            }
-            ++letterIndex;
-        }
-    }
-    return out;
-}
-
-// Enumerates distinct sidecar candidate file names (case variants of the five
-// stems and seven extensions) in a deterministic order.
-std::string SidecarCandidateFileName(std::size_t index)
+std::string CanonicalSidecarCandidateFileName(std::size_t index)
 {
     for (const std::string_view stem : kSidecarStems)
     {
-        const std::size_t stemVariants = std::size_t{1} << LetterCount(stem);
         for (const std::string_view ext : kSidecarExts)
         {
-            const std::size_t extVariants = std::size_t{1} << LetterCount(ext);
-            const std::size_t total = stemVariants * extVariants;
-            if (index < total)
+            if (index == 0)
             {
-                return CaseVariant(stem, index % stemVariants) + CaseVariant(ext, index / stemVariants);
+                return std::string(stem) + std::string(ext);
             }
-            index -= total;
+            --index;
         }
     }
     return {};
@@ -236,7 +200,7 @@ void WriteCandidateFiles(const std::filesystem::path &dir, std::size_t begin, st
 {
     for (std::size_t i = begin; i < end; ++i)
     {
-        REQUIRE(WriteSparseFile(dir / SidecarCandidateFileName(i), 1, 0x00));
+        REQUIRE(WriteSparseFile(dir / CanonicalSidecarCandidateFileName(i), 1, 0x00));
     }
 }
 
@@ -274,36 +238,37 @@ bool WriteTaggedMp3(const std::filesystem::path &output, std::string_view title,
 }
 }
 
-TEST_CASE("Sidecar cover discovery enforces the 4096-entry candidate limit", "[Sidecar][cover][limit]")
+TEST_CASE("Sidecar cover discovery enforces the configured entry limit", "[Sidecar][cover][limit]")
 {
     const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("sidecar_cover_entry_limit");
     REQUIRE(EnsureCleanRoot(root));
     const std::filesystem::path audioPath = root / "audio.mp3";
 
     CoverProcessingOptions options;
+    options.maxSidecarEntries = 11;
     tagreader_core::ReadContext context;
     context.filePath = audioPath;
     context.coverExportDir = root / "export";
     context.coverOptions = &options;
 
-    // Exactly 4096 candidates are accepted: each one is read, debited and
+    // Exactly 11 candidates are accepted: each one is read, debited and
     // rejected as not-an-image, so the read degrades to no-art.
-    WriteCandidateFiles(root, 0, 4096);
+    WriteCandidateFiles(root, 0, 11);
     const tagreader_cover::CoverPaths accepted = tagreader_cover::ExportSidecarCover(context);
     CHECK(accepted.fullSizePath.empty());
     CHECK(accepted.thumbnailPath.empty());
-    CHECK(context.coverSourceBytesDebited == 4096);
+    CHECK(context.coverSourceBytesDebited == 11);
 
-    // The 4097th candidate trips the limit during discovery, before any read.
+    // The 12th candidate trips the limit during discovery, before any read.
     tagreader_core::ReadContext limited;
     limited.filePath = audioPath;
     limited.coverExportDir = root / "export-2";
     limited.coverOptions = &options;
-    WriteCandidateFiles(root, 4096, 4097);
+    WriteCandidateFiles(root, 11, 12);
     try
     {
         (void)tagreader_cover::ExportSidecarCover(limited);
-        FAIL("4097 sidecar candidates must trip the entry limit");
+        FAIL("12 sidecar candidates must trip the entry limit");
     }
     catch (const CoverProcessingError &ex)
     {
@@ -367,6 +332,9 @@ TEST_CASE("Sidecar cover discovery shares the cumulative source budget", "[Sidec
 
 TEST_CASE("Sidecar cover discovery fails on an unreadable directory", "[Sidecar][cover][discovery]")
 {
+#if defined(_WIN32)
+    SKIP("POSIX directory permissions do not make a Windows directory unreadable");
+#endif
     const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("sidecar_cover_unreadable_dir");
     REQUIRE(EnsureCleanRoot(root));
     const std::filesystem::path music = root / "music";
@@ -405,9 +373,10 @@ TEST_CASE("Sidecar entry limit failure under Ignore keeps metadata", "[Sidecar][
     REQUIRE(EnsureCleanRoot(root));
     const std::filesystem::path audioPath = root / "audio.mp3";
     REQUIRE(WriteTaggedMp3(audioPath, "sidecar-ignore-title", {}));
-    WriteCandidateFiles(root, 0, 4097);
-
     CoverProcessingOptions options;
+    options.maxSidecarEntries = 11;
+    WriteCandidateFiles(root, 0, 12);
+
     options.failurePolicy = CoverProcessingOptions::CoverFailurePolicy::Ignore;
     const MusicTag tag = TagReader::Read(audioPath, root / "export", options);
     CHECK(tag.title() == "sidecar-ignore-title");
