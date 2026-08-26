@@ -3,6 +3,7 @@
 #include "common/ParseHelpers.hpp"
 #include "core/CoverBudget.hpp"
 #include "cover/CoverDecoder.hpp"
+#include "platform/PosixCompat.hpp"
 #include "profiling/Profiling.hpp"
 #include "TagReaderInternal.hpp"
 #include "TagReader.hpp"
@@ -35,9 +36,10 @@ extern "C"
 #include <vector>
 
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
+// POSIX fd API（open/close/read/write/fstat/unlink/getpid/fsync/flock 及 LOCK_*/O_CLOEXEC 宏）
+// 由 platform/PosixCompat.hpp 提供（Windows 下映射到 CRT 等价物）。
 
 namespace tagreader_cover
 {
@@ -168,6 +170,12 @@ void RemoveFileNoThrow(const std::filesystem::path &path) noexcept
 
 void FsyncDirectory(const std::filesystem::path &directory)
 {
+#if defined(_WIN32)
+    // Windows 无法以只读方式打开目录句柄（_wopen 返回 Permission denied），
+    // 且 NTFS 目录项耐久性由文件系统保证，文件本身已通过 _commit 落盘，
+    // 目录 fsync 在此平台上无对应语义，直接跳过。
+    (void)directory;
+#else
     int flags = O_RDONLY | O_CLOEXEC;
 #if defined(O_DIRECTORY)
     flags |= O_DIRECTORY;
@@ -181,6 +189,7 @@ void FsyncDirectory(const std::filesystem::path &directory)
     {
         ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover cache failed to fsync directory: " + directory.string() + ": " + std::strerror(errno), directory);
     }
+#endif
 }
 
 PublishResult PublishFileIfAbsent(const std::filesystem::path &tempPath, const std::filesystem::path &finalPath)
@@ -265,7 +274,7 @@ void ValidateExistingCoverCacheFile(const std::filesystem::path &path, const std
         ThrowCoverCacheValidationError(path, "failed to open for validation");
     }
 
-    struct stat statBuffer
+    tagreader_stat_t statBuffer
     {
     };
     if (::fstat(fd.get(), &statBuffer) != 0)
@@ -364,7 +373,7 @@ bool IsReusableCoverCacheFile(const std::filesystem::path &path, const std::vect
         ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "cover cache failed to open file for validation: " + path.string() + ": " + std::strerror(errno), path);
     }
 
-    struct stat statBuffer
+    tagreader_stat_t statBuffer
     {
     };
     if (::fstat(fd.get(), &statBuffer) != 0)
