@@ -54,7 +54,9 @@ CuePathResolution ResolveCueFileReference(const std::filesystem::path &cuePath, 
         const std::filesystem::file_status status = std::filesystem::symlink_status(resolved, ec);
         if (ec)
         {
-            if (ec == std::make_error_code(std::errc::no_such_file_or_directory))
+            // error_condition 语义比较（error_code vs errc 走 equivalent 映射；
+            // make_error_code 比较在 MSVC 下因 category 不同恒为 false）
+            if (ec == std::errc::no_such_file_or_directory)
             {
                 return MakeResolution(CuePathResolutionStatus::Missing, resolved);
             }

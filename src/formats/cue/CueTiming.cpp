@@ -35,12 +35,15 @@ std::optional<std::chrono::microseconds> ParseCueIndexTime(const CueIndex &index
     }
 
     const std::uint64_t totalFrames = totalSeconds * kFramesPerSecond + frames;
-    const __int128 scaled = static_cast<__int128>(totalFrames) * static_cast<__int128>(kMicrosecondsPerSecond);
-    if (scaled < 0)
+    // totalFrames * kMicrosecondsPerSecond 必须能安全放入 int64（含进位取整余量），
+    // 否则返回 nullopt。等价于原 __int128 实现的合法输入行为（GCC 扩展，MSVC 不可用）。
+    constexpr std::uint64_t kMicrosecondsPerSecondValue = kMicrosecondsPerSecond;
+    if (totalFrames > (static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) - (kFramesPerSecond / 2)) / kMicrosecondsPerSecondValue)
     {
         return std::nullopt;
     }
 
+    const std::uint64_t scaled = totalFrames * kMicrosecondsPerSecondValue;
     return std::chrono::microseconds{static_cast<std::int64_t>((scaled + (kFramesPerSecond / 2)) / kFramesPerSecond)};
 }
 

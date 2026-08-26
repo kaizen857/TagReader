@@ -170,7 +170,9 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
 {
     std::error_code ec;
     const std::filesystem::file_status rootStatus = std::filesystem::symlink_status(coverExportDir, ec);
-    if (ec && ec != std::make_error_code(std::errc::no_such_file_or_directory))
+    // 用 error_condition 语义比较（error_code vs errc 的 operator== 走 category.equivalent()
+    // 映射）；make_error_code 构造的 error_code 比较要求两侧 category 相同，MSVC 下恒 false。
+    if (ec && ec != std::errc::no_such_file_or_directory)
     {
         throw std::runtime_error("failed to query cover export directory: " + ec.message());
     }
@@ -253,7 +255,12 @@ void RejectDefaultCoverExportDirSymlink(const std::filesystem::path &coverExport
     const std::filesystem::file_status status = std::filesystem::symlink_status(coverExportDir, ec);
     if (ec)
     {
-        if (ec == std::make_error_code(std::errc::no_such_file_or_directory))
+        // 目录尚不存在时由调用方（HardenDefaultCoverExportDir）负责创建。
+        // 注意：必须用 error_condition 形式比较（error_code 与 errc 的 operator==
+        // 会走 category. equivalent() 映射）；用 make_error_code 构造 error_code
+        // 再比较会要求两侧 category 相同，在 MSVC（system_category vs generic_category）
+        // 下恒为 false。
+        if (ec == std::errc::no_such_file_or_directory)
         {
             return;
         }
