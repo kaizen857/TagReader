@@ -143,6 +143,10 @@ inline int link(const wchar_t *existingPath, const wchar_t *newPath)
 #else
 
 #include <fcntl.h>
+// flock()/LOCK_SH/LOCK_EX/LOCK_NB 的声明所在（glibc/macOS/BSD 通用）；
+// 勿移除——<fcntl.h> 只提供 struct flock 类型，缺此头会让 ::flock(...)
+// 被解析为函数式类型转换而编译失败。
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
