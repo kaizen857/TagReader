@@ -90,7 +90,10 @@ private:
         std::string out = "cover processing error [" + std::string(CodeName(code)) + "]: " + message;
         if (!path.empty())
         {
-            out += " (path: " + path.string() + ")";
+            // u8string 恒为 UTF-8；path.string() 在 Windows 按 CP_ACP 转换，
+            // 字符不可表示时抛 std::system_error（ERROR_NO_UNICODE_TRANSLATION）。
+            const auto utf8 = path.u8string();
+            out += " (path: " + std::string{utf8.begin(), utf8.end()} + ")";
         }
         return out;
     }
@@ -171,8 +174,8 @@ public:
     // 只查找 folderPath 自身目录中的 cover/front/folder/album/artwork 图像，
     // 复用与 Read 相同的 sidecar 查找规则与内容寻址 PNG 缓存。
     // 无候选或全部失败：返回 thumbnailPath 为空的 MusicTag（不抛错）。
-    static MusicTag ExportFolderCover(std::string folderPath,
-                                      std::string coverExportDir,
+    static MusicTag ExportFolderCover(const std::filesystem::path &folderPath,
+                                      const std::filesystem::path &coverExportDir,
                                       const CoverProcessingOptions &options);
 };
 

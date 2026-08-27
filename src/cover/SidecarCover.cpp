@@ -38,6 +38,12 @@ constexpr std::array<std::string_view, 7> kSidecarCoverExtensions{
 constexpr std::size_t kDefaultMaxSidecarEntries = 4096;
 constexpr std::uint64_t kLegacySingleCandidateLimit = 64ULL * 1024ULL * 1024ULL;
 
+[[nodiscard]] std::string Utf8Text(const std::filesystem::path &path)
+{
+    const auto utf8 = path.u8string();
+    return std::string{reinterpret_cast<const char *>(utf8.data()), utf8.size()};
+}
+
 bool EqualsIgnoreCase(std::string_view left, std::string_view right)
 {
     if (left.size() != right.size())
@@ -58,7 +64,7 @@ bool EqualsIgnoreCase(std::string_view left, std::string_view right)
 
 bool IsSidecarCoverFile(const std::filesystem::path &path)
 {
-    const std::string extension = path.extension().string();
+    const std::string extension = Utf8Text(path.extension());
     for (const std::string_view allowedExtension : kSidecarCoverExtensions)
     {
         if (EqualsIgnoreCase(extension, allowedExtension))
@@ -111,7 +117,7 @@ CoverPaths ExportSidecarCoverFromDirectory(const std::filesystem::path &director
                 continue;
             }
 
-            const std::string stem = entry.path().stem().string();
+            const std::string stem = Utf8Text(entry.path().stem());
             for (std::size_t priority = 0; priority < kSidecarCoverNames.size(); ++priority)
             {
                 if (EqualsIgnoreCase(stem, kSidecarCoverNames[priority]))
@@ -140,7 +146,7 @@ CoverPaths ExportSidecarCoverFromDirectory(const std::filesystem::path &director
     {
         std::sort(candidates.begin(), candidates.end(), [](const std::filesystem::path &left, const std::filesystem::path &right)
         {
-            return left.filename().string() < right.filename().string();
+            return Utf8Text(left.filename()) < Utf8Text(right.filename());
         });
     }
 

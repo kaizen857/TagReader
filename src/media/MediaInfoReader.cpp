@@ -28,6 +28,12 @@ namespace
 using tagreader_common::ToLower;
 using tagreader_core::DetectedContainer;
 
+[[nodiscard]] std::string Utf8Text(const std::filesystem::path &path)
+{
+    const auto utf8 = path.u8string();
+    return std::string{reinterpret_cast<const char *>(utf8.data()), utf8.size()};
+}
+
 uint32_t ClampToUint32(std::int64_t value)
 {
     if (value < 0 || value > std::numeric_limits<uint32_t>::max())
@@ -79,7 +85,7 @@ std::string NormalizeFormatName(const std::filesystem::path &filePath, std::stri
         return normalized;
     }
 
-    std::string extension = ToLower(filePath.extension().string());
+    std::string extension = ToLower(Utf8Text(filePath.extension()));
     if (!extension.empty() && extension.front() == '.')
     {
         extension.erase(extension.begin());
@@ -106,7 +112,7 @@ std::string NormalizeContainerFormatName(const tagreader_core::ReadContext &cont
         return "ogg";
     case DetectedContainer::Mp4:
     {
-        std::string extension = ToLower(context.filePath.extension().string());
+        std::string extension = ToLower(Utf8Text(context.filePath.extension()));
         if (!extension.empty() && extension.front() == '.')
         {
             extension.erase(extension.begin());

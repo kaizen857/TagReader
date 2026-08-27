@@ -33,7 +33,7 @@ std::vector<MusicTag> TagReader::ReadCueSheet(const std::filesystem::path &fileP
     return tagreader_cue::ReadCueSheet(filePath, coverExportDir, options);
 }
 
-MusicTag TagReader::ExportFolderCover(std::string folderPath, std::string coverExportDir, const CoverProcessingOptions &options)
+MusicTag TagReader::ExportFolderCover(const std::filesystem::path &folderPath, const std::filesystem::path &coverExportDir, const CoverProcessingOptions &options)
 {
     tagreader_core::ReadContext context;
     context.filePath = folderPath;

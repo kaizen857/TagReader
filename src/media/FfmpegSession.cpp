@@ -36,6 +36,15 @@ extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests() __attribute__
 
 namespace
 {
+[[nodiscard]] std::string Utf8Text(const std::filesystem::path &path)
+{
+    const auto utf8 = path.u8string();
+    return std::string{reinterpret_cast<const char *>(utf8.data()), utf8.size()};
+}
+}
+
+namespace
+{
 struct FfmpegAvioState
 {
     int fd{-1};
@@ -242,7 +251,7 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     }
     if (symbolicLink)
     {
-        throw std::runtime_error("Rejecting symbolic link path: " + filePath.string());
+        throw std::runtime_error("Rejecting symbolic link path: " + Utf8Text(filePath));
     }
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -269,11 +278,11 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     }
     if (!S_ISREG(statBuffer.st_mode))
     {
-        throw std::runtime_error("opened input is not a regular file: " + filePath.string());
+        throw std::runtime_error("opened input is not a regular file: " + Utf8Text(filePath));
     }
     if (statBuffer.st_size < 0)
     {
-        throw std::runtime_error("opened input has negative file size: " + filePath.string());
+        throw std::runtime_error("opened input has negative file size: " + Utf8Text(filePath));
     }
     context.fileSize = static_cast<std::uintmax_t>(statBuffer.st_size);
     context.lastModified = FileTimeFromStat(statBuffer);
@@ -294,11 +303,11 @@ tagreader_core::ReadContext OpenContext(const std::filesystem::path &filePath)
     }
     if (!S_ISREG(statBuffer.st_mode))
     {
-        throw std::runtime_error("opened input is not a regular file: " + filePath.string());
+        throw std::runtime_error("opened input is not a regular file: " + Utf8Text(filePath));
     }
     if (statBuffer.st_size < 0)
     {
-        throw std::runtime_error("opened input has negative file size: " + filePath.string());
+        throw std::runtime_error("opened input has negative file size: " + Utf8Text(filePath));
     }
     context.fileSize = static_cast<std::uintmax_t>(statBuffer.st_size);
     context.lastModified = FileTimeFromStat(statBuffer);

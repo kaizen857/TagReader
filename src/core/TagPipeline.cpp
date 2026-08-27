@@ -44,6 +44,15 @@
 #define TAGREADER_HAS_POSIX_DEFAULT_COVER_DIR 0
 #endif
 
+namespace
+{
+[[nodiscard]] std::string Utf8Text(const std::filesystem::path &path)
+{
+    const auto utf8 = path.u8string();
+    return std::string{reinterpret_cast<const char *>(utf8.data()), utf8.size()};
+}
+}
+
 namespace tagreader_core
 {
 using tagreader_text::NormalizeLyrics;
@@ -94,7 +103,7 @@ private:
 
 [[noreturn]] void ThrowDefaultCoverExportDirError(const std::filesystem::path &coverExportDir, const std::string &reason)
 {
-    throw std::runtime_error("cover export default directory is not private: " + coverExportDir.string() + ": " + reason);
+    throw std::runtime_error("cover export default directory is not private: " + Utf8Text(coverExportDir) + ": " + reason);
 }
 
 std::filesystem::path DefaultCoverExportDirImpl()
@@ -152,7 +161,7 @@ void ValidatePath(const std::filesystem::path &filePath)
     }
     if (!exists)
     {
-        throw std::runtime_error("file does not exist: " + filePath.string());
+        throw std::runtime_error("file does not exist: " + Utf8Text(filePath));
     }
 
     const bool regularFile = std::filesystem::is_regular_file(filePath, ec);
@@ -162,7 +171,7 @@ void ValidatePath(const std::filesystem::path &filePath)
     }
     if (!regularFile)
     {
-        throw std::runtime_error("path is not a regular file: " + filePath.string());
+        throw std::runtime_error("path is not a regular file: " + Utf8Text(filePath));
     }
 }
 
@@ -178,7 +187,7 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
     }
     if (!ec && std::filesystem::is_symlink(rootStatus))
     {
-        throw std::runtime_error("cover export directory symlink is not allowed: " + coverExportDir.string());
+        throw std::runtime_error("cover export directory symlink is not allowed: " + Utf8Text(coverExportDir));
     }
     ec.clear();
 
@@ -195,7 +204,7 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
     }
     if (!exists)
     {
-        throw std::runtime_error("cover export directory does not exist: " + coverExportDir.string());
+        throw std::runtime_error("cover export directory does not exist: " + Utf8Text(coverExportDir));
     }
 
     const bool directory = std::filesystem::is_directory(coverExportDir, ec);
@@ -205,7 +214,7 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
     }
     if (!directory)
     {
-        throw std::runtime_error("cover export path is not a directory: " + coverExportDir.string());
+        throw std::runtime_error("cover export path is not a directory: " + Utf8Text(coverExportDir));
     }
 
     const std::filesystem::path probePath = MakeCoverExportProbePath(coverExportDir);
@@ -221,13 +230,13 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
         if (!output)
         {
             removeProbe();
-            throw std::runtime_error("cover export directory is not writable: " + coverExportDir.string());
+            throw std::runtime_error("cover export directory is not writable: " + Utf8Text(coverExportDir));
         }
         output << "tagreader-cover-export-probe\n";
         if (!output.good())
         {
             removeProbe();
-            throw std::runtime_error("cover export probe write failed: " + coverExportDir.string());
+            throw std::runtime_error("cover export probe write failed: " + Utf8Text(coverExportDir));
         }
     }
 
@@ -237,7 +246,7 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
         if (!input || !std::getline(input, probe) || probe != "tagreader-cover-export-probe")
         {
             removeProbe();
-            throw std::runtime_error("cover export probe read failed: " + coverExportDir.string());
+            throw std::runtime_error("cover export probe read failed: " + Utf8Text(coverExportDir));
         }
     }
 
@@ -245,7 +254,7 @@ void ValidateCoverExportDirImpl(const std::filesystem::path &coverExportDir)
     if (ec)
     {
         removeProbe();
-        throw std::runtime_error("cover export probe delete failed: " + coverExportDir.string() + ": " + ec.message());
+        throw std::runtime_error("cover export probe delete failed: " + Utf8Text(coverExportDir) + ": " + ec.message());
     }
 }
 

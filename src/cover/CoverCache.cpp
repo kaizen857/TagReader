@@ -51,6 +51,12 @@ constexpr tagreader_internal::CoverDecodeLimits kCoverDecodeLimits{};
 constexpr std::size_t kMaxCoverInputBytes = 64z * 1024 * 1024;
 constexpr std::array<uint8_t, 8> kPngSignature{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
+[[nodiscard]] std::string Utf8Text(const std::filesystem::path &path)
+{
+    const auto utf8 = path.u8string();
+    return std::string{reinterpret_cast<const char *>(utf8.data()), utf8.size()};
+}
+
 [[noreturn]] void ThrowTypedCoverError(CoverErrorCode code, const std::string &message, const std::filesystem::path &path = {})
 {
     throw CoverProcessingError{code, message, path};
@@ -109,7 +115,7 @@ std::filesystem::path BuildCoverCachePath(const std::filesystem::path &coverExpo
 
 [[noreturn]] void ThrowCoverCacheValidationError(const std::filesystem::path &path, const std::string &reason)
 {
-    ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "invalid cover cache file " + path.string() + ": " + reason, path);
+    ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "invalid cover cache file " + Utf8Text(path) + ": " + reason, path);
 }
 
 struct FileDescriptor
@@ -149,7 +155,7 @@ std::filesystem::path MakeSiblingTempPath(const std::filesystem::path &finalPath
     static std::atomic_uint64_t tempCounter{0};
     const auto now = std::filesystem::file_time_type::clock::now().time_since_epoch().count();
     const auto seq = tempCounter.fetch_add(1, std::memory_order_relaxed);
-    const std::string name = finalPath.filename().string() + ".tmp." + std::to_string(::getpid()) + "." + std::to_string(now) + "." + std::to_string(seq);
+    const std::string name = Utf8Text(finalPath.filename()) + ".tmp." + std::to_string(::getpid()) + "." + std::to_string(now) + "." + std::to_string(seq);
     return finalPath.parent_path() / name;
 }
 
@@ -183,11 +189,11 @@ void FsyncDirectory(const std::filesystem::path &directory)
     FileDescriptor fd(::open(directory.c_str(), flags));
     if (fd.get() < 0)
     {
-        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover cache failed to open directory for fsync: " + directory.string() + ": " + std::strerror(errno), directory);
+        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover cache failed to open directory for fsync: " + Utf8Text(directory) + ": " + std::strerror(errno), directory);
     }
     if (::fsync(fd.get()) != 0)
     {
-        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover cache failed to fsync directory: " + directory.string() + ": " + std::strerror(errno), directory);
+        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover cache failed to fsync directory: " + Utf8Text(directory) + ": " + std::strerror(errno), directory);
     }
 #endif
 }
@@ -232,11 +238,11 @@ void WriteAll(int fd, const uint8_t *data, std::size_t size, const std::filesyst
             {
                 continue;
             }
-            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to write cover file: " + path.string() + ": " + std::strerror(errno), path);
+            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to write cover file: " + Utf8Text(path) + ": " + std::strerror(errno), path);
         }
         if (result == 0)
         {
-            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to write complete cover file: " + path.string(), path);
+            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to write complete cover file: " + Utf8Text(path), path);
         }
         written += static_cast<std::size_t>(result);
     }
@@ -348,7 +354,7 @@ bool IsReusableCoverCacheFile(const std::filesystem::path &path, const std::vect
         {
             return false;
         }
-        ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "cover cache failed to query file " + path.string() + ": " + statusEc.message(), path);
+        ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "cover cache failed to query file " + Utf8Text(path) + ": " + statusEc.message(), path);
     }
     if (!std::filesystem::exists(status))
     {
@@ -370,7 +376,7 @@ bool IsReusableCoverCacheFile(const std::filesystem::path &path, const std::vect
     FileDescriptor fd(::open(path.c_str(), flags));
     if (fd.get() < 0)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "cover cache failed to open file for validation: " + path.string() + ": " + std::strerror(errno), path);
+        ThrowTypedCoverError(CoverErrorCode::CacheReadFailed, "cover cache failed to open file for validation: " + Utf8Text(path) + ": " + std::strerror(errno), path);
     }
 
     tagreader_stat_t statBuffer
@@ -450,15 +456,15 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
     std::filesystem::create_directories(finalPath.parent_path(), ec);
     if (ec)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create directory " + finalPath.parent_path().string() + ": " + ec.message(), finalPath.parent_path());
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create directory " + Utf8Text(finalPath.parent_path()) + ": " + ec.message(), finalPath.parent_path());
     }
     if (!std::filesystem::is_directory(finalPath.parent_path(), ec))
     {
         if (ec)
         {
-            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query directory " + finalPath.parent_path().string() + ": " + ec.message(), finalPath.parent_path());
+            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query directory " + Utf8Text(finalPath.parent_path()) + ": " + ec.message(), finalPath.parent_path());
         }
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache path parent is not a directory: " + finalPath.parent_path().string(), finalPath.parent_path());
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache path parent is not a directory: " + Utf8Text(finalPath.parent_path()), finalPath.parent_path());
     }
 
     if (std::filesystem::exists(finalPath, ec))
@@ -467,7 +473,7 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
     }
     if (ec)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query file " + finalPath.string() + ": " + ec.message(), finalPath);
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query file " + Utf8Text(finalPath) + ": " + ec.message(), finalPath);
     }
 
     for (int attempt = 0; attempt < 16; ++attempt)
@@ -484,7 +490,7 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
             {
                 continue;
             }
-            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to create temporary cover file: " + tempPath.string() + ": " + std::strerror(errno), tempPath);
+            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to create temporary cover file: " + Utf8Text(tempPath) + ": " + std::strerror(errno), tempPath);
         }
 
         try
@@ -497,12 +503,12 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
                 TAGREADER_PROFILE_SCOPE_COLOR("fsync", TAGREADER_COLOR_IO);
                 if (::fsync(fd.get()) != 0)
                 {
-                    ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to fsync cover file: " + tempPath.string() + ": " + std::strerror(errno), tempPath);
+                    ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to fsync cover file: " + Utf8Text(tempPath) + ": " + std::strerror(errno), tempPath);
                 }
             }
             if (::close(fd.release()) != 0)
             {
-                ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to close cover file: " + tempPath.string() + ": " + std::strerror(errno), tempPath);
+                ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to close cover file: " + Utf8Text(tempPath) + ": " + std::strerror(errno), tempPath);
             }
         }
         catch (...)
@@ -521,10 +527,10 @@ bool AtomicWriteFileIfAbsent(const std::filesystem::path &finalPath, const uint8
         {
             return true;
         }
-        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover export failed to publish cover file: " + finalPath.string() + ": " + std::strerror(errno), finalPath);
+        ThrowTypedCoverError(CoverErrorCode::PublicationFailed, "cover export failed to publish cover file: " + Utf8Text(finalPath) + ": " + std::strerror(errno), finalPath);
     }
 
-    ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to create unique temporary cover file for: " + finalPath.string(), finalPath);
+    ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export failed to create unique temporary cover file for: " + Utf8Text(finalPath), finalPath);
 }
 }
 
@@ -567,19 +573,19 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
     std::filesystem::create_directories(coverPath.parent_path(), ec);
     if (ec)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create shard directory " + coverPath.parent_path().string() + ": " + ec.message(), coverPath.parent_path());
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create shard directory " + Utf8Text(coverPath.parent_path()) + ": " + ec.message(), coverPath.parent_path());
     }
     if (!std::filesystem::is_directory(coverPath.parent_path(), ec))
     {
         if (ec)
         {
-            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query shard directory " + coverPath.parent_path().string() + ": " + ec.message(), coverPath.parent_path());
+            ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to query shard directory " + Utf8Text(coverPath.parent_path()) + ": " + ec.message(), coverPath.parent_path());
         }
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache shard path is not a directory: " + coverPath.parent_path().string(), coverPath.parent_path());
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache shard path is not a directory: " + Utf8Text(coverPath.parent_path()), coverPath.parent_path());
     }
-    if (ToLower(coverPath.extension().string()) != ".png")
+    if (ToLower(Utf8Text(coverPath.extension())) != ".png")
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export path must use .png extension: " + coverPath.string(), coverPath);
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover export path must use .png extension: " + Utf8Text(coverPath), coverPath);
     }
 
     std::unique_lock<std::mutex> lock = LockCoverCacheShard(contentHash);
@@ -610,16 +616,17 @@ std::filesystem::path WriteCoverAsPng(const std::filesystem::path &coverExportDi
         return {};
     }
 
-    const std::filesystem::path lockPath = coverPath.string() + ".lock";
+    std::filesystem::path lockPath = coverPath;
+    lockPath += ".lock";
     FileDescriptor lockFd(::open(lockPath.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, 0600));
     if (lockFd.get() < 0)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create lock file " + lockPath.string() + ": " + std::strerror(errno), lockPath);
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to create lock file " + Utf8Text(lockPath) + ": " + std::strerror(errno), lockPath);
     }
 
     if (::flock(lockFd.get(), LOCK_EX) != 0)
     {
-        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to acquire lock " + lockPath.string() + ": " + std::strerror(errno), lockPath);
+        ThrowTypedCoverError(CoverErrorCode::CacheWriteFailed, "cover cache failed to acquire lock " + Utf8Text(lockPath) + ": " + std::strerror(errno), lockPath);
     }
 
     if (IsReusableCoverCacheFile(coverPath, png))
