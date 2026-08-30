@@ -222,6 +222,14 @@ std::string ConvertTextWithIconv(const uint8_t *data, std::size_t size, const ch
         const std::size_t result = iconv(cd.get(), const_cast<char **>(&inputData), &inputLeft, &outputData, &outputLeft);
         if (result != static_cast<std::size_t>(-1))
         {
+            // iconv 的返回值是“不可逆转换”的个数（即有损替代）。编码探测依赖
+            // “该候选能否干净解码”来选胜，有损结果必须当作未命中，否则会把
+            // 错误候选误判为命中。各平台 libiconv 在非法字节上行为不一：有的返回
+            // EILSEQ，有的静默替代后正常返回，不能只依赖前者。
+            if (result != 0)
+            {
+                return {};
+            }
             continue;
         }
 
