@@ -52,6 +52,7 @@
 - 另有 `release`、`sanitize`、`fuzz`、`profile` presets。Release 强制关闭 profiling；Fuzz 仅在 Clang/libFuzzer 下生成 `TagReaderFuzz`，相关 CTest 先生成 corpus；Profile 依赖系统 TracyClient 与 `/usr/include/Tracy`，不是 pkg-config 入口。
 - FFmpeg 依赖由 pkg-config 解析：`libavformat`、`libavcodec`、`libavutil`、`libswscale`。Iconv 默认必需，只有显式设置 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON` 才允许回退；另有 `TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS` 用于测试无 Iconv 策略路径。
 - Catch2 默认优先系统包（`TAGREADER_USE_SYSTEM_CATCH2=ON`），缺失时 FetchContent 下载 v3.7.1，离线环境首次配置需要网络。
-- `release`/`profile` 编译参数含 `-march=native`，产物仅限本机使用，不可跨机器分发。
+- `release` 使用 `-march=x86-64` 基线 + LTO（由 `release` preset 的 `CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON` 提供，CMakeLists 不手写 LTO 避免双源漂移），产物可跨机器分发；仅 `profile` 保留 `-march=native`，产物仅限本机使用，不可跨机器分发。
+- `TagReaderCore` 支持安装导出：`cmake --install`（`install(EXPORT TagReaderCoreTargets)` + `cmake/TagReaderCoreConfig.cmake.in`）装到共享前缀后，后端/前端可 `find_package(TagReaderCore CONFIG)` 复用构建产物（CI 顺序链）。
 - `test/regression/regression_tests.cpp` 不是独立 target，但被 `tr_audit_001_031_catch2_tests.cpp` 与 `tr_audit_032_056_catch2_tests.cpp` 以 `#include` 方式文本包含编译（提供 `RunTrAudit*` 实现，由 TR-AUDIT-001~056 用例调用）；活跃用例在 `*_catch2_tests.cpp` 中。
 - `TagReaderTest` 仅是人工 CLI：`./build/default/TagReaderTest <audio-file-path> [cover-export-dir]`，不能替代 CTest。
