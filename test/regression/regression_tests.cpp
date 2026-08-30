@@ -719,7 +719,11 @@ bool GenerateOneByOneJpeg(const std::filesystem::path &path)
         return false;
     }
 
-    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i color=c=red:s=1x1 -frames:v 1 \"" + path.string() + "\"";
+    // FFmpeg 6.x 的 color 滤镜拒绝任何为 1 的边长（1x1/1x2/2x1 均报
+    // "Picture size 0x0 is invalid"，2x2、3x3 正常），7.x 之后才支持。
+    // 改为先生成 2x2 再缩到 1x1，产物仍是真正的 1x1 JPEG，且跨版本一致。
+    const std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i color=c=red:s=2x2 "
+                               "-vf scale=1:1 -frames:v 1 \"" + path.string() + "\"";
     if (!CommandSucceeds(command))
     {
         std::cerr << "failed to generate JPEG cover sample with ffmpeg\n";
