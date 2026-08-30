@@ -31,7 +31,8 @@ endif()
 #   （GCC -flto / MSVC /GL+/LTCG）提供，不在此手写，避免与 preset 双源漂移；
 # - 指令集显式基线 x86-64（替代原 -march=native：native 产物不可跨机器分发，
 #   老 CPU 上会 SIGILL；基线保证 AppImage/deb/rpm 可分发）。
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     add_compile_options(-march=x86-64)
 endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -173,13 +174,21 @@ endif()
 add_library(TagReaderCore STATIC ${TAGREADER_CORE_SOURCES})
 
 # fpng 需要特殊的编译标志以启用 SIMD 优化
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     set_source_files_properties(third_party/fpng/fpng.cpp PROPERTIES COMPILE_FLAGS "-msse4.1 -mpclmul")
 elseif(MSVC)
     set_source_files_properties(third_party/fpng/fpng.cpp PROPERTIES COMPILE_FLAGS "/arch:AVX")
 endif()
 
 tagreader_enable_sanitizers(TagReaderCore)
+
+if(APPLE)
+    # FfmpegSession.cpp 的测试钩子是弱符号；ld64 对"处处未定义"的弱符号仍会报错，
+    # 需显式允许该符号未定义（运行期解析为 nullptr，与 ELF 弱符号语义一致）。
+    target_link_options(TagReaderCore INTERFACE
+        "LINKER:-U,_TagReaderOpenContextAfterInitialOpenHookForTests")
+endif()
 
 target_include_directories(TagReaderCore
     PUBLIC

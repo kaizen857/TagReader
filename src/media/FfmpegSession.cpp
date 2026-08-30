@@ -30,7 +30,10 @@ extern "C"
 #include <unistd.h>
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__APPLE__)
+// Mach-O 下未定义的弱符号必须用 weak_import 声明，否则链接期直接报 undefined。
+extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests() __attribute__((weak_import));
+#elif defined(__GNUC__) || defined(__clang__)
 extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests() __attribute__((weak));
 #endif
 
