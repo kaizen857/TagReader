@@ -20,6 +20,15 @@ namespace
 constexpr std::string_view kTypedTitle = "typed-title";
 constexpr std::string_view kTypedLyric = "typed-line-one";
 
+// libc++（macOS）的 file_time_type::rep 是 __int128，Catch2 失败时要把实际值
+// 流到 ostream，而 __int128 没有无歧义的 operator<<，直接比较会编译不过。
+// 转成 long long 后再比，语义不变且断言失败时还能看到具体时间戳。
+[[nodiscard]] long long MTimeTicks(const std::filesystem::path &path)
+{
+    return static_cast<long long>(
+        std::filesystem::last_write_time(path).time_since_epoch().count());
+}
+
 std::size_t CountPngFiles(const std::filesystem::path &root)
 {
     std::error_code ec;
@@ -385,14 +394,14 @@ TEST_CASE("CoverMode: cache hits reuse files without rewriting", "[cover][mode][
     const MusicTag first = TagReader::Read(samplePath, exportDir);
     REQUIRE_FALSE(first.coverPath().empty());
     REQUIRE_FALSE(first.thumbnailPath().empty());
-    const auto firstFullTime = std::filesystem::last_write_time(first.coverPath());
-    const auto firstThumbTime = std::filesystem::last_write_time(first.thumbnailPath());
+    const auto firstFullTime = MTimeTicks(first.coverPath());
+    const auto firstThumbTime = MTimeTicks(first.thumbnailPath());
 
     const MusicTag second = TagReader::Read(samplePath, exportDir);
     CHECK(second.coverPath() == first.coverPath());
     CHECK(second.thumbnailPath() == first.thumbnailPath());
-    CHECK(std::filesystem::last_write_time(second.coverPath()) == firstFullTime);
-    CHECK(std::filesystem::last_write_time(second.thumbnailPath()) == firstThumbTime);
+    CHECK(MTimeTicks(second.coverPath()) == firstFullTime);
+    CHECK(MTimeTicks(second.thumbnailPath()) == firstThumbTime);
     CHECK(CountPngFiles(exportDir) == 2);
 }
 

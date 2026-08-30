@@ -611,7 +611,16 @@ bool GenerateOggVorbisSample(const std::filesystem::path &path, std::string_view
         return false;
     }
 
-    std::string command = "ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=44100:cl=mono -t 0.2 -codec:a libvorbis";
+    // 不是所有发行版的 ffmpeg 都带 libvorbis（如 Homebrew 的 ffmpeg 9 未启用）；
+    // 样本只需合法的 Ogg Vorbis 容器，缺失时退回原生 vorbis 编码器
+    // （experimental 需 -strict -2，且只支持立体声，故一并 -ac 2）。
+    const char *const vorbisCodec =
+        CommandSucceeds("ffmpeg -hide_banner -loglevel error -encoders 2>/dev/null | grep -q ' libvorbis '")
+            ? "-codec:a libvorbis"
+            : "-strict -2 -ac 2 -codec:a vorbis";
+    std::string command = std::string("ffmpeg -hide_banner -loglevel error -y -f lavfi "
+                                      "-i anullsrc=r=44100:cl=mono -t 0.2 ")
+                          + vorbisCodec;
     if (!title.empty())
     {
         command += " -metadata title=\"" + std::string(title) + "\"";

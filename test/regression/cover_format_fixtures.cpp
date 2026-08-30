@@ -794,9 +794,22 @@ bool GenerateFlacAudioSample(const std::filesystem::path &path)
     return GenerateWithFfmpeg(path, "-codec:a flac");
 }
 
+// 不是所有发行版的 ffmpeg 都带 libvorbis（如 Homebrew 的 ffmpeg 9 未启用）。
+// 样本只需要是合法的 Ogg Vorbis 容器，音质无关，因此缺失时退回 FFmpeg
+// 自带的原生 vorbis 编码器（标记为 experimental 需 -strict -2，且只支持立体声，
+// 故一并 -ac 2）。
+static const char *VorbisCodecArgs()
+{
+    static const std::string args = CommandSucceeds(
+                                        "ffmpeg -hide_banner -loglevel error -encoders 2>/dev/null | grep -q ' libvorbis '")
+                                        ? "-codec:a libvorbis"
+                                        : "-strict -2 -ac 2 -codec:a vorbis";
+    return args.c_str();
+}
+
 bool GenerateOggVorbisAudioSample(const std::filesystem::path &path)
 {
-    return GenerateWithFfmpeg(path, "-codec:a libvorbis");
+    return GenerateWithFfmpeg(path, VorbisCodecArgs());
 }
 
 bool GenerateOpusAudioSample(const std::filesystem::path &path)
