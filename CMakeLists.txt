@@ -183,12 +183,6 @@ endif()
 
 tagreader_enable_sanitizers(TagReaderCore)
 
-if(APPLE)
-    # FfmpegSession.cpp 的测试钩子是弱符号；ld64 对"处处未定义"的弱符号仍会报错，
-    # 需显式允许该符号未定义（运行期解析为 nullptr，与 ELF 弱符号语义一致）。
-    target_link_options(TagReaderCore INTERFACE
-        "LINKER:-U,_TagReaderOpenContextAfterInitialOpenHookForTests")
-endif()
 
 target_include_directories(TagReaderCore
     PUBLIC

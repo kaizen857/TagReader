@@ -31,8 +31,10 @@ extern "C"
 #endif
 
 #if defined(__APPLE__)
-// Mach-O 下未定义的弱符号必须用 weak_import 声明，否则链接期直接报 undefined。
-extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests() __attribute__((weak_import));
+// Mach-O 没有"未定义弱符号在链接期解析为 0"的语义，ld64 会直接报 undefined，
+// 而 -U 链接选项经 LINK_ONLY 传不到间接消费方。改为运行期 dlsym 查找：
+// 测试二进制定义了该符号就能找到，生产二进制找不到即为空，无链接期依赖。
+#include <dlfcn.h>
 #elif defined(__GNUC__) || defined(__clang__)
 extern "C" void TagReaderOpenContextAfterInitialOpenHookForTests() __attribute__((weak));
 #endif
@@ -85,7 +87,15 @@ namespace
 {
 void RunOpenContextAfterInitialOpenHookForTests()
 {
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__APPLE__)
+    using HookFn = void (*)();
+    static HookFn const hook = reinterpret_cast<HookFn>(
+        ::dlsym(RTLD_DEFAULT, "TagReaderOpenContextAfterInitialOpenHookForTests"));
+    if (hook != nullptr)
+    {
+        hook();
+    }
+#elif defined(__GNUC__) || defined(__clang__)
     if (TagReaderOpenContextAfterInitialOpenHookForTests != nullptr)
     {
         TagReaderOpenContextAfterInitialOpenHookForTests();
