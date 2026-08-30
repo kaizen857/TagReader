@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <fstream>
 #include <filesystem>
+
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -334,6 +338,11 @@ TEST_CASE("Sidecar cover discovery fails on an unreadable directory", "[Sidecar]
 {
 #if defined(_WIN32)
     SKIP("POSIX directory permissions do not make a Windows directory unreadable");
+#elif defined(__unix__) || defined(__APPLE__)
+    if (::geteuid() == 0)
+    {
+        SKIP("POSIX directory permissions do not restrict root (CI 容器以 root 运行)");
+    }
 #endif
     const std::filesystem::path root = tagreader_test_support::TemporaryArtifactRoot("sidecar_cover_unreadable_dir");
     REQUIRE(EnsureCleanRoot(root));
