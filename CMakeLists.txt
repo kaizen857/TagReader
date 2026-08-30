@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.10)
 # 1. 项目信息
 project(TagReaderProject VERSION 1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
 # 指定 C++ 标准
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,14 +25,16 @@ else()
     message(WARNING "Could not detect CPU count, parallel build may not be optimal")
 endif()
 
-# Release 模式优化配置
+# Release 模式优化配置（三仓库统一方案，2026-08-30）：
+# - 编译/链接选项由 CMake 默认 Release（GCC -O3 -DNDEBUG / MSVC /O2 /DNDEBUG）
+#   + CMakePresets.json release preset 的 CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE
+#   （GCC -flto / MSVC /GL+/LTCG）提供，不在此手写，避免与 preset 双源漂移；
+# - 指令集显式基线 x86-64（替代原 -march=native：native 产物不可跨机器分发，
+#   老 CPU 上会 SIGILL；基线保证 AppImage/deb/rpm 可分发）。
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    add_compile_options(-march=x86-64)
+endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        add_compile_options(-O3 -march=native -DNDEBUG)
-    elseif(MSVC)
-        add_compile_options(/O2 /GL /DNDEBUG)
-        add_link_options(/LTCG)
-    endif()
     # Release 模式下强制禁用性能分析
     set(TAGREADER_ENABLE_PROFILING OFF CACHE BOOL "Profiling is disabled in Release mode" FORCE)
 endif()
@@ -179,7 +183,8 @@ tagreader_enable_sanitizers(TagReaderCore)
 
 target_include_directories(TagReaderCore
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fpng
@@ -245,3 +250,43 @@ if(TAGREADER_ENABLE_FUZZING)
 endif()
 
 add_subdirectory(test)
+
+# 6. 安装与导出（供 Seriona_Backend / Seriona 通过 find_package(TagReaderCore)
+#    复用本仓库的构建产物：CI 顺序链中 TagReader 先独立构建+全量测试，再
+#    cmake --install 到共享前缀，后端/前端 find_package 命中后不再重复编译）
+include(CMakePackageConfigHelpers)
+
+install(TARGETS TagReaderCore
+    EXPORT TagReaderCoreTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT TagReaderCoreTargets
+    FILE TagReaderCoreTargets.cmake
+    NAMESPACE TagReaderCore::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TagReaderCore
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/TagReaderCoreConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TagReaderCoreConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/TagReaderCoreConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TagReaderCore
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/TagReaderCoreConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/TagReaderCoreConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TagReaderCore
+)

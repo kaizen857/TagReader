@@ -1,0 +1,16 @@
+@PACKAGE_INIT@
+
+# TagReaderCore 消费方配置：重建 TagReaderCore 构建时的依赖 target
+#（PkgConfig::FFMPEG、Iconv），导出文件里的接口链接才会可解析。
+include(CMakeFindDependencyMacro)
+
+# FFmpeg：pkg_check_modules 生成 PkgConfig::FFMPEG（IMPORTED），须在消费方重建
+find_dependency(PkgConfig)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
+
+# Iconv：构建时若 Iconv_FOUND 则接口含 Iconv::Iconv；此处 QUIET 非致命，
+# 与构建时无 iconv（TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON）的状态自洽
+find_package(Iconv QUIET)
+
+include("${CMAKE_CURRENT_LIST_DIR}/TagReaderCoreTargets.cmake")
+check_required_components(TagReaderCore)

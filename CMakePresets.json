@@ -4,7 +4,6 @@
     {
       "name": "default",
       "displayName": "Default",
-      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/default",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -13,17 +12,16 @@
     {
       "name": "release",
       "displayName": "Release",
-      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE": "ON"
       }
     },
     {
       "name": "sanitize",
       "displayName": "Sanitize",
-      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/sanitize",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
@@ -33,7 +31,6 @@
     {
       "name": "fuzz",
       "displayName": "Fuzz",
-      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/fuzz",
       "cacheVariables": {
         "TAGREADER_ENABLE_FUZZING": "ON"
@@ -42,7 +39,6 @@
     {
       "name": "profile",
       "displayName": "Profile",
-      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/profile",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
