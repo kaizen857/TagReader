@@ -10,6 +10,7 @@
 
 #if defined(TAGREADER_HAS_ICONV)
 #include <iconv.h>
+#include <cstring>
 #endif
 
 namespace tagreader_text
@@ -127,6 +128,10 @@ bool LooksLikeUtf16WithoutBom(std::string_view raw, bool bigEndian)
     return suspiciousControls * 4 <= units;
 }
 
+#if defined(TAGREADER_HAS_ICONV)
+bool DecodesLosslesslyAs(const uint8_t *data, std::size_t size, const char *encoding, std::string_view decodedUtf8);
+#endif
+
 std::string DetectLegacyLocalEncoding(std::string_view raw)
 {
 #if defined(TAGREADER_HAS_ICONV)
@@ -143,11 +148,17 @@ std::string DetectLegacyLocalEncoding(std::string_view raw)
 
     for (std::string_view candidate : candidates)
     {
+        const std::string candidateName(candidate);
         const std::string decoded = ReadLocaleEncodedText(reinterpret_cast<const uint8_t *>(raw.data()), raw.size(), candidate);
-        if (!decoded.empty() && IsMostlyPrintableText(decoded))
+        if (decoded.empty() || !IsMostlyPrintableText(decoded))
         {
-            return std::string(candidate);
+            continue;
         }
+        if (!DecodesLosslesslyAs(reinterpret_cast<const uint8_t *>(raw.data()), raw.size(), candidateName.c_str(), decoded))
+        {
+            continue;
+        }
+        return candidateName;
     }
 #elif defined(TAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV)
     (void)raw;
@@ -192,6 +203,74 @@ private:
     iconv_t cd_;
 };
 
+// 候选编码的“干净解码”校验：把解码结果再编回候选编码，必须与原字节逐字节相等。
+// 各平台 libiconv 遇非法字节的行为差异很大：macOS 15 的 SHIFT_JIS/CP932 会静默
+// 丢弃非法字节并返回成功（rc=0、输入全消费，不计入不可逆计数），Linux 与
+// macOS 26 则返回 EILSEQ。仅靠错误码无法识别“被吞掉的字节”，往返校验才是可移植的判据。
+bool DecodesLosslesslyAs(const uint8_t *data, std::size_t size, const char *encoding, std::string_view decodedUtf8)
+{
+    if (decodedUtf8.empty())
+    {
+        return false;
+    }
+
+    IconvHandle cd(iconv_open(encoding, "UTF-8"));
+    if (cd.get() == reinterpret_cast<iconv_t>(-1))
+    {
+        return false;
+    }
+
+    std::string reencoded(std::max<std::size_t>(decodedUtf8.size() * 2, 64), '\0');
+    std::string inputCopy(decodedUtf8);
+    char *inputData = inputCopy.data();
+    std::size_t inputLeft = inputCopy.size();
+    char *outputData = reencoded.data();
+    std::size_t outputLeft = reencoded.size();
+
+    while (inputLeft > 0)
+    {
+        const std::size_t result = iconv(cd.get(), &inputData, &inputLeft, &outputData, &outputLeft);
+        if (result != static_cast<std::size_t>(-1))
+        {
+            break;
+        }
+        if (errno != E2BIG)
+        {
+            return false;
+        }
+        const std::size_t used = reencoded.size() - outputLeft;
+        const std::size_t nextSize = reencoded.size() * 2;
+        if (nextSize > kMaxDecodedTextBytes)
+        {
+            return false;
+        }
+        reencoded.resize(nextSize, '\0');
+        outputData = reencoded.data() + used;
+        outputLeft = reencoded.size() - used;
+    }
+
+    reencoded.resize(reencoded.size() - outputLeft);
+
+    // decodedUtf8 已被 TrimText 去掉首尾空白，故原字节也按同样规则裁剪后再比。
+    // 这些候选编码对 ASCII 空白均为单字节直通，裁剪等价。
+    const auto isTrimByte = [](uint8_t ch) {
+        return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\0';
+    };
+    std::size_t begin = 0;
+    std::size_t end = size;
+    while (begin < end && isTrimByte(data[begin]))
+    {
+        ++begin;
+    }
+    while (end > begin && isTrimByte(data[end - 1]))
+    {
+        --end;
+    }
+
+    const std::size_t trimmedSize = end - begin;
+    return reencoded.size() == trimmedSize && std::memcmp(reencoded.data(), data + begin, trimmedSize) == 0;
+}
+
 std::string ConvertTextWithIconv(const uint8_t *data, std::size_t size, const char *encoding)
 {
     if (data == nullptr || size == 0 || encoding == nullptr || *encoding == '\0')
@@ -222,14 +301,6 @@ std::string ConvertTextWithIconv(const uint8_t *data, std::size_t size, const ch
         const std::size_t result = iconv(cd.get(), const_cast<char **>(&inputData), &inputLeft, &outputData, &outputLeft);
         if (result != static_cast<std::size_t>(-1))
         {
-            // iconv 的返回值是“不可逆转换”的个数（即有损替代）。编码探测依赖
-            // “该候选能否干净解码”来选胜，有损结果必须当作未命中，否则会把
-            // 错误候选误判为命中。各平台 libiconv 在非法字节上行为不一：有的返回
-            // EILSEQ，有的静默替代后正常返回，不能只依赖前者。
-            if (result != 0)
-            {
-                return {};
-            }
             continue;
         }
 
