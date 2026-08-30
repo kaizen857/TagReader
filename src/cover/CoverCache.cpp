@@ -153,7 +153,8 @@ struct FileDescriptor
 std::filesystem::path MakeSiblingTempPath(const std::filesystem::path &finalPath)
 {
     static std::atomic_uint64_t tempCounter{0};
-    const auto now = std::filesystem::file_time_type::clock::now().time_since_epoch().count();
+    const auto now = static_cast<long long>(
+        std::filesystem::file_time_type::clock::now().time_since_epoch().count());
     const auto seq = tempCounter.fetch_add(1, std::memory_order_relaxed);
     const std::string name = Utf8Text(finalPath.filename()) + ".tmp." + std::to_string(::getpid()) + "." + std::to_string(now) + "." + std::to_string(seq);
     return finalPath.parent_path() / name;
