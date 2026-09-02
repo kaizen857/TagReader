@@ -3,6 +3,8 @@
 ## 根仓库规则
 
 - 当前目录就是仓库根目录；不得扫描、读取或推断上级目录。`AGENTS.md` 只保留此根文件，不创建子目录版本。
+- 本仓库后续所有更改必须且只能提交到 `develop` 分支；禁止直接在 `main` 分支提交。修改、暂存或提交前运行 `git status --short --branch` 确认当前分支为 `develop`。
+- `main` 只作为稳定基线或同步来源；推送 `develop`、创建合并请求或合并回 `main` 必须由用户明确要求。
 - 仓库跟踪了 `.omo/` 下的工作产物（boulder、drafts、evidence、notepads、plans、run-continuation、start-work，`.gitignore` 未忽略），属非源码工作文件；改动源码时不要触碰或删除。
 - 面向用户的回答和仓库文档使用中文；除本文件外，面向用户的文档放在 `docs/`。例外：根目录 `ANALYSIS.md` 是已跟踪的安全审计报告（历史文档，非事实来源）。
 - 事实以 `CMakeLists.txt`、`CMakePresets.json`、公共头文件、`src/`、`test/` 等可执行来源为准；`README.md`、`docs/DESIGN.md` 冲突时不采信。`docs/DESIGN.md` 是描述长期稳定设计的架构文档（维护规范见下节），不是事实基准，也不是开发日志。
