@@ -34,6 +34,7 @@
 - FFmpeg 只负责 probe、音频流、基础媒体信息及封面解码/像素转换，PNG 由 fpng 编码；标题、歌手、专辑、歌词和封面块由原始字节 parser 读取，不能改用 `AVDictionary`。
 - Parser 共用 `ReadContext::input` 与 `AVFormatContext`；二进制访问使用绝对 offset 配合 `ReadRange()`/bounded reader，不依赖或污染流位置。
 - `MusicTag` 文本终态必须是 UTF-8；中间态走 `RawMediaInfo`、`RawMetadata`、`RawLyrics`，由 `NormalizeMetadata()`/`NormalizeLyrics()` 收口。
+- 遗留编码探测要求候选编码能无损往返（`TextCodec.cpp` 的 `DecodesLosslesslyAs`：解码结果再编回候选编码必须与原字节逐字节相等；各平台 libiconv 对非法字节行为差异大，仅靠错误码无法识别"被吞掉的字节"），有损候选一律拒绝，不得放宽为"解码未报错即接受"。
 - 分发覆盖 ID3v1/v2.2-v2.4、Vorbis Comment/FLAC/Ogg、OpusTags、MP4 `ilst`、APEv2、RIFF/WAV、AIFF/AIFC、DSF/DFF、ASF/WMA、Matroska/WebM/MKA 和 CUE。APE footer 检测优先于 ID3；MP3+APE 以 APE 为主，ID3v2/ID3v1 只补缺。
 - 局部 malformed 元数据或歌词字段应跳过或清空局部结果；输入不可用、无音频流或上下文/容器无法建立才使普通读取顶层失败。封面错误遵循下一节的独立策略。
 - 不得放宽资源上限：`ReadRange()` 默认 64 MiB；MP4 atom payload 64 MiB、最多 100000 atoms；封面编码输入和 PNG 输出各 64 MiB、单边 8192、总像素 `32 * 1024 * 1024`。常量集中在 `include/TagReaderInternal.hpp` 的 `CoverDecodeLimits`（该内部头文件位于公共 include 目录）与各 parser 文件顶部的 `kMax*` 常量。
@@ -50,7 +51,8 @@
 
 - 默认顺序必须是 `cmake --preset default` -> `cmake --build --preset default` -> `ctest --preset default --output-on-failure`。
 - 聚焦测试用 `ctest --preset default -R <regex> --output-on-failure`。Catch2 discovered test 名是精确 `TEST_CASE` 文本（唯一例外：`TagReaderFolderCoverCatch2Tests` 目标带 `TagReaderFolderCover.` 前缀）；可用子串如 `TR-AUDIT-001`、`CoverContract:`、`cue file resolver`。
-- 安全测试是 `TagReaderSecurityGenerateSamples` 与 `TagReaderSecuritySmoke`；样本由 `test/security/generate_samples.py` 生成。缺少 `ffmpeg` CLI 或 codec 导致无样本时，Smoke 返回 `77`，CTest 记为 skip。另有 `TagReaderCatch2SmokeTests`（catch2/smoke_test.cpp 的编译冒烟用例）。
+- 安全测试是 `TagReaderSecurityGenerateSamples` 与 `TagReaderSecuritySmoke`；样本由 `test/security/generate_samples.py` 生成。缺少 `ffmpeg` CLI 或 codec 导致无样本时，Smoke 返回 `77`，CTest 记为 skip。另有 `TagReaderCatch2SmokeTests`（catch2/smoke_test.cpp 的编译冒烟用例，只链接 `Catch2::Catch2WithMain`、不链接 `TagReaderCore`）。
+- 所有 Catch2 测试目标统一经 `tagreader_enable_sanitizers()`（sanitize preset 下 ASan+UBSan、`-fno-sanitize-recover=all`）；新增测试目标必须沿用，不得绕过。
 - 另有 `release`、`sanitize`、`fuzz`、`profile` presets。Release 强制关闭 profiling；Fuzz 仅在 Clang/libFuzzer 下生成 `TagReaderFuzz`，相关 CTest 先生成 corpus；Profile 依赖系统 TracyClient 与 `/usr/include/Tracy`，不是 pkg-config 入口。
 - FFmpeg 依赖由 pkg-config 解析：`libavformat`、`libavcodec`、`libavutil`、`libswscale`。Iconv 默认必需，只有显式设置 `-DTAGREADER_ALLOW_LATIN1_FALLBACK_WITHOUT_ICONV=ON` 才允许回退；另有 `TAGREADER_FORCE_DISABLE_ICONV_FOR_TESTS` 用于测试无 Iconv 策略路径。
 - Catch2 默认优先系统包（`TAGREADER_USE_SYSTEM_CATCH2=ON`），缺失时 FetchContent 下载 v3.7.1，离线环境首次配置需要网络。
