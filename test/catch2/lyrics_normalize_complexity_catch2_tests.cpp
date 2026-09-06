@@ -42,12 +42,19 @@ RawLyrics BuildSameTimestampUniqueLyrics(std::size_t lineCount)
 
 std::chrono::nanoseconds TimeNormalizeSameTimestampUniqueLyrics(std::size_t lineCount)
 {
-    RawLyrics lyrics = BuildSameTimestampUniqueLyrics(lineCount);
-    const auto start = std::chrono::steady_clock::now();
-    NormalizeLyrics(lyrics);
-    const auto elapsed = std::chrono::steady_clock::now() - start;
-    REQUIRE(lyrics.timedLines.size() == lineCount);
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed);
+    // 单次计时在小输入(2048 行, 数微秒量级)下被调度噪声主导, macOS CI runner 上
+    // 耗时比断言偶发越限(2026-09-06 main run #103 失败);重复测量取最小耗时 ≈ 真实
+    // 计算时间, 抗噪而不改变"规模 4x 应 <10x, 区分 O(n)/O(n²)"的断言意图。
+    auto best = std::chrono::nanoseconds::max();
+    for (int attempt = 0; attempt < 7; ++attempt)
+    {
+        RawLyrics lyrics = BuildSameTimestampUniqueLyrics(lineCount);
+        const auto start = std::chrono::steady_clock::now();
+        NormalizeLyrics(lyrics);
+        best = std::min(best, std::chrono::steady_clock::now() - start);
+        REQUIRE(lyrics.timedLines.size() == lineCount);
+    }
+    return best;
 }
 }
 
