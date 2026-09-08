@@ -45,6 +45,7 @@ set_tests_properties(TagReaderSecurityGenerateSamples PROPERTIES
     LABELS "security"
     FIXTURES_SETUP "tagreader_security_samples"
     RESOURCE_LOCK "tagreader_security_workspace"
+    TIMEOUT 3000
 )
 
 add_test(NAME TagReaderSecuritySmoke
@@ -56,6 +57,7 @@ set_tests_properties(TagReaderSecuritySmoke PROPERTIES
     FIXTURES_REQUIRED "tagreader_security_samples"
     RESOURCE_LOCK "tagreader_security_workspace"
     SKIP_RETURN_CODE 77
+    TIMEOUT 3000
 )
 
 add_executable(TagReaderFlacMalformedMetadataCatch2Tests
@@ -320,7 +322,11 @@ target_include_directories(TagReaderTrAudit032056Catch2Tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
-catch_discover_tests(TagReaderTrAudit032056Catch2Tests)
+# 本二进制承载 TR-AUDIT-037(4 次顺序 ffmpeg 派生)等重用例; 慢速/高负载 CI(10-100x
+# 减速)上可能逼近 CTest 默认 1500s 上限而误报超时。catch_discover_tests 只能在 build 后
+# 生成用例, configure 期无法按用例名单独设属性, 故对本二进制全部发现用例放宽 TIMEOUT
+# (3000s 是宽松上限, 仅拦截真实挂死, 不收紧任何测试)。
+catch_discover_tests(TagReaderTrAudit032056Catch2Tests PROPERTIES TIMEOUT 3000)
 
 if(TARGET TagReaderFuzz)
     set(TAGREADER_FUZZ_CORPUS_DIR ${CMAKE_CURRENT_BINARY_DIR}/fuzz/corpus)

@@ -1759,6 +1759,43 @@ std::filesystem::path ExpectedDefaultCoverExportDir()
 #endif
 }
 
+bool IsolateDefaultCoverExportDir(const std::filesystem::path &workspaceRoot)
+{
+    // 默认封面目录由 XDG_RUNTIME_DIR/TMPDIR 解析(见 ExpectedDefaultCoverExportDir)。
+    // 不隔离时, 对真实默认目录 remove_all 并断言其内容的用例在 ctest -j 下会与其它
+    // 用例进程并发互删刚写入的封面缓存, 造成与产品行为无关的假失败。
+    // 这里把两个环境变量重定向到用例私有目录, 使被测目录与真实用户目录完全隔离。
+    std::error_code ec;
+    const std::filesystem::path xdgRoot = workspaceRoot / "xdg";
+    const std::filesystem::path tmpRoot = workspaceRoot / "tmp";
+    std::filesystem::create_directories(xdgRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create default cover dir sandbox: " << ec.message() << '\n';
+        return false;
+    }
+    ec.clear();
+    std::filesystem::create_directories(tmpRoot, ec);
+    if (ec)
+    {
+        std::cerr << "failed to create default cover dir sandbox: " << ec.message() << '\n';
+        return false;
+    }
+#if defined(_WIN32)
+    const bool xdgOk = ::_putenv_s("XDG_RUNTIME_DIR", xdgRoot.string().c_str()) == 0;
+    const bool tmpOk = ::_putenv_s("TMPDIR", tmpRoot.string().c_str()) == 0;
+#else
+    const bool xdgOk = ::setenv("XDG_RUNTIME_DIR", xdgRoot.string().c_str(), 1) == 0;
+    const bool tmpOk = ::setenv("TMPDIR", tmpRoot.string().c_str(), 1) == 0;
+#endif
+    if (!xdgOk || !tmpOk)
+    {
+        std::cerr << "failed to redirect default cover dir env vars for test isolation\n";
+        return false;
+    }
+    return true;
+}
+
 bool HasProbeFiles(const std::filesystem::path &root)
 {
     std::error_code ec;
@@ -3468,12 +3505,9 @@ bool RunTrAudit028()
 {
     constexpr std::string_view kCaseId = "TR-AUDIT-028";
     const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
-    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
     const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
     std::error_code ec;
     std::filesystem::remove_all(evidenceRoot, ec);
-    ec.clear();
-    std::filesystem::remove_all(defaultExportDir, ec);
     ec.clear();
     std::filesystem::create_directories(evidenceRoot, ec);
     if (ec)
@@ -3481,6 +3515,14 @@ bool RunTrAudit028()
         std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
         return false;
     }
+    if (!IsolateDefaultCoverExportDir(evidenceRoot / "default-cover-sandbox"))
+    {
+        return false;
+    }
+    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
+    ec.clear();
+    std::filesystem::remove_all(defaultExportDir, ec);
+    ec.clear();
 
     const std::filesystem::path basePath = evidenceRoot / "base.mp3";
     const std::filesystem::path jpegImagePath = evidenceRoot / "one_by_one.jpg";
@@ -5337,7 +5379,6 @@ bool RunTrAudit031()
 {
     constexpr std::string_view kCaseId = "TR-AUDIT-031";
     const std::filesystem::path evidenceRoot = RegressionEvidenceRoot(kCaseId);
-    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
     const std::filesystem::path explicitExportDir = evidenceRoot / "explicit-covers";
     const std::filesystem::path nonWritableDir = evidenceRoot / "non-writable-covers";
     const std::filesystem::path symlinkTargetDir = evidenceRoot / "symlink-target-covers";
@@ -5345,14 +5386,20 @@ bool RunTrAudit031()
     std::error_code ec;
     std::filesystem::remove_all(evidenceRoot, ec);
     ec.clear();
-    std::filesystem::remove_all(defaultExportDir, ec);
-    ec.clear();
     std::filesystem::create_directories(evidenceRoot, ec);
     if (ec)
     {
         std::cerr << "failed to create evidence directory: " << ec.message() << '\n';
         return false;
     }
+    if (!IsolateDefaultCoverExportDir(evidenceRoot / "default-cover-sandbox"))
+    {
+        return false;
+    }
+    const std::filesystem::path defaultExportDir = ExpectedDefaultCoverExportDir();
+    ec.clear();
+    std::filesystem::remove_all(defaultExportDir, ec);
+    ec.clear();
 
     const std::filesystem::path basePath = evidenceRoot / "base.mp3";
     const std::filesystem::path samplePath = evidenceRoot / "cover-policy.mp3";
