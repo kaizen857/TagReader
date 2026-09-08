@@ -120,14 +120,21 @@ def make_apic_frame(image_bytes: bytes, mime: str = "image/png") -> bytes:
     return id3v24_frame("APIC", payload)
 
 
-def run_ffmpeg(args: list[str]) -> bool:
+def run_ffmpeg(args: list[str], timeout: float = 300.0) -> bool:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         print("warning: ffmpeg CLI not found; audio-backed samples will be skipped", file=sys.stderr)
         return False
 
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *args]
-    result = subprocess.run(command, check=False)
+    # Slow/heavily loaded CI can stall an ffmpeg child for minutes; bound every spawn
+    # so a single hung process cannot block the fixture indefinitely (CTest TIMEOUT is
+    # only the outer guard).
+    try:
+        result = subprocess.run(command, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"warning: ffmpeg timed out after {timeout:g}s: {' '.join(command)}", file=sys.stderr)
+        return False
     if result.returncode != 0:
         print(f"warning: ffmpeg failed: {' '.join(command)}", file=sys.stderr)
         return False
