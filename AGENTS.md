@@ -60,3 +60,9 @@
 - `TagReaderCore` 支持安装导出：`cmake --install`（`install(EXPORT TagReaderCoreTargets)` + `cmake/TagReaderCoreConfig.cmake.in`）装到共享前缀后，后端/前端可 `find_package(TagReaderCore CONFIG)` 复用构建产物（CI 顺序链）。
 - `test/regression/regression_tests.cpp` 不是独立 target，但被 `tr_audit_001_031_catch2_tests.cpp` 与 `tr_audit_032_056_catch2_tests.cpp` 以 `#include` 方式文本包含编译（提供 `RunTrAudit*` 实现，由 TR-AUDIT-001~056 用例调用）；活跃用例在 `*_catch2_tests.cpp` 中。
 - `TagReaderTest` 仅是人工 CLI：`./build/default/TagReaderTest <audio-file-path> [cover-export-dir]`，不能替代 CTest。
+
+## 跨平台兼容性
+
+- 本库必须能在 Windows / Linux / macOS 三端构建并通过测试（独立仓库与 vendored 子树两种形态均被三平台消费），代码编写与功能开发不得引入单平台假设：文件系统一律 `std::filesystem`，禁止裸用 POSIX-only（unistd/dirent/`::realpath` 等）或 Windows-only API；路径分隔符、换行、大小写敏感性与符号链接语义的差异按既有安全边界收敛（见「解析与安全边界」的 CUE 引用规则与「封面处理」的临时目录回退链）。
+- 文本与编码面已由 UTF-8 终态 + Iconv 无损往返规则覆盖三端（libiconv 对各平台非法字节行为差异大正是该规则的理由，不得放宽）；公共头（`include/`）不得暴露平台类型、宏或条件编译产物。
+- 新增依赖必须三端可供给（FFmpeg/Iconv 经 pkg-config，Windows 由 vcpkg 提供，Linux/macOS 走系统包/Homebrew）；新增平台分支必须保证其余平台仍可配置构建。改动涉及平台行为而本机无法验证另一平台时，在提交信息中说明受影响面与验证方式。
