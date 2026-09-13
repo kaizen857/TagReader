@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <ctime>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -41,26 +42,55 @@ RawLyrics BuildSameTimestampUniqueLyrics(std::size_t lineCount)
     return lyrics;
 }
 
-std::chrono::nanoseconds TimeNormalizeSameTimestampUniqueLyrics(std::size_t lineCount, int attempts = 50)
+std::chrono::nanoseconds CpuTicksToNanoseconds(std::clock_t ticks)
 {
-    // 单次计时在小输入(2048 行, 数微秒量级)下被调度噪声主导, macOS CI runner 上
-    // 耗时比断言偶发越限(2026-09-06 main run #103 失败);重复多次(默认 50 次)取最小
-    // 耗时 ≈ 真实计算时间, 抗噪而不改变"规模 4x 应 <10x, 区分 O(n)/O(n²)"的断言意图。
-    auto best = std::chrono::nanoseconds::max();
+    constexpr double kNanosecondsPerSecond = 1'000'000'000.0;
+    return std::chrono::nanoseconds(static_cast<std::chrono::nanoseconds::rep>(
+        static_cast<double>(ticks) * kNanosecondsPerSecond / static_cast<double>(CLOCKS_PER_SEC)));
+}
+
+struct NormalizeTiming
+{
+    // 判定口径: 进程 CPU 时间(std::clock), 只累计实际执行, 不计入被抢占的等待。
+    std::chrono::nanoseconds cpu = std::chrono::nanoseconds::max();
+    // 诊断信息: 墙钟最小值。深饥饿下会被调度分布污染(实测虚高约 100 倍), 仅用于失败
+    // 信息里区分"算法变慢"与"机器被抢占", 不参与断言。
+    std::chrono::nanoseconds wall = std::chrono::nanoseconds::max();
+};
+
+NormalizeTiming TimeNormalizeSameTimestampUniqueLyrics(std::size_t lineCount, int attempts = 50)
+{
+    // 计时口径改为 CPU 时间而非墙钟。深饥饿(例如 8 个 nice-0 忙循环 + nice-19 测试进程)
+    // 下, 墙钟 min-of-N 采样的是调度分布左尾而非计算时间: 2048 行偶尔获得一段未被打断的
+    // 切片, 8192 行(4x 工作量)拿不到同等干净的切片, 比值虚高约 100 倍(实测正常 4.4,
+    // 深饥饿 602)导致与实现无关的确定性失败。CPU 时间排除被抢占等待后不再随调度公平性
+    // 漂移, 而 min-of-N 仍用于压掉单次样本的测量噪声与缓存抖动; 它同时保留区分 O(n)/O(n²)
+    // 的能力(正常线性比值 4.4, 二次实现实测 16.1, 阈值 10 仍可拦截)。
+    NormalizeTiming best{};
     for (int attempt = 0; attempt < attempts; ++attempt)
     {
         RawLyrics lyrics = BuildSameTimestampUniqueLyrics(lineCount);
-        const auto start = std::chrono::steady_clock::now();
+        const std::clock_t cpuStart = std::clock();
+        const auto wallStart = std::chrono::steady_clock::now();
         NormalizeLyrics(lyrics);
-        best = std::min(best, std::chrono::steady_clock::now() - start);
+        const auto wallElapsed = std::chrono::steady_clock::now() - wallStart;
+        const std::clock_t cpuEnd = std::clock();
+
+        if (cpuStart != static_cast<std::clock_t>(-1) && cpuEnd != static_cast<std::clock_t>(-1))
+        {
+            best.cpu = std::min(best.cpu, CpuTicksToNanoseconds(cpuEnd - cpuStart));
+        }
+        best.wall = std::min(best.wall, std::chrono::duration_cast<std::chrono::nanoseconds>(wallElapsed));
         REQUIRE(lyrics.timedLines.size() == lineCount);
     }
     return best;
 }
 
-// 噪声地板: 小输入的真实归一化耗时是微秒量级, 低于该地板(1ms)的计时结果由调度/
-// 计时器噪声主导, 比值断言在这种量级上本身不可靠(见上方 macOS CI 失败记录)。
-constexpr std::chrono::nanoseconds kComplexityTimingNoiseFloor = std::chrono::microseconds(1000);
+// CPU 时间口径下的噪声地板: std::clock 在 Linux/macOS 上是微秒级分辨率的进程 CPU 时间,
+// 深饥饿不计入被抢占等待, 计时只受测量分辨率与缓存抖动影响。100µs 远高于计时分辨率,
+// 又远低于任何真实机器上 2048 行归一化的 CPU 耗时(本机约 1.7ms), 因此正常/饥饿机器都
+// 不会因此跳过比值断言; 该地板仅防御计时完全失效的退化环境。
+constexpr std::chrono::nanoseconds kComplexityCpuNoiseFloor = std::chrono::microseconds(100);
 }
 
 TEST_CASE("LyricsNormalize preserves semantics", "[LyricsNormalize][lyrics-normalize]")
@@ -118,7 +148,7 @@ TEST_CASE("LyricsNormalize scales conservatively for same timestamps", "[LyricsN
     auto small = TimeNormalizeSameTimestampUniqueLyrics(kSmallLineCount);
     auto large = TimeNormalizeSameTimestampUniqueLyrics(kLargeLineCount);
 
-    if (small < kComplexityTimingNoiseFloor || large < kComplexityTimingNoiseFloor)
+    if (small.cpu < kComplexityCpuNoiseFloor || large.cpu < kComplexityCpuNoiseFloor)
     {
         // 低于噪声地板说明计时不可信; 用更多样本重测一次(取最小只会更接近真实值),
         // 给恰好卡在地板附近的慢速机器一次公平机会。
@@ -126,21 +156,23 @@ TEST_CASE("LyricsNormalize scales conservatively for same timestamps", "[LyricsN
         large = TimeNormalizeSameTimestampUniqueLyrics(kLargeLineCount, 250);
     }
 
-    const double smallNs = static_cast<double>(small.count());
-    const double largeNs = static_cast<double>(large.count());
+    // 比值只使用 CPU 时间: 深饥饿不会抬高该口径(正常与饥饿实测均约 4.3-4.4),
+    // 而墙钟口径在同样条件下会虚高约 100 倍。墙钟仅作为诊断字段输出。
+    const double smallNs = static_cast<double>(small.cpu.count());
+    const double largeNs = static_cast<double>(large.cpu.count());
     const double ratio = largeNs / std::max(1.0, smallNs);
 
     std::ostringstream message;
     message << "same-timestamp unique lyric normalization scaled too poorly: "
-            << kSmallLineCount << " lines took " << small.count() << "ns, "
-            << kLargeLineCount << " lines took " << large.count() << "ns, ratio=" << ratio
-            << ", expected ratio below " << kMaxExpectedRatio;
+            << kSmallLineCount << " lines cpu=" << small.cpu.count() << "ns wall=" << small.wall.count()
+            << "ns, " << kLargeLineCount << " lines cpu=" << large.cpu.count() << "ns wall=" << large.wall.count()
+            << "ns, cpu_ratio=" << ratio << ", expected cpu ratio below " << kMaxExpectedRatio;
 
-    if (small < kComplexityTimingNoiseFloor || large < kComplexityTimingNoiseFloor)
+    if (small.cpu < kComplexityCpuNoiseFloor || large.cpu < kComplexityCpuNoiseFloor)
     {
-        // 慢速/高负载机器上微秒级计时被噪声主导, 此时比值断言本身不可靠(曾造成与实现
-        // 无关的 CI 假失败); 结构断言仍已执行, 这里仅跳过比值断言并说明原因。
-        std::cerr << "LyricsNormalize complexity ratio skipped (measurement below noise floor): "
+        // 计时低于地板说明测量不可信(见上方地板说明), 此时比值断言本身不可靠; 结构断言
+        // 仍已执行, 这里仅跳过比值断言并说明原因。CPU 口径下正常/饥饿机器都不会触发。
+        std::cerr << "LyricsNormalize complexity ratio skipped (cpu measurement below noise floor): "
                   << message.str() << '\n';
         return;
     }
