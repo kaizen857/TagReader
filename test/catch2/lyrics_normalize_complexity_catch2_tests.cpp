@@ -121,6 +121,69 @@ TEST_CASE("LyricsNormalize preserves semantics", "[LyricsNormalize][lyrics-norma
     REQUIRE(lyrics.timedLines[3].second == "same text");
 }
 
+// 同时间戳、文本刻意乱序且含一对相同文本。稳定按时间戳排序必须保持输入出现顺序，
+// 否则「组内第 1 行 = 原文」的配对约定（D22）不成立。
+TEST_CASE("LyricsNormalize keeps same-timestamp lines in stable input order",
+          "[LyricsNormalize][lyrics-normalize][lyrics-normalize-dedupe]")
+{
+    RawLyrics lyrics{};
+    constexpr auto timestamp = std::chrono::microseconds(200);
+    lyrics.timedLines = {
+        {timestamp, "zeta"},
+        {timestamp, "alpha"},
+        {timestamp, "mid"},
+        {timestamp, "zeta"},
+    };
+
+    NormalizeLyrics(lyrics);
+
+    REQUIRE(lyrics.timedLines.size() == 4);
+    REQUIRE(lyrics.timedLines[0].second == "zeta");
+    REQUIRE(lyrics.timedLines[1].second == "alpha");
+    REQUIRE(lyrics.timedLines[2].second == "mid");
+    REQUIRE(lyrics.timedLines[3].second == "zeta");
+}
+
+// 去重谓词保持（时间戳, 文本）：相邻的相同行被去掉。
+TEST_CASE("LyricsNormalize collapses adjacent duplicate same-timestamp lines",
+          "[LyricsNormalize][lyrics-normalize][lyrics-normalize-dedupe]")
+{
+    RawLyrics lyrics{};
+    constexpr auto timestamp = std::chrono::microseconds(300);
+    lyrics.timedLines = {
+        {timestamp, "dup"},
+        {timestamp, "dup"},
+        {timestamp, "other"},
+    };
+
+    NormalizeLyrics(lyrics);
+
+    REQUIRE(lyrics.timedLines.size() == 2);
+    REQUIRE(lyrics.timedLines[0].second == "dup");
+    REQUIRE(lyrics.timedLines[1].second == "other");
+}
+
+// 排序键只剩时间戳后 std::unique 只去相邻重复：被不同文本隔开的重复保留。
+// 这是显式决定的去重语义（最小改动，不是「首次出现去重」）。
+TEST_CASE("LyricsNormalize preserves non-adjacent duplicate same-timestamp lines",
+          "[LyricsNormalize][lyrics-normalize][lyrics-normalize-dedupe]")
+{
+    RawLyrics lyrics{};
+    constexpr auto timestamp = std::chrono::microseconds(400);
+    lyrics.timedLines = {
+        {timestamp, "dup"},
+        {timestamp, "mid"},
+        {timestamp, "dup"},
+    };
+
+    NormalizeLyrics(lyrics);
+
+    REQUIRE(lyrics.timedLines.size() == 3);
+    REQUIRE(lyrics.timedLines[0].second == "dup");
+    REQUIRE(lyrics.timedLines[1].second == "mid");
+    REQUIRE(lyrics.timedLines[2].second == "dup");
+}
+
 TEST_CASE("LyricsNormalize keeps the lyric line cap", "[LyricsNormalize][lyrics-normalize]")
 {
     RawLyrics lyrics{};

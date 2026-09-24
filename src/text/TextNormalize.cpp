@@ -222,14 +222,14 @@ void NormalizeLyrics(RawLyrics &lyrics)
     {
         lyrics.timedLines.resize(kMaxLyricLines);
     }
-    std::sort(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &lhs, const auto &rhs)
-              {
-                  if (lhs.first != rhs.first)
-                  {
-                      return lhs.first < rhs.first;
-                  }
-                  return lhs.second < rhs.second;
-              });
+    // 稳定排序，且只按时间戳：同时间戳的多行保持输入（出现）顺序，使「组内第 1 行 = 原文」
+    // 的配对约定（D22）成立。此前按（时间戳, 文本）排序会把同组行按文本重排，「第 1 行」
+    // 不再可确定，也让外部 .lrc 与内嵌歌词的时间轴语义分叉。
+    std::stable_sort(lyrics.timedLines.begin(), lyrics.timedLines.end(),
+                     [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
+    // 去重谓词保持（时间戳, 文本）不变，这是有意的决定：排序键只剩时间戳后，std::unique
+    // 的语义从「去全部重复」退化为「只去相邻重复」。不改去重实现是最小改动（不引入额外
+    // 状态/复杂度），且 D22 只要求「组内第 1 行 = 原文」——非相邻重复不改变组内首行。
     lyrics.timedLines.erase(std::unique(lyrics.timedLines.begin(), lyrics.timedLines.end(), [](const auto &lhs, const auto &rhs)
                                         { return lhs.first == rhs.first && lhs.second == rhs.second; }),
                             lyrics.timedLines.end());
