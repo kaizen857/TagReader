@@ -132,7 +132,7 @@ CMakePresets.json         default / release / sanitize / fuzz / profile
 - **Iconv 为何默认必需**：无 iconv 时 `DetectLegacyLocalEncoding` 直接退化为 Latin-1，GB18030/GBK/SHIFT_JIS/BIG5/CP932/WINDOWS-1252/1251/1250 的探测被整体跳过，CJK 与西里尔/中欧文本会出现 mojibake。因此该降级只能由调用方显式开启，不能变成默认行为。
 - **遗留编码探测必须无损往返（红线）**：候选编码是否可用由 `DecodesLosslesslyAs`（`src/text/TextCodec.cpp`）判定——把解码结果再编回候选编码，必须与原字节逐字节相等；有损候选一律拒绝。**不得放宽为"解码未报错即接受"**：各平台 libiconv 对非法字节的行为差异极大（例如 macOS 15 的 SHIFT_JIS/CP932 会静默丢弃非法字节并返回成功，rc=0），仅凭错误码无法识别"被吞掉的字节"，往返校验才是可移植的判据。
 - `NormalizeMetadata`（TextNormalize.cpp:164-198）：对 7 个文本字段（title/genre/artist/album/albumArtist/composer/comment）统一处理：trim → 超过 65536 字节按 UTF-8 边界截断 → `IsValidUtf8` 校验（无效则清空）。数值字段（year/trackNumber/discNumber 等）直接透传；playCount/rating 在 ReadMetadata 中固定为 0。
-- `NormalizeLyrics`（TextNormalize.cpp:200-236）：text 与 timedLines 各行 trim + UTF-8 校验（无效清空）；删除空行；超过 20000 行截断；按（时间戳, 文本）排序；完全重复行去重。`text` 的行拆分发生在 BuildMusicTag（按 `'\n'` 切行、trim 后空行跳过、时间戳统一为 0）。
+- `NormalizeLyrics`（TextNormalize.cpp:200-236）：text 与 timedLines 各行 trim + UTF-8 校验（无效清空）；删除空行；超过 20000 行截断；**按时间戳稳定排序**（`std::stable_sort`，只比较时间戳，同时间戳的多行保持出现顺序——这是「同时间戳组内第 1 行 = 原文」配对约定可确定的前提）；去重谓词为（时间戳, 文本）相同；排序键只有时间戳，故 `std::unique` 只移除**相邻**的完全重复行。`text` 的行拆分发生在 BuildMusicTag（按 `'\n'` 切行、trim 后空行跳过、时间戳统一为 0）。
 - `ReadLyricsFromPlainText`（TextNormalize.cpp:238-346）：parser 侧的 LRC/纯文本歌词入口（非 NormalizeLyrics 一部分）：超过 1 MiB 直接返回；LRC 元数据行（`[ar]`/`[ti]` 等）跳过；每行最多 32 个时间戳；有时间戳进 timedLines、否则累积纯文本；timedLines 优先。
 
 ### 4.7 封面层（src/cover/）
